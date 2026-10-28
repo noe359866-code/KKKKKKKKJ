@@ -40,6 +40,11 @@ Reglas:
 | `tvenvivo.py` | **Proveedor real** de `www.tvenvivo.org` (TV/deportes en directo, LATAM). Ver la sección siguiente. |
 | `deportelibre.py` | **Proveedor real** de `deportelibre.top` (agenda deportiva + canales 24/7). Ver su sección. |
 | `futbolibre.py` | **Proveedor real** de `futbolibre.live` (canales 24/7 de México + agenda de partidos con varias señales). Ver su sección. |
+| `_hosters.py` | Resolutor de los "servidores" de video que usan los sitios de anime (Streamwish, VOE, Filemoon, Mixdrop, Streamtape, Mp4upload…) → `.m3u8`/`.mp4`. |
+| `_animekit.py` | Capa común de anime: ids `proveedor:slug:episodio`, lectura de literales JS, base64, formato de las señales y búsqueda por nombre. |
+| `animeflv.py` | **Proveedor real** de `animeflv.net` (VOD). |
+| `jkanime.py` | **Proveedor real** de `jkanime.net` (VOD). |
+| `monoschinos.py` | **Proveedor real** de `monoschinos.st` (VOD). |
 
 ## Añadir un proveedor
 
@@ -361,6 +366,169 @@ node --test test/futbolibre.test.js
 > ⚠️ Igual que los otros proveedores, sólo lee páginas públicas y no aloja ni
 > redistribuye contenido. Úsalo con autorización y respetando los términos del
 > sitio y la ley de tu país.
+
+## Proveedores de anime (VOD)
+
+Estos tres proveedores son **VOD** (`kind: "vod"`): no emiten en directo, sirven
+episodios concretos. Comparten la misma forma y por eso la plomería está en dos
+módulos en vez de repetirse:
+
+| Módulo | Responsabilidad |
+| --- | --- |
+| `_animekit.py` | id `proveedor:slug[:temporada]:episodio`, lectura de los literales JS (`var videos = […]`), base64 de los embeds, etiquetas de los streams y búsqueda por nombre. |
+| `_hosters.py` | convertir la URL de un servidor (Streamwish, VOE, Filemoon, Mixdrop, Streamtape, Mp4upload, YourUpload, Okru, Doodstream…) en un `.m3u8`/`.mp4` reproducible, incluido el desempaquetado del JS empaquetado. |
+
+### Formato de los ids
+
+```
+animeflv:one-piece:1180               episodio
+animeflv:one-piece:1:1180             temporada:episodio (lo que manda Stremio)
+monoschinos:one-piece-sub-espanol:1   slug del sitio + episodio
+https://www3.animeflv.net/ver/one-piece-1180
+```
+
+Se piden en `GET /stream/anime/<id>.json`. La respuesta trae **un stream por
+servidor resuelto**, en el orden del sitio (que es el que va de mejor a peor),
+así que ExoPlayer hace failover de servidor a servidor sin cambiar de episodio:
+
+```
+"AnimeFLV · One Piece · Ep. 1180 · Streamwish"     ← Señal 1
+"AnimeFLV · One Piece · Ep. 1180 · Filemoon"       ← Señal 2
+"AnimeFLV · One Piece · Ep. 1180 · VOE"            ← Señal 3
+```
+
+Los servidores que sólo alojan archivos (Mega, Mediafire, 1fichier) no son
+reproducibles: se descartan y se listan en `meta.unresolved`, junto con los que
+estaban caídos. Si la página no expone nada, la respuesta es
+`{"streams": [], "meta": {"reason": …}}` y el addon sigue con el proveedor
+siguiente.
+
+## Proveedor incluido: `animeflv.py`
+
+Scraper de **https://www3.animeflv.net/**. Prioridad **6**.
+
+```
+/ver/one-piece-1180                   ← 1. página del episodio
+      │  var videos = [{server:"stape", code:"aHR0cHM6…"}, …]   (embed en base64)
+      ▼
+https://streamtape.com/e/…            ← 2. embed del servidor
+      ▼
+https://cdn…/index.m3u8?s=…           ← 3. señal (.m3u8 o .mp4)
+```
+
+* La lista viene en `var videos`, con el embed **en base64** en `code`; también
+  se aceptan `url`, `embed` y `file`.
+* `var episodes = [[n, "slug-n"]]` se lee para `--list` y para el respaldo.
+* Si el slug del id no existe, se resuelve por la búsqueda del sitio
+  (`/browse?q=…`).
+* Si el sitio devuelve un reto anti-bot, el motivo es `blocked` (no se insiste:
+  reintentar empeora el bloqueo).
+
+```bash
+npm run anime:animeflv                      # últimos episodios + ids
+npm run anime:animeflv -- --query "one piece"
+npm run anime:animeflv -- --query "one piece" --json
+curl -s "http://localhost:7000/stream/anime/animeflv:one-piece:1180.json" | jq
+```
+
+## Proveedor incluido: `jkanime.py`
+
+Scraper de **https://jkanime.net/**. Prioridad **7**.
+
+```
+/one-piece/1180/                      ← 1. página del episodio
+      │  var servers = [{server:"Desu", remote:"aHR0cHM6…", lang:"sub"}, …]
+      │  video[0] = '<iframe src="…">'
+      ▼
+https://voe.sx/e/…                    ← 2. embed (VOE redirige por JavaScript)
+      ▼
+https://cdn…/index.m3u8               ← 3. señal
+```
+
+* `remote` viene en base64; `var remote = "https://c1.jkplayers.com"` son los
+  enlaces de **descarga** (`/d/<slug>`) y se ignoran a propósito.
+* Los reproductores sueltos (`video[N] = '<iframe …>'`) también se leen.
+* El `<h1>` es `Episodio 1180 Japones - One Piece`: se limpia hasta `One Piece`.
+
+```bash
+npm run anime:jkanime
+npm run anime:jkanime -- --query "one piece"
+curl -s "http://localhost:7000/stream/anime/jkanime:one-piece:1180.json" | jq
+```
+
+## Proveedor incluido: `monoschinos.py`
+
+Scraper de **https://monoschinos.st/** (antes `monoschinos2.com`; el dominio
+cambia, por eso `MONOSCHINOS_BASE` es configurable). Prioridad **8**.
+
+```
+/ver/one-piece-episodio-1             ← 1. página del episodio
+      │  <button data-player="tok…">voe</button>   (un botón por servidor)
+      ▼
+/reproductor?url=tok…                 ← 2. el sitio canjea el token
+      │  → <script>window.location = atob("aHR0cHM6…")</script>
+      ▼
+https://voe.sx/e/…                    ← 3. embed → .m3u8 / .mp4
+```
+
+* `data-player` puede ser un token opaco (se canjea en `/reproductor`) o ya una
+  URL/base64 de la URL: se aceptan los tres casos.
+* Los botones de descarga (Mega, Mediafire, 1fichier) se filtran antes de
+  resolver.
+
+```bash
+npm run anime:monoschinos
+npm run anime:monoschinos -- --query "one piece"
+curl -s "http://localhost:7000/stream/anime/monoschinos:one-piece-sub-espanol:1.json" | jq
+```
+
+### Qué servidores se pueden resolver
+
+| Servidor | Cómo |
+| --- | --- |
+| HLS (`/play/<id>`) | se pide `/m3u8/<id>` |
+| Streamwish, Vidhide, VOE, Filemoon (variante plana) | `sources`/`file` en el HTML, también si vienen empaquetados con `eval(function(p,a,c,k,e,d)…)` |
+| Mixdrop | `MDCore.wurl` tras desempaquetar |
+| Streamtape | `id="ideoooolink"` + `token=` |
+| Mp4upload, Uqload, Obeywish | `src:`/`file:` con `.mp4` |
+| YourUpload | `<meta property="og:video">` |
+| Okru | `data-options` → `hlsMasterPlaylistUrl` |
+| Doodstream | mejor esfuerzo (`window.location`, `/pass_md5/`) |
+| Mega, Mediafire, 1fichier | **no**: no son reproducibles, se descartan |
+
+### Variables de entorno comunes (opcionales)
+
+| Variable | Default | Descripción |
+| --- | --- | --- |
+| `ANIMEFLV_BASE` / `JKANIME_BASE` / `MONOSCHINOS_BASE` | los dominios oficiales | Base del sitio (los tests usan un fixture local). |
+| `*_EPISODE_PATH` | `/ver/{slug}-{episode}`, `/{slug}/{episode}/`, `/ver/{slug}-episodio-{episode}` | Plantilla de la página del episodio. |
+| `*_SEARCH_PATH` | `/browse?q={query}`, `/buscar/{query}/`, `/buscar?q={query}` | Búsqueda por nombre. |
+| `*_MAX_SERVERS` | `6` | Servidores que se intentan por episodio. |
+| `*_PARALLEL` | `4` | Resoluciones simultáneas. |
+
+Las plantillas se pueden sobreescribir sin tocar código: si el sitio renombra
+`/ver/` o cambia el buscador, basta con ajustar la variable.
+
+### Pruebas
+
+Cada proveedor tiene su fixture HTTP local (página del episodio → embeddings →
+`.m3u8`/`.mp4`), sin red:
+
+```bash
+node --test test/animeflv.test.js
+node --test test/jkanime.test.js
+node --test test/monoschinos.test.js
+```
+
+Los fixtures cubren base64, literales JS con claves sin comillas, reproductores
+empaquetados, redirects por JavaScript, servidores caídos y de descarga, el
+respaldo por búsqueda y la degradación a `{"streams": []}`.
+
+> ⚠️ Los tres leen páginas públicas y no alojan ni redistribuyen contenido.
+> Úsalos con autorización y respetando los términos de cada sitio y la ley de
+> tu país. Los dominios y los servidores de estos sitios cambian a menudo: si un
+> proveedor devuelve `no_servers`, lo primero es abrir el episodio en el
+> navegador y comprobar la ruta/variables de entorno.
 
 ## Dependencias Python
 

@@ -73,7 +73,12 @@ server/
 │   ├── template_provider.py     # plantilla para un sitio real
 │   ├── tvenvivo.py              # proveedor real: tvenvivo.org (live)
 │   ├── deportelibre.py          # proveedor real: deportelibre.top (live)
-│   └── futbolibre.py            # proveedor real: futbolibre.live (live)
+│   ├── futbolibre.py            # proveedor real: futbolibre.live (live)
+│   ├── _hosters.py              # resolutor de servidores de video (Streamwish, VOE…)
+│   ├── _animekit.py             # ids/literales JS/base64 comunes a los de anime
+│   ├── animeflv.py              # proveedor real: animeflv.net (vod)
+│   ├── jkanime.py               # proveedor real: jkanime.net (vod)
+│   └── monoschinos.py           # proveedor real: monoschinos.st (vod)
 ├── scripts/
 │   ├── cache-stats.js           # métricas de caché en vivo
 │   └── bridge-demo.js           # probar un scraper sin HTTP
@@ -328,6 +333,43 @@ devuelve una entrada por señal, se descarta el parámetro `ip` del CDN y los
 tokens caducados van al final marcados `· token caducado`. Detalles en
 [`scrapers/README.md`](scrapers/README.md#proveedor-incluido-futbolibrep).
 
+### Proveedores reales de anime (VOD)
+
+Tres proveedores `kind: "vod"` sirven episodios de anime, en este orden de
+prioridad: **`animeflv` 6 → `jkanime` 7 → `monoschinos` 8**.
+
+| Proveedor | Sitio | Id de ejemplo |
+| --- | --- | --- |
+| `animeflv` | [animeflv.net](https://www3.animeflv.net/) | `animeflv:one-piece:1180` |
+| `jkanime` | [jkanime.net](https://jkanime.net/) | `jkanime:one-piece:1180` |
+| `monoschinos` | [monoschinos.st](https://monoschinos.st/) | `monoschinos:one-piece-sub-espanol:1` |
+
+Se piden como cualquier contenido de Stremio:
+
+```bash
+curl -s "http://localhost:7000/stream/anime/animeflv:one-piece:1180.json" | jq
+curl -s "http://localhost:7000/stream/anime/jkanime:one-piece:1180.json" | jq
+curl -s "http://localhost:7000/stream/anime/monoschinos:one-piece-sub-espanol:1.json" | jq
+npm run anime:animeflv -- --query "one piece"   # buscar e imprimir ids
+npm run anime:jkanime
+npm run anime:monoschinos
+```
+
+Cada episodio devuelve **un stream por servidor resuelto** (Streamwish, VOE,
+Filemoon, Streamtape, Mp4upload…), en el orden del sitio, así que el failover de
+ExoPlayer también sirve cuando un servidor está caído:
+
+```
+"AnimeFLV · One Piece · Ep. 1180 · Streamwish"   ← Señal 1
+"AnimeFLV · One Piece · Ep. 1180 · Filemoon"     ← Señal 2
+```
+
+La plomería compartida vive en `scrapers/_animekit.py` (ids, literales JS,
+base64, etiquetas) y `scrapers/_hosters.py` (resolución de cada servidor). Los
+hosting de archivos (Mega, Mediafire) no son reproducibles: se descartan y se
+anotan en `meta.unresolved`. Detalles y variables de entorno en
+[`scrapers/README.md`](scrapers/README.md#proveedores-de-anime-vod).
+
 Agregar un proveedor real:
 
 1. Copia `scrapers/template_provider.py` a `scrapers/mi_sitio.py` y ajusta la
@@ -404,6 +446,8 @@ Agregar un proveedor real:
 | `FUTBOLIBRE_AGENDA_URL` | `https://la18hd.su/eventos/json/agenda123.json` | Agenda de partidos con sus señales. |
 | `FUTBOLIBRE_INDEX_TTL_SECONDS` / `FUTBOLIBRE_AGENDA_TTL_SECONDS` | `21600` / `600` | TTL del catálogo de canales y de la agenda. |
 | `FUTBOLIBRE_MAX_SIGNALS` / `FUTBOLIBRE_MAX_DEPTH` | `6` / `2` | Señales por contenido y saltos por reproductor. |
+| `ANIMEFLV_BASE` / `JKANIME_BASE` / `MONOSCHINOS_BASE` | dominios oficiales | Base de cada sitio de anime (los tests usan un fixture local). |
+| `ANIMEFLV_MAX_SERVERS` / `JKANIME_MAX_SERVERS` / `MONOSCHINOS_MAX_SERVERS` | `6` | Servidores que se intentan por episodio. |
 
 Todas se pueden poner en `server/.env` (se carga automáticamente, sin
 dependencias) o inyectarlas desde el orquestador.
@@ -416,7 +460,7 @@ dependencias) o inyectarlas desde el orquestador.
 npm test
 ```
 
-61 pruebas con `node:test`:
+91 pruebas con `node:test`:
 
 - caché: TTL, expiración, stale, LRU, *single-flight*, caché negativa;
 - protocolo: manifest, forma del stream, cabeceras, ids, calidades, HLS, SSRF;
@@ -432,7 +476,11 @@ npm test
 - `futbolibre.py`: fixture canal → `/en-vivo/<slug>` → reproductor del backend,
   salto `sw3.html?get=`, agenda con señales duplicadas (agrupadas y
   deduplicadas), parámetro `ip` descartado, token caducado al final, agenda
-  inalcanzable sin romper y `--list` de canales + partidos.
+  inalcanzable sin romper y `--list` de canales + partidos;
+- `animeflv.py` / `jkanime.py` / `monoschinos.py`: fixtures por sitio (página del
+  episodio → lista de servidores en base64 → embed → `.m3u8`/`.mp4`), incluidos
+  el JS empaquetado, el redirect por JavaScript de VOE, los servidores de
+  descarga o caídos, el respaldo por búsqueda y la degradación a `streams: []`.
 
 ---
 

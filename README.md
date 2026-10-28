@@ -91,15 +91,31 @@ through the official Addon protocol:
 - In-memory TTL cache (2 h live / 6 h VOD) with single-flight and
   stale-while-revalidate: a cached live `.m3u8` is served in a few milliseconds.
 - Python scraper bridge (`child_process.spawn`) invoked only on cache misses.
-- Three real providers ship in `server/scrapers/`, all `kind: "live"` and
-  ordered by priority (`futbolibre` 3 → `deportelibre` 4 → `tvenvivo` 5):
-  - `futbolibre.py` — [futbolibre.live](https://futbolibre.live/): Mexican
-    sports channels (`tv:futbolibre:espn-1`) plus the daily match agenda where
-    every match yields several signals (`tv:futbolibre:evento:<slug>`);
-  - `deportelibre.py` — [deportelibre.top](https://deportelibre.top/):
+- Six real providers ship in `server/scrapers/`, ordered by priority.
+
+  **Live** (`kind: "live"`, requested as `tv:<id>`):
+
+  - `futbolibre.py` — [futbolibre.live](https://futbolibre.live/) (priority 3):
+    Mexican sports channels (`tv:futbolibre:espn-1`) plus the daily match agenda
+    where every match yields several signals
+    (`tv:futbolibre:evento:<slug>`);
+  - `deportelibre.py` — [deportelibre.top](https://deportelibre.top/) (4):
     24/7 channel catalogue (`tv:deportelibre:stream-01`);
-  - `tvenvivo.py` — [tvenvivo.org](https://www.tvenvivo.org/): live TV/sports
-    (`tv:tvenvivo:espn-2`).
+  - `tvenvivo.py` — [tvenvivo.org](https://www.tvenvivo.org/) (5): live
+    TV/sports (`tv:tvenvivo:espn-2`).
+
+  **Anime** (`kind: "vod"`, requested as `anime:<id>`):
+
+  - `animeflv.py` — [animeflv.net](https://www3.animeflv.net/) (6):
+    `animeflv:one-piece:1180`;
+  - `jkanime.py` — [jkanime.net](https://jkanime.net/) (7):
+    `jkanime:one-piece:1180`;
+  - `monoschinos.py` — [monoschinos.st](https://monoschinos.st/) (8):
+    `monoschinos:one-piece-sub-espanol:1`.
+
+  The anime providers return **one stream per resolved server** (Streamwish,
+  VOE, Filemoon, Streamtape…), in the site's order, so the ExoPlayer failover
+  also covers a dead file host.
 
 ```bash
 cd server
@@ -107,9 +123,11 @@ npm install
 npm start
 # manifest → http://localhost:7000/manifest.json
 # live channel → http://localhost:7000/stream/tv/tv:futbolibre:espn-1.json
+# anime episode → http://localhost:7000/stream/anime/animeflv:one-piece:1180.json
 npm run channels:futbolibre   # list channels + matches with ready-to-use ids
 npm run channels:deportelibre
 npm run channels:tvenvivo
+npm run anime:animeflv        # list episodes + ids (also jkanime, monoschinos)
 ```
 
 These scrapers only read public pages: nothing is hosted or redistributed here.

@@ -16,7 +16,10 @@
     "bridge:demo": "node scripts/bridge-demo.js",
     "channels:tvenvivo": "python3 scrapers/tvenvivo.py --list",
     "channels:deportelibre": "python3 scrapers/deportelibre.py --list",
-    "channels:futbolibre": "python3 scrapers/futbolibre.py --list"
+    "channels:futbolibre": "python3 scrapers/futbolibre.py --list",
+    "anime:animeflv": "python3 scrapers/animeflv.py --list",
+    "anime:jkanime": "python3 scrapers/jkanime.py --list",
+    "anime:monoschinos": "python3 scrapers/monoschinos.py --list"
   },
   "dependencies": {
     "cors": "^2.8.5",
