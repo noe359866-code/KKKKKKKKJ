@@ -1,0 +1,32 @@
+{
+  "name": "streamflix-stremio-addon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lightweight Stremio Addon backend for Android TV / ExoPlayer with TTL cache, Python scrapers bridge and priority-based failover.",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20.12.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "LOG_LEVEL=error NODE_ENV=test node --test",
+    "cache:stats": "node scripts/cache-stats.js",
+    "bridge:demo": "node scripts/bridge-demo.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  },
+  "keywords": [
+    "stremio",
+    "stremio-addon",
+    "android-tv",
+    "exoplayer",
+    "iptv",
+    "hls",
+    "m3u8"
+  ],
+  "license": "Apache-2.0"
+}

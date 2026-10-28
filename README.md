@@ -27,6 +27,7 @@
 - [Getting started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Setup](#setup)
+- [Stremio addon backend (Node.js)](#stremio-addon-backend-nodejs)
 - [Development](#development)
 - [Contributing](#contributing)
 - [Legal Disclaimer](#legal-disclaimer)
@@ -77,6 +78,30 @@ The interface aggregates content from multiple sources and provides a convenient
 - MVVM Architecture
 - Android Architecture Components
 
+
+## Stremio addon backend (Node.js)
+
+`server/` contains a lightweight Node.js + Express backend that exposes this
+catalogue to any Stremio-compatible client (including the Android TV app)
+through the official Addon protocol:
+
+- `GET /manifest.json` — declares `movie`, `series`, `anime` and `tv`.
+- `GET /stream/:type/:id.json` — returns `streams` ordered by provider
+  priority so ExoPlayer can fail over (source 1 → 2 → 3).
+- In-memory TTL cache (2 h live / 6 h VOD) with single-flight and
+  stale-while-revalidate: a cached live `.m3u8` is served in a few milliseconds.
+- Python scraper bridge (`child_process.spawn`) invoked only on cache misses.
+
+```bash
+cd server
+npm install
+npm start
+# manifest → http://localhost:7000/manifest.json
+```
+
+See [`server/README.md`](server/README.md) for the full documentation
+(architecture, environment variables, cache internals, adding providers,
+tests and Docker).
 
 ## Getting started
 

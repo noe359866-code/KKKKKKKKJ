@@ -1,0 +1,32 @@
+# docker compose para el backend Stremio (añadir al servidor/TV box).
+# Uso:  cp .env.example .env && docker compose up -d --build
+services:
+  addon:
+    build: .
+    image: streamflix-addon:latest
+    container_name: streamflix-addon
+    restart: unless-stopped
+    ports:
+      - "${PORT:-7000}:7000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 7000
+      SCRAPER_DIR: /app/scrapers
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:7000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

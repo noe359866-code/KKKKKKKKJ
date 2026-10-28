@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log
+.env
+.env.*
+!.env.example
+test
+coverage
+.git
+.gitignore
+Dockerfile
+.dockerignore
+*.md
+__pycache__
+*.pyc

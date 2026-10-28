@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+
+# secrets / local config
+.env
+.env.*
+!.env.example
+
+# logs & runtime junk
+*.log
+logs/
+coverage/
+.nyc_output/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
