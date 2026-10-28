@@ -37,6 +37,7 @@ Reglas:
 | `example_provider.py` | Demo con streams públicos (Mux / Google samples). Verifica el pipeline completo. |
 | `template_provider.py` | Plantilla comentada para un sitio real (urllib + regex, sin dependencias). |
 | `tvenvivo.py` | **Proveedor real** de `www.tvenvivo.org` (TV/deportes en directo, LATAM). Ver la sección siguiente. |
+| `deportelibre.py` | **Proveedor real** de `deportelibre.top` (agenda deportiva + canales 24/7). Ver su sección. |
 
 ## Añadir un proveedor
 
@@ -149,6 +150,95 @@ resto y el addon nunca devuelve un 500.
 > ⚠️ Este scraper sólo lee páginas públicas del sitio y no aloja ni
 > redistribuye contenido. Úsalo únicamente si tienes autorización para ello y
 > respetando los términos del sitio y la ley de tu país.
+
+## Proveedor incluido: `deportelibre.py`
+
+Scraper real de **https://deportelibre.top/** (agenda deportiva y canales 24/7).
+Viene habilitado con `kind: "live"` y prioridad **4**.
+
+### Cómo publica el sitio la señal
+
+```
+/stream/                              ← 1. catálogo de canales 24/7
+      │  <a href="/total/stream-01.php">▶ Ver canal</a>   … ESPN
+      ▼
+/total/stream-01.php                  ← 2. página del canal: opciones
+      │  /en-vivo-online/espn/embed2.php  (Opción 1)
+      │  /en-vivo-online/espn/embed3.php  (Opción 2)
+      │  /en-vivo-online/espn/embed.php   ((VPN AR))
+      ▼
+reproductor Clappr                    ← 3. la URL del CDN va en el JS
+      │  var src="https://host:8443/hls/<ref>.m3u8?s=<token>&e=<caducidad>"
+      ▼
+https://host:8443/hls/<ref>.m3u8?s=…&e=…   ← señal final (HLS con token)
+```
+
+Dos detalles importantes del sitio:
+
+1. **El JS viene empaquetado** con `eval(function(p,a,c,k,e,d){…})`, y el
+   empaquetador sustituye el esquema por un índice de su tabla, así que en el
+   HTML se lee `46://host/…`. El scraper **desempaqueta** el bloque (y, si la
+   tabla no se puede recuperar, normaliza `46://` → `https://`).
+2. Algunas variantes del mismo backend publican la señal como JSON
+   (`{"stream_url": …, "stream_url_nop2p": …, "p2p": true}`). Ambas formas se
+   reconocen, igual que los tokens con `&amp;` y las barras escapadas.
+
+Cada opción se descarga en paralelo (máx. `DEPORTELIBRE_MAX_OPTIONS`), se
+deduplica y se devuelve **una entrada por opción**; los tokens caducados
+(`e=<epoch>` en el pasado) se marcan `· token caducado` y van al final.
+
+### IDs aceptados
+
+| Forma | Ejemplo |
+| --- | --- |
+| id de Stremio (recomendado) | `tv:deportelibre:stream-01` |
+| prefijo del proveedor | `deportelibre:stream-387` |
+| id del catálogo | `stream-387` |
+| slug del sitio | `espn-premium` |
+| página del canal | `https://deportelibre.top/total/stream-387.php` |
+| nombre libre | `ESPN Premium`, `liga 1 max` (se busca en el catálogo) |
+
+```bash
+curl -s "http://localhost:7000/stream/tv/tv:deportelibre:stream-01.json" | jq
+```
+
+### Listar los canales disponibles
+
+```bash
+cd server
+npm run channels:deportelibre                  # nombre + id listo para Stremio
+npm run channels:deportelibre -- --query espn  # filtrar
+npm run channels:deportelibre -- --json        # JSON
+npm run channels:deportelibre -- --refresh     # ignorar la caché del catálogo
+```
+
+El catálogo se cachea en disco (`/tmp/streamflix-deportelibre-index.json`) 6 h.
+
+### Variables de entorno (opcionales)
+
+| Variable | Default | Descripción |
+| --- | --- | --- |
+| `DEPORTELIBRE_BASE` | `https://deportelibre.top` | Base del sitio (los tests usan un fixture local). |
+| `DEPORTELIBRE_CHANNELS_PATH` | `/stream/` | Ruta del catálogo de canales. |
+| `DEPORTELIBRE_INDEX_TTL_SECONDS` | `21600` | TTL del catálogo (`0` = sin caché). |
+| `DEPORTELIBRE_INDEX_CACHE` | `/tmp/streamflix-deportelibre-index.json` | Ruta del catálogo. |
+| `DEPORTELIBRE_MAX_OPTIONS` | `4` | Opciones de reproducción por canal. |
+| `DEPORTELIBRE_MAX_DEPTH` | `2` | Saltos dentro de cada reproductor. |
+| `DEPORTELIBRE_MAX_DOCS` | `12` | Documentos totales por consulta. |
+
+### Pruebas
+
+`test/deportelibre.test.js` reproduce el sitio con un fixture HTTP local
+(catálogo → página del canal → reproductor empaquetado / JSON → `.m3u8`) y no
+usa la red:
+
+```bash
+node --test test/deportelibre.test.js
+```
+
+> ⚠️ Igual que `tvenvivo.py`, sólo lee páginas públicas y no aloja ni
+> redistribuye contenido. Úsalo con autorización y respetando los términos del
+> sitio y la ley de tu país.
 
 ## Dependencias Python
 

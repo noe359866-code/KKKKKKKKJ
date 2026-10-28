@@ -70,7 +70,8 @@ server/
 │   ├── _base.py                 # contrato stdin/stdout + helpers
 │   ├── example_provider.py      # demo con streams públicos de prueba
 │   ├── template_provider.py     # plantilla para un sitio real
-│   └── tvenvivo.py              # proveedor real: tvenvivo.org (live)
+│   ├── tvenvivo.py              # proveedor real: tvenvivo.org (live)
+│   └── deportelibre.py          # proveedor real: deportelibre.top (live)
 ├── scripts/
 │   ├── cache-stats.js           # métricas de caché en vivo
 │   └── bridge-demo.js           # probar un scraper sin HTTP
@@ -283,6 +284,26 @@ Cómo lo resuelve: página del canal → mapa JavaScript `SOURCES` →
 entrada por opción**. Detalles y variables de entorno en
 [`scrapers/README.md`](scrapers/README.md#proveedor-incluido-tvenvivopy).
 
+### Proveedor real incluido: `deportelibre.py`
+
+`scrapers/deportelibre.py` scrapea **https://deportelibre.top/** (agenda
+deportiva y canales 24/7). Habilitado con prioridad **4**:
+
+```bash
+curl -s "http://localhost:7000/stream/tv/tv:deportelibre:stream-01.json" | jq
+npm run channels:deportelibre      # catálogo + ids tv:deportelibre:<id>
+npm run bridge:demo -- deportelibre.py '{"type":"tv","id":"tv:deportelibre:stream-01","isLive":true}'
+```
+
+Cadena de resolución: catálogo `/stream/` → `/total/stream-NN.php` → opciones
+`/en-vivo-online/<slug>/embedN.php` → reproductor **Clappr**. La URL del CDN
+vive dentro de un JS empaquetado (`eval(function(p,a,c,k,e,d)…)`), donde el
+esquema aparece como índice de su tabla (`46://host/…`): el scraper lo
+**desempaqueta** y, si la tabla no se puede recuperar, normaliza el esquema.
+También entiende la variante JSON (`stream_url` / `stream_url_nop2p`) y los
+tokens con caducidad (`?s=…&e=<epoch>`), que marca y deja al final. Detalles en
+[`scrapers/README.md`](scrapers/README.md#proveedor-incluido-deportelibrep).
+
 Agregar un proveedor real:
 
 1. Copia `scrapers/template_provider.py` a `scrapers/mi_sitio.py` y ajusta la
@@ -351,6 +372,10 @@ Agregar un proveedor real:
 | `TVENVIVO_INDEX_TTL_SECONDS` | `21600` | TTL del índice de canales (`0` = sin caché). |
 | `TVENVIVO_INDEX_CACHE` | `…/streamflix-tvenvivo-index.json` | Ruta del índice en disco. |
 | `TVENVIVO_MAX_DOCS` / `TVENVIVO_MAX_DEPTH` | `8` / `3` | Topes de documentos y saltos al resolver un reproductor. |
+| `DEPORTELIBRE_BASE` | `https://deportelibre.top` | Base del sitio (los tests usan un fixture local). |
+| `DEPORTELIBRE_CHANNELS_PATH` | `/stream/` | Catálogo de canales 24/7. |
+| `DEPORTELIBRE_INDEX_TTL_SECONDS` | `21600` | TTL del catálogo en disco (`0` = sin caché). |
+| `DEPORTELIBRE_MAX_OPTIONS` / `DEPORTELIBRE_MAX_DEPTH` | `4` / `2` | Opciones por canal y saltos por reproductor. |
 
 Todas se pueden poner en `server/.env` (se carga automáticamente, sin
 dependencias) o inyectarlas desde el orquestador.
@@ -363,7 +388,7 @@ dependencias) o inyectarlas desde el orquestador.
 npm test
 ```
 
-41 pruebas con `node:test`:
+51 pruebas con `node:test`:
 
 - caché: TTL, expiración, stale, LRU, *single-flight*, caché negativa;
 - protocolo: manifest, forma del stream, cabeceras, ids, calidades, HLS, SSRF;
@@ -372,7 +397,10 @@ npm test
   Python reales para validar `MISS → HIT` y la coalescencia de peticiones;
 - `tvenvivo.py`: fixture HTTP local que imita el sitio (página → `SOURCES` →
   wrapper → iframe → `.m3u8` escapado), ids aceptados, búsqueda por nombre,
-  descarte de anuncios, degradación a `{"streams":[]}` y caché del índice.
+  descarte de anuncios, degradación a `{"streams":[]}` y caché del índice;
+- `deportelibre.py`: fixture con el reproductor empaquetado (`46://…` → `https`),
+  variante JSON `stream_url`/`stream_url_nop2p`, tokens caducados al final,
+  opciones offline descartadas, resolución por nombre y catálogo en caché.
 
 ---
 
@@ -404,7 +432,7 @@ ordenado). El `HEALTHCHECK` consulta `/health`.
   instancias, sustituye `TtlCache` por Redis (`GET/SET EX` + `SET NX` para el
   *single-flight*) manteniendo la misma interfaz.
 - Desactiva o elimina los proveedores `demo-*` de `config/providers.json`
-  cuando conectes fuentes reales (`tvenvivo` ya es un proveedor real).
+  cuando conectes fuentes reales (`deportelibre` y `tvenvivo` ya lo son).
 
 ### Siguientes pasos sugeridos
 

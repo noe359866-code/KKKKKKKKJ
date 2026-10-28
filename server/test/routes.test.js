@@ -17,6 +17,10 @@ process.env.RATE_LIMIT_MAX = '0';
  * suite no dependa de la red externa. */
 process.env.TVENVIVO_BASE = 'http://127.0.0.1:1';
 process.env.TVENVIVO_INDEX_TTL_SECONDS = '0';
+/* Los proveedores reales están habilitados en config/providers.json:
+ * en los tests apuntan a un puerto cerrado para no depender de la red. */
+process.env.DEPORTELIBRE_BASE = 'http://127.0.0.1:1';
+process.env.DEPORTELIBRE_INDEX_TTL_SECONDS = '0';
 
 const { createApp } = await import('../src/app.js');
 const { loadProviders } = await import('../src/providers/index.js');
