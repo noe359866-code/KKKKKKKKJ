@@ -13,6 +13,10 @@ process.env.TVENVIVO_BASE = 'http://127.0.0.1:1';
 process.env.TVENVIVO_INDEX_TTL_SECONDS = '0';
 /* Los proveedores reales están habilitados en config/providers.json:
  * en los tests apuntan a un puerto cerrado para no depender de la red. */
+process.env.FUTBOLIBRE_BASE = 'http://127.0.0.1:1';
+process.env.FUTBOLIBRE_AGENDA_URL = 'http://127.0.0.1:1/agenda.json';
+process.env.FUTBOLIBRE_INDEX_TTL_SECONDS = '0';
+process.env.FUTBOLIBRE_AGENDA_TTL_SECONDS = '0';
 process.env.DEPORTELIBRE_BASE = 'http://127.0.0.1:1';
 process.env.DEPORTELIBRE_INDEX_TTL_SECONDS = '0';
 

@@ -91,18 +91,30 @@ through the official Addon protocol:
 - In-memory TTL cache (2 h live / 6 h VOD) with single-flight and
   stale-while-revalidate: a cached live `.m3u8` is served in a few milliseconds.
 - Python scraper bridge (`child_process.spawn`) invoked only on cache misses.
-- A real provider ships in `server/scrapers/tvenvivo.py`
-  ([tvenvivo.org](https://www.tvenvivo.org/), live TV/sports). Its channels are
-  addressed as `tv:tvenvivo:<slug>`.
+- Three real providers ship in `server/scrapers/`, all `kind: "live"` and
+  ordered by priority (`futbolibre` 3 → `deportelibre` 4 → `tvenvivo` 5):
+  - `futbolibre.py` — [futbolibre.live](https://futbolibre.live/): Mexican
+    sports channels (`tv:futbolibre:espn-1`) plus the daily match agenda where
+    every match yields several signals (`tv:futbolibre:evento:<slug>`);
+  - `deportelibre.py` — [deportelibre.top](https://deportelibre.top/):
+    24/7 channel catalogue (`tv:deportelibre:stream-01`);
+  - `tvenvivo.py` — [tvenvivo.org](https://www.tvenvivo.org/): live TV/sports
+    (`tv:tvenvivo:espn-2`).
 
 ```bash
 cd server
 npm install
 npm start
 # manifest → http://localhost:7000/manifest.json
-# live channel → http://localhost:7000/stream/tv/tv:tvenvivo:espn-2.json
-npm run channels:tvenvivo     # list channels + ready-to-use ids
+# live channel → http://localhost:7000/stream/tv/tv:futbolibre:espn-1.json
+npm run channels:futbolibre   # list channels + matches with ready-to-use ids
+npm run channels:deportelibre
+npm run channels:tvenvivo
 ```
+
+These scrapers only read public pages: nothing is hosted or redistributed here.
+Use them with authorization and in line with each site's terms and your local
+law.
 
 See [`server/README.md`](server/README.md) for the full documentation
 (architecture, environment variables, cache internals, adding providers,

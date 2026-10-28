@@ -68,10 +68,12 @@ server/
 ├── public/index.html            # landing con estado del servidor
 ├── scrapers/
 │   ├── _base.py                 # contrato stdin/stdout + helpers
+│   ├── _htmlkit.py              # kit común: deadline, unpack JS, media_urls
 │   ├── example_provider.py      # demo con streams públicos de prueba
 │   ├── template_provider.py     # plantilla para un sitio real
 │   ├── tvenvivo.py              # proveedor real: tvenvivo.org (live)
-│   └── deportelibre.py          # proveedor real: deportelibre.top (live)
+│   ├── deportelibre.py          # proveedor real: deportelibre.top (live)
+│   └── futbolibre.py            # proveedor real: futbolibre.live (live)
 ├── scripts/
 │   ├── cache-stats.js           # métricas de caché en vivo
 │   └── bridge-demo.js           # probar un scraper sin HTTP
@@ -304,6 +306,28 @@ También entiende la variante JSON (`stream_url` / `stream_url_nop2p`) y los
 tokens con caducidad (`?s=…&e=<epoch>`), que marca y deja al final. Detalles en
 [`scrapers/README.md`](scrapers/README.md#proveedor-incluido-deportelibrep).
 
+### Proveedor real incluido: `futbolibre.py`
+
+`scrapers/futbolibre.py` scrapea **https://futbolibre.live/** (canales
+deportivos de México y agenda de partidos). Habilitado con prioridad **3**, la
+más alta de los proveedores reales, así que sus señales encabezan el failover:
+
+```bash
+curl -s "http://localhost:7000/stream/tv/tv:futbolibre:espn-1.json" | jq
+curl -s "http://localhost:7000/stream/tv/tv:futbolibre:evento:liga-1-cienciano-vs-atletico-grau.json" | jq
+npm run channels:futbolibre        # canales + agenda de hoy, con sus ids
+npm run channels:futbolibre -- --events --query liga
+npm run bridge:demo -- futbolibre.py '{"type":"tv","id":"tv:futbolibre:espn-1","isLive":true}'
+```
+
+Cadena de resolución: tarjeta del canal → `/en-vivo/<slug>` → reproductor del
+backend (`la18hd.su/vivo/canal.php?stream=…`, a veces tras un salto
+`sw3.html?get=…`) → `.m3u8` dentro del JS. La agenda
+(`/eventos/json/agenda123.json`) agrupa **varias señales por partido**: se
+devuelve una entrada por señal, se descarta el parámetro `ip` del CDN y los
+tokens caducados van al final marcados `· token caducado`. Detalles en
+[`scrapers/README.md`](scrapers/README.md#proveedor-incluido-futbolibrep).
+
 Agregar un proveedor real:
 
 1. Copia `scrapers/template_provider.py` a `scrapers/mi_sitio.py` y ajusta la
@@ -376,6 +400,10 @@ Agregar un proveedor real:
 | `DEPORTELIBRE_CHANNELS_PATH` | `/stream/` | Catálogo de canales 24/7. |
 | `DEPORTELIBRE_INDEX_TTL_SECONDS` | `21600` | TTL del catálogo en disco (`0` = sin caché). |
 | `DEPORTELIBRE_MAX_OPTIONS` / `DEPORTELIBRE_MAX_DEPTH` | `4` / `2` | Opciones por canal y saltos por reproductor. |
+| `FUTBOLIBRE_BASE` | `https://futbolibre.live` | Base del sitio de canales (los tests usan un fixture local). |
+| `FUTBOLIBRE_AGENDA_URL` | `https://la18hd.su/eventos/json/agenda123.json` | Agenda de partidos con sus señales. |
+| `FUTBOLIBRE_INDEX_TTL_SECONDS` / `FUTBOLIBRE_AGENDA_TTL_SECONDS` | `21600` / `600` | TTL del catálogo de canales y de la agenda. |
+| `FUTBOLIBRE_MAX_SIGNALS` / `FUTBOLIBRE_MAX_DEPTH` | `6` / `2` | Señales por contenido y saltos por reproductor. |
 
 Todas se pueden poner en `server/.env` (se carga automáticamente, sin
 dependencias) o inyectarlas desde el orquestador.
@@ -388,7 +416,7 @@ dependencias) o inyectarlas desde el orquestador.
 npm test
 ```
 
-51 pruebas con `node:test`:
+61 pruebas con `node:test`:
 
 - caché: TTL, expiración, stale, LRU, *single-flight*, caché negativa;
 - protocolo: manifest, forma del stream, cabeceras, ids, calidades, HLS, SSRF;
@@ -400,7 +428,11 @@ npm test
   descarte de anuncios, degradación a `{"streams":[]}` y caché del índice;
 - `deportelibre.py`: fixture con el reproductor empaquetado (`46://…` → `https`),
   variante JSON `stream_url`/`stream_url_nop2p`, tokens caducados al final,
-  opciones offline descartadas, resolución por nombre y catálogo en caché.
+  opciones offline descartadas, resolución por nombre y catálogo en caché;
+- `futbolibre.py`: fixture canal → `/en-vivo/<slug>` → reproductor del backend,
+  salto `sw3.html?get=`, agenda con señales duplicadas (agrupadas y
+  deduplicadas), parámetro `ip` descartado, token caducado al final, agenda
+  inalcanzable sin romper y `--list` de canales + partidos.
 
 ---
 
@@ -432,7 +464,7 @@ ordenado). El `HEALTHCHECK` consulta `/health`.
   instancias, sustituye `TtlCache` por Redis (`GET/SET EX` + `SET NX` para el
   *single-flight*) manteniendo la misma interfaz.
 - Desactiva o elimina los proveedores `demo-*` de `config/providers.json`
-  cuando conectes fuentes reales (`deportelibre` y `tvenvivo` ya lo son).
+  cuando conectes fuentes reales (`futbolibre`, `deportelibre` y `tvenvivo` ya lo son).
 
 ### Siguientes pasos sugeridos
 

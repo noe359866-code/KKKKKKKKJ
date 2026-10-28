@@ -34,10 +34,12 @@ Reglas:
 | Archivo | Uso |
 | --- | --- |
 | `_base.py` | Helpers compartidos: lectura de stdin, emisión de JSON, `stream()`. |
+| `_htmlkit.py` | Kit común de scraping: `Deadline`/`Budget`, `http_get`, desempaquetado de JS, `media_urls`, `sanitize_media`, tokens. |
 | `example_provider.py` | Demo con streams públicos (Mux / Google samples). Verifica el pipeline completo. |
 | `template_provider.py` | Plantilla comentada para un sitio real (urllib + regex, sin dependencias). |
 | `tvenvivo.py` | **Proveedor real** de `www.tvenvivo.org` (TV/deportes en directo, LATAM). Ver la sección siguiente. |
 | `deportelibre.py` | **Proveedor real** de `deportelibre.top` (agenda deportiva + canales 24/7). Ver su sección. |
+| `futbolibre.py` | **Proveedor real** de `futbolibre.live` (canales 24/7 de México + agenda de partidos con varias señales). Ver su sección. |
 
 ## Añadir un proveedor
 
@@ -45,6 +47,12 @@ Reglas:
 cp scrapers/template_provider.py scrapers/mi_sitio.py
 # edita mi_sitio.py: url de búsqueda, parseo del player, calidad…
 ```
+
+Si el sitio es como los de arriba (página → iframe/player → `.m3u8`), no
+escribas la plomería otra vez: `_htmlkit.py` ya trae los presupuestos
+(`Deadline`, `Budget`), `http_get` con timeout, el desempaquetado de JS
+(`unpack_js`), `media_urls()` / `player_links()` y `sanitize_media()`.
+`futbolibre.py` es el ejemplo más corto de un proveedor completo.
 
 ```jsonc
 // server/config/providers.json
@@ -237,6 +245,120 @@ node --test test/deportelibre.test.js
 ```
 
 > ⚠️ Igual que `tvenvivo.py`, sólo lee páginas públicas y no aloja ni
+> redistribuye contenido. Úsalo con autorización y respetando los términos del
+> sitio y la ley de tu país.
+
+## Proveedor incluido: `futbolibre.py`
+
+Scraper real de **https://futbolibre.live/** ("Fútbol Libre" / "Pelota Libre TV").
+Viene habilitado con `kind: "live"` y prioridad **3** (antes que `deportelibre`
+y `tvenvivo`, así que sus señales aparecen primero en el array de Stremio).
+
+Cubre dos catálogos distintos:
+
+* **canales 24/7** de México (`/en-vivo/<slug>`): ESPN 1/2/3, FOX Sports 1/2/3,
+  FOX Sports Premium y TUDN;
+* **agenda de partidos** del backend (`la18hd.su/eventos/json/agenda123.json`),
+  donde cada partido trae **varias señales** (una por proveedor).
+
+### Cómo publica el sitio la señal
+
+```
+/ y /deportes/                        ← 1. tarjetas de canal
+      │  <a href="/en-vivo/espn-1">ESPN 1 · Ver Canal</a>
+      ▼
+/en-vivo/espn-1/                      ← 2. la página sólo embebe el backend
+      │  <a href="https://la18hd.su/vivo/canal.php?stream=espnmx">Disabled</a>
+      │  (en otros canales: <iframe src="…/sw3.html?get=<reproductor>">)
+      ▼
+/vivo/canal.php?stream=espnmx         ← 3. reproductor: la URL va en el JS
+      │  var src="https://host/hls/<ref>/index.m3u8?s=<token>&e=<caducidad>&ip=<ip>"
+      ▼
+https://host/hls/<ref>/index.m3u8?s=…&e=…   ← señal final (HLS con token)
+```
+
+```
+la18hd.su/eventos/json/agenda123.json ← 1. agenda del día (JSON)
+      │  [{"title":"Liga 1: Cienciano vs Atlético Grau","category":"futbol",
+      │    "time":"19:00","status":"En vivo",
+      │    "link":"https://la18hd.su/vivo/canales.php?stream=liga1max"}, …]
+      ▼
+mismo reproductor (o tarjetarojita.xyz/sw3.html?get=…)
+      ▼
+una señal por enlace → failover dentro del mismo partido
+```
+
+Detalles que el scraper resuelve:
+
+1. **Un partido, varias señales**: el JSON repite el mismo título con enlaces de
+   distintos proveedores. Se agrupan por título (`slug`), se deduplican y se
+   devuelve **una entrada por señal**, en el orden de la agenda.
+2. **Parámetro `ip`**: el CDN añade `&ip=<ip del servidor>`. Se elimina, porque
+   está atado a quien descargó la página y no al televisor.
+3. **Saltos intermedios**: `sw3.html?get=https://…/repro/x.html` se desenvuelve y
+   se siguen los iframes (máx. `FUTBOLIBRE_MAX_DEPTH`).
+4. **Tokens caducados** (`e=<epoch>` en el pasado) se marcan `· token caducado`
+   y se devuelven al final, para que ExoPlayer no empiece por una señal muerta.
+5. El nombre de cada señal es `Canal · Señal N` (más el host del CDN cuando las
+   señales vienen de backends distintos), así el usuario ve el orden de failover.
+
+### IDs aceptados
+
+| Forma | Ejemplo |
+| --- | --- |
+| canal (recomendado) | `tv:futbolibre:espn-1` |
+| partido (recomendado) | `tv:futbolibre:evento:liga-1-cienciano-vs-atletico-grau` |
+| prefijo del proveedor | `futbolibre:tudn-mx` |
+| slug del canal | `fox-sports-premium`, `espn-3` |
+| id del partido | `evento:liga-1-cienciano-vs-atletico-grau` |
+| página del canal | `https://futbolibre.live/en-vivo/espn-1` |
+| nombre libre | `TUDN`, `Cienciano` (se busca en canales y en la agenda) |
+
+```bash
+curl -s "http://localhost:7000/stream/tv/tv:futbolibre:espn-1.json" | jq
+curl -s "http://localhost:7000/stream/tv/tv:futbolibre:evento:liga-1-cienciano-vs-atletico-grau.json" | jq
+```
+
+### Listar canales y partidos
+
+```bash
+cd server
+npm run channels:futbolibre                    # canales + agenda de hoy
+npm run channels:futbolibre -- --channels      # sólo canales
+npm run channels:futbolibre -- --events        # sólo partidos
+npm run channels:futbolibre -- --query liga    # filtrar
+npm run channels:futbolibre -- --json          # JSON
+npm run channels:futbolibre -- --refresh       # ignorar caché
+```
+
+El catálogo de canales se cachea 6 h y la agenda 10 min
+(`/tmp/streamflix-futbolibre-index.json` y `…-agenda.json`).
+
+### Variables de entorno (opcionales)
+
+| Variable | Default | Descripción |
+| --- | --- | --- |
+| `FUTBOLIBRE_BASE` | `https://futbolibre.live` | Base del sitio (los tests usan un fixture local). |
+| `FUTBOLIBRE_AGENDA_URL` | `https://la18hd.su/eventos/json/agenda123.json` | JSON con la agenda y sus señales. |
+| `FUTBOLIBRE_INDEX_TTL_SECONDS` | `21600` | TTL del catálogo de canales (`0` = sin caché). |
+| `FUTBOLIBRE_AGENDA_TTL_SECONDS` | `600` | TTL de la agenda. |
+| `FUTBOLIBRE_INDEX_CACHE` | `/tmp/streamflix-futbolibre-index.json` | Ruta del catálogo. |
+| `FUTBOLIBRE_AGENDA_CACHE` | `/tmp/streamflix-futbolibre-agenda.json` | Ruta de la agenda. |
+| `FUTBOLIBRE_MAX_SIGNALS` | `6` | Señales que se siguen por canal/partido. |
+| `FUTBOLIBRE_MAX_DEPTH` | `2` | Saltos dentro de cada reproductor. |
+| `FUTBOLIBRE_MAX_DOCS` | `12` | Documentos totales por consulta. |
+
+### Pruebas
+
+`test/futbolibre.test.js` reproduce el sitio con un fixture HTTP local (home →
+página del canal → reproductor → `.m3u8`, más la agenda con señales duplicadas,
+un salto `sw3.html?get=` y un token caducado) y no usa la red:
+
+```bash
+node --test test/futbolibre.test.js
+```
+
+> ⚠️ Igual que los otros proveedores, sólo lee páginas públicas y no aloja ni
 > redistribuye contenido. Úsalo con autorización y respetando los términos del
 > sitio y la ley de tu país.
 

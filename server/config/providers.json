@@ -2,6 +2,16 @@
   "$comment": "Priority list of scrapers. Lower 'priority' wins and appears first in the streams array. 'kind' is vod | live | any. 'script' is a file inside SCRAPER_DIR (server/scrapers).",
   "providers": [
     {
+      "id": "futbolibre",
+      "label": "Fútbol Libre",
+      "script": "futbolibre.py",
+      "priority": 3,
+      "kind": "live",
+      "enabled": true,
+      "referer": "https://futbolibre.live/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
       "id": "deportelibre",
       "label": "DeporteLibre",
       "script": "deportelibre.py",

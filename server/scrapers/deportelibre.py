@@ -50,13 +50,12 @@ Uso desde la CLI
     echo '{"type":"tv","id":"tv:deportelibre:stream-01","isLive":true}' \
         | python3 scrapers/deportelibre.py
 
-Dependencias: sólo la librería estándar (urllib + re + threading).
+Dependencias: sólo la librería estándar. La plomería común (HTTP, deadline,
+presupuesto, desempaquetado de JS, extracción de URLs) vive en `_htmlkit.py`.
 """
 
 from __future__ import annotations
 
-import gzip
-import html as html_lib
 import json
 import os
 import re
@@ -64,13 +63,26 @@ import sys
 import tempfile
 import threading
 import time
-import unicodedata
 import urllib.error
 import urllib.parse
-import urllib.request
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from _base import DEFAULT_USER_AGENT, default_headers, log, run, stream
+from _htmlkit import (  # helpers compartidos con el resto de proveedores
+    Budget,
+    Deadline,
+    absolute,
+    clean_title,
+    http_get,
+    media_urls,
+    normalize,
+    player_links,
+    pretty_name,
+    slugify,
+    token_expiry,
+    unescape_markup,
+    visible_text as _visible_text,
+)
 
 # ---------------------------------------------------------------------------
 # Configuración
@@ -98,37 +110,7 @@ MAX_DOCS = int(os.getenv("DEPORTELIBRE_MAX_DOCS", "12"))
 MAX_STREAMS = 8
 PARALLEL_OPTIONS = 4
 
-#: Hosts de publicidad/analítica: nunca son la señal.
-BLOCKED_HOST_HINTS = (
-    "doubleclick", "googlesyndication", "adservice", "adsystem", "adnxs",
-    "popads", "popcash", "adsterra", "propellerads", "onclickads",
-    "google-analytics", "googletagmanager", "histats", "sharethis",
-)
-
-#: Extensiones que nunca son un reproductor.
-NON_PLAYER_SUFFIXES = (
-    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".css", ".js",
-    ".woff", ".woff2", ".ttf", ".pdf", ".zip", ".xml", ".txt", ".webmanifest",
-)
-
-MEDIA_EXTENSIONS = (".m3u8", ".m3u", ".mpd", ".mp4", ".m4v")
-
-# ---------------------------------------------------------------------------
-# Expresiones regulares
-# ---------------------------------------------------------------------------
-
-#: URL de medio con cadena de consulta opcional (`?s=<token>&e=<epoch>`).
-#: El esquema puede venir empaquetado (`46://…`, donde 46 -> "https"): el
-#: empaquetador de JavaScript sustituye tokens por su índice en la tabla.
-MEDIA_RE = re.compile(
-    r"""(?:https?://|(?<![\w.])\d{1,3}://)[^\s"'<>\\]+?\.(?:m3u8|mpd|mp4|m4v)(?:\?[^\s"'<>\\]*)?""",
-    re.IGNORECASE,
-)
-
-#: Cabecera del empaquetador Dean Edwards: eval(function(p,a,c,k,e,d){…}('…',a,c,'…'.split('|'),0,{}))
-PACKER_RE = re.compile(r"function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k\s*,\s*e\s*,\s*d\s*\)", re.IGNORECASE)
-PACKER_ARGS_RE = re.compile(r"',(\d{1,3}),(\d{1,4}),'([^']*)'\.split\('\|'\)", re.IGNORECASE)
-IFRAME_RE = re.compile(r"""<iframe[^>]+?src\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
+#: Enlaces y etiquetas: el catálogo se lee como HTML, no como texto plano.
 ANCHOR_RE = re.compile(r"""<a\b([^>]*)>(.*?)</a>""", re.IGNORECASE | re.DOTALL)
 HREF_RE = re.compile(r"""href\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
 ATTR_RE = re.compile(r"""([a-zA-Z-]+)\s*=\s*["']([^"']*)["']""")
@@ -145,275 +127,15 @@ OPTION_RE = re.compile(
 #: Variante del mismo reproductor: /mpd2.php?id=espn-op2
 MPD_ID_RE = re.compile(r"""/mpd\d*\.php\?(?:[^#]*&)?id=([a-z0-9._-]{1,80})""", re.IGNORECASE)
 
-#: `e=<epoch>`: caducidad del token del CDN.
-EXPIRY_RE = re.compile(r"[?&]e=(\d{9,13})")
-
-#: Palabras que se dejan en mayúsculas al construir un nombre legible.
-ACRONYMS = {
-    "espn", "tudn", "tyc", "tnt", "fox", "dazn", "mls", "rcn", "atv", "fx",
-    "axn", "amc", "hbo", "nba", "nfl", "ufc", "wwe", "usa", "uk", "hd", "tv",
-    "nhl", "mlb", "dsports", "vtv", "dsp", "tvp", "canal", "premiere",
-}
-
-#: Palabras de relleno en títulos/nombres.
-TITLE_NOISE = ("en vivo", "online", "hd", "en directo", "gratis", "ver", "canal", "directo")
-
 
 # ---------------------------------------------------------------------------
 # Utilidades
 # ---------------------------------------------------------------------------
 
 
-class Budget:
-    """Presupuesto compartido de documentos por consulta (hilos incluidos)."""
-
-    def __init__(self, max_docs: int) -> None:
-        self.left = max(1, max_docs)
-        self._lock = threading.Lock()
-
-    def take(self) -> bool:
-        with self._lock:
-            if self.left <= 0:
-                return False
-            self.left -= 1
-            return True
-
-
-class Deadline:
-    """Presupuesto de tiempo: nunca exceder `timeoutMs` del padre."""
-
-    def __init__(self, timeout_ms: Optional[int]) -> None:
-        total = (timeout_ms or 12000) / 1000.0
-        self._expires_at = time.monotonic() + max(1.0, total * 0.85)
-
-    def remaining(self, cap: float = 8.0) -> float:
-        return max(0.5, min(cap, self._expires_at - time.monotonic()))
-
-    def expired(self) -> bool:
-        return time.monotonic() >= self._expires_at
-
-
-def unescape_markup(text: str) -> str:
-    """Deja legibles las URLs que viven dentro de JavaScript/JSON.
-
-    Cubre `https:\\/\\/host\\/x.m3u8`, `\\u0026`, `&amp;` y comillas escapadas:
-    sin esto las URLs del reproductor no se pueden reconstruir.
-    """
-    if not text:
-        return ""
-    if "\\" in text:
-        # Algunas plantillas escapan dos veces (`\\/`, `\\\\/`): se repite hasta
-        # estabilizar, con un tope para no deformar contenido legítimo.
-        for _ in range(3):
-            previous = text
-            text = text.replace("\\/", "/").replace("\\'", "'").replace('\\"', '"')
-            for escaped, char in (("\\u0026", "&"), ("\\u003d", "="), ("\\u003f", "?"),
-                                  ("\\u002f", "/"), ("\\u003a", ":")):
-                if escaped.lower() in text.lower():
-                    text = re.sub(re.escape(escaped), char, text, flags=re.IGNORECASE)
-            if text == previous:
-                break
-    if "&" in text:
-        text = html_lib.unescape(text)
-    return text
-
-
-def normalize(text: str) -> str:
-    decomposed = unicodedata.normalize("NFKD", text or "")
-    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).lower()
-
-
-def slugify(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", normalize(text)).strip("-")
-
-
-def pretty_name(value: str) -> str:
-    """'espn-premium' -> 'ESPN Premium', 'stream-387' -> 'Stream 387'."""
-    words = []
-    for word in re.split(r"[-_\s]+", value or ""):
-        if not word:
-            continue
-        if word.isdigit():
-            words.append(word)
-        elif word.lower() in ACRONYMS:
-            words.append(word.upper())
-        else:
-            words.append(word[:1].upper() + word[1:])
-    return " ".join(words) or value
-
-
-def clean_title(value: str) -> str:
-    """Limpia el nombre de una tarjeta/título del sitio."""
-    text = TAG_RE.sub(" ", html_lib.unescape(value or ""))
-    text = re.split(r"\s*[|·]\s*", text)[0]
-    noise = {word for phrase in TITLE_NOISE for word in phrase.split()}
-    kept = [w for w in re.findall(r"[^\s]+", text) if normalize(w).strip(" .·-,¿?¡!") not in noise]
-    cleaned = " ".join(kept).strip(" .·-|,»")
-    return cleaned if len(cleaned) >= 2 else ""
-
-
-def http_get(url: str, headers: Dict[str, str], timeout: float) -> Tuple[str, str, str]:
-    """GET con timeout duro. Devuelve ``(texto, url_final, content_type)``."""
-    request = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        raw = response.read(1_500_000)
-        if "gzip" in (response.headers.get("Content-Encoding") or "").lower():
-            raw = gzip.decompress(raw)
-        charset = response.headers.get_content_charset() or "utf-8"
-        text = raw.decode(charset, errors="replace")
-        return text, response.geturl() or url, response.headers.get("Content-Type") or ""
-
-
-def absolute(url: str, base: str) -> str:
-    value = unescape_markup(url or "").strip()
-    if not value:
-        return ""
-    if value.startswith("//"):
-        value = "https:" + value
-    resolved = urllib.parse.urljoin(base, value)
-    return resolved if resolved.startswith(("http://", "https://")) else ""
-
-
-def host_of(url: str) -> str:
-    try:
-        return urllib.parse.urlparse(url).netloc.lower()
-    except ValueError:
-        return ""
-
-
-def is_blocked(url: str) -> bool:
-    host = host_of(url)
-    return any(hint in host for hint in BLOCKED_HOST_HINTS)
-
-
-def is_media_url(url: str) -> bool:
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        return False
-    return parsed.path.lower().endswith(MEDIA_EXTENSIONS) and not is_blocked(url)
-
-
-def looks_like_player(url: str) -> bool:
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        return False
-    path = parsed.path.lower()
-    if is_blocked(url) or path.endswith(NON_PLAYER_SUFFIXES):
-        return False
-    if is_media_url(url):
-        return True
-    return path.endswith((".php", ".html", ".htm")) or any(
-        hint in path for hint in ("embed", "player", "repro", "mpd", "/canal", "/hls")
-    )
-
-
-def unique(values: Iterable[str]) -> List[str]:
-    out: List[str] = []
-    seen = set()
-    for value in values:
-        if value and value not in seen:
-            seen.add(value)
-            out.append(value)
-    return out
-
-
-def _js_unescape(text: str) -> str:
-    """Desescapa una cadena JavaScript (comillas, barras y saltos)."""
-    out: List[str] = []
-    index = 0
-    mapping = {"n": "\n", "t": "\t", "r": "\r", "'": "'", '"': '"', "\\": "\\", "/": "/"}
-    while index < len(text):
-        char = text[index]
-        if char == "\\" and index + 1 < len(text):
-            nxt = text[index + 1]
-            out.append(mapping.get(nxt, nxt))
-            index += 2
-        else:
-            out.append(char)
-            index += 1
-    return "".join(out)
-
-
-def unpack_js(html: str, limit: int = 12) -> str:
-    """Desempaqueta los bloques `eval(function(p,a,c,k,e,d)…)` de un documento.
-
-    El reproductor de este sitio esconde la URL del CDN dentro de ese
-    empaquetador, que además sustituye el esquema por el índice de la tabla de
-    palabras (`46://host/...`). Sin desempaquetar no hay `.m3u8` reconocible.
-    Devuelve el texto desempaquetado de todos los bloques encontrados.
-    """
-    if not html or "function(p,a,c,k,e" not in html.lower():
-        return ""
-
-    decoded: List[str] = []
-    for match in list(PACKER_RE.finditer(html))[:limit]:
-        start = html.find("('", match.end())
-        if start == -1:
-            continue
-        start += 2
-        args = PACKER_ARGS_RE.search(html, start)
-        if not args:
-            continue
-        if args.start() - start > 400_000:  # payload absurdamente grande
-            continue
-        payload = _js_unescape(html[start:args.start()])
-        table = args.group(3).split("|")
-        for index in range(len(table) - 1, -1, -1):
-            if table[index]:
-                payload = re.sub(r"\b%d\b" % index, table[index], payload)
-        decoded.append(payload)
-
-    return "\n".join(decoded)
-
-
-def _searchable(html: str) -> str:
-    """Documento listo para buscar: desescapado y con los bloques desempaquetados."""
-    text = unescape_markup(html)
-    unpacked = unpack_js(text)
-    return f"{text}\n{unpacked}" if unpacked else text
-
-
-def sanitize_media(value: str) -> str:
-    """Normaliza un candidato a URL de medio.
-
-    - se queda con el último esquema válido (el texto empaquetado puede traer
-      basura delante: `…/46://host/…`);
-    - traduce el esquema empaquetado (`46://`) a `https://`;
-    - descarta artefactos (host inválido o `:/` dentro de la ruta).
-    """
-    if not value:
-        return ""
-    for match in re.finditer(r"""(?:https?://|(?<![\w.])\d{1,3}://)""", value, re.IGNORECASE):
-        url = re.sub(r"^\d{1,3}://", "https://", value[match.start():].strip())
-        parsed = urllib.parse.urlparse(url)
-        host = parsed.netloc or ""
-        if not re.fullmatch(r"[a-z0-9.-]+(?::\d{1,5})?", host, re.IGNORECASE) or "." not in host:
-            continue
-        # Ruta con ":/" = artefacto de un esquema empaquetado mal concatenado.
-        if ":/" in parsed.path:
-            continue
-        return url
-    return ""
-
-
-def token_expiry(url: str) -> Optional[int]:
-    """Epoch de caducidad del token (`?s=…&e=…`), o None si no lo declara."""
-    match = EXPIRY_RE.search(url or "")
-    if not match:
-        return None
-    value = int(match.group(1))
-    # Algunos CDN publican milisegundos.
-    return value // 1000 if value > 10**11 else value
-
-
 # ---------------------------------------------------------------------------
 # Índice de canales (/stream/)
 # ---------------------------------------------------------------------------
-
-
-def _visible_text(chunk: str) -> str:
-    """Texto visible de un trozo de HTML (sin etiquetas ni atributos)."""
-    return " ".join(TAG_RE.sub(" ", html_lib.unescape(chunk or "")).split())
 
 
 def _card_name(html: str, anchor_start: int, inner: str) -> str:
@@ -623,37 +345,6 @@ def synth_options(slug: str) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Embed -> URL del CDN
 # ---------------------------------------------------------------------------
-
-
-def media_urls(html: str, page_url: str) -> List[str]:
-    """URLs reproducibles del embed, incluidas las del reproductor Clappr.
-
-    Cubre `var src="…m3u8?s=…&e=…"`, `file:`, `source:` y JSON con
-    `stream_url` / `stream_url_nop2p`, también cuando el documento viene
-    empaquetado con `eval(function(p,a,c,k,e,d)…)`.
-    """
-    text = _searchable(html)
-    out: List[str] = []
-    for value in MEDIA_RE.findall(text):
-        # Primero se normaliza el esquema empaquetado y luego se resuelve la
-        # URL contra la página (así `2://host` no se confunde con una ruta).
-        url = sanitize_media(value.rstrip('"\',);'))
-        if url:
-            url = absolute(url, page_url)
-        if url and is_media_url(url):
-            out.append(url)
-    return unique(out)
-
-
-def player_links(html: str, page_url: str) -> List[str]:
-    """iframes u otros reproductores por los que seguir bajando."""
-    text = _searchable(html)
-    out = []
-    for value in IFRAME_RE.findall(text):
-        url = absolute(value, page_url)
-        if url and looks_like_player(url) and not is_media_url(url):
-            out.append(url)
-    return unique(out)
 
 
 def resolve_option(option: Dict[str, Any], headers: Dict[str, str], deadline: Deadline,
