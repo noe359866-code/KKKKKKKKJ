@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Streamflix Reborn · Stremio Addon</title>
+    <style>
+      :root {
+        --bg: #0b0f19;
+        --panel: #121826;
+        --panel-2: #161e30;
+        --text: #e7ecf5;
+        --muted: #93a0b8;
+        --accent: #4f8cff;
+        --ok: #35d07f;
+        --warn: #f5b942;
+        --border: #223049;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: radial-gradient(1000px 500px at 20% -10%, #1b2b4d 0%, transparent 60%), var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        padding: 48px 20px 64px;
+      }
+      .wrap { max-width: 900px; margin: 0 auto; }
+      header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+      .logo {
+        width: 52px; height: 52px; border-radius: 14px;
+        background: linear-gradient(135deg, var(--accent), #8b5cf6);
+        display: grid; place-items: center; font-size: 26px;
+      }
+      h1 { font-size: 1.6rem; margin: 0; letter-spacing: -0.02em; }
+      .sub { color: var(--muted); margin: 4px 0 0; font-size: 0.95rem; }
+      .badge {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 4px 10px; border-radius: 999px; font-size: 0.78rem;
+        background: rgba(53, 208, 127, 0.12); color: var(--ok);
+        border: 1px solid rgba(53, 208, 127, 0.28);
+      }
+      .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+      .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 28px; }
+      .card {
+        background: linear-gradient(180deg, var(--panel-2), var(--panel));
+        border: 1px solid var(--border); border-radius: 16px; padding: 20px;
+      }
+      .card h2 { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 12px; }
+      .value { font-size: 1.05rem; word-break: break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .big { font-size: 2rem; font-weight: 650; letter-spacing: -0.02em; }
+      .hint { color: var(--muted); font-size: 0.85rem; margin-top: 8px; line-height: 1.5; }
+      .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 0; border-bottom: 1px dashed rgba(147,160,184,.16); font-size: .9rem; }
+      .row:last-child { border-bottom: 0; }
+      .row span:last-child { font-family: ui-monospace, Menlo, monospace; color: var(--text); }
+      .row span:first-child { color: var(--muted); }
+      a { color: var(--accent); }
+      code, .url {
+        background: rgba(79, 140, 255, 0.1); border: 1px solid rgba(79, 140, 255, 0.25);
+        border-radius: 8px; padding: 2px 6px; font-family: ui-monospace, Menlo, monospace; font-size: .85rem;
+      }
+      .snippet {
+        background: #0a0e17; border: 1px solid var(--border); border-radius: 12px;
+        padding: 14px 16px; overflow-x: auto; font-family: ui-monospace, Menlo, monospace;
+        font-size: .82rem; color: #c7d4ea; white-space: pre; margin-top: 12px;
+      }
+      .install {
+        display: inline-flex; align-items: center; gap: 10px; margin-top: 18px;
+        background: var(--accent); color: #06101f; font-weight: 650;
+        text-decoration: none; padding: 12px 18px; border-radius: 12px;
+      }
+      footer { margin-top: 36px; color: var(--muted); font-size: .78rem; line-height: 1.6; }
+      .warn { color: var(--warn); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="logo">🎬</div>
+        <div>
+          <h1>Streamflix Reborn · Stremio Addon</h1>
+          <p class="sub">API ligera bajo el protocolo oficial de Stremio Addons</p>
+        </div>
+        <span class="badge" id="status"><span class="dot"></span> comprobando…</span>
+      </header>
+
+      <div class="grid">
+        <div class="card">
+          <h2>Manifest URL</h2>
+          <div class="value" id="manifest-url">/manifest.json</div>
+          <div class="hint">Añade esta URL en Stremio → Addons → Instalar desde URL.</div>
+          <a class="install" id="install-link" href="#">Instalar en Stremio</a>
+        </div>
+
+        <div class="card">
+          <h2>Caché</h2>
+          <div class="big" id="hit-rate">—</div>
+          <div class="hint">hit rate</div>
+          <div class="row"><span>entradas</span><span id="cache-size">—</span></div>
+          <div class="row"><span>hits / misses</span><span id="cache-counts">—</span></div>
+          <div class="row"><span>TTL live / VOD</span><span id="cache-ttl">—</span></div>
+        </div>
+
+        <div class="card">
+          <h2>Tipos soportados</h2>
+          <div class="row"><span>contenido</span><span id="types">—</span></div>
+          <div class="row"><span>proveedores</span><span id="providers">—</span></div>
+          <div class="row"><span>uptime</span><span id="uptime">—</span></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 16px">
+        <h2>Prueba rápida</h2>
+        <div class="hint">Endpoint de streams (devuelve las fuentes ordenadas por prioridad para el failover de ExoPlayer):</div>
+        <div class="snippet" id="snippet">curl -s "$BASE/stream/tv/demo-live.json" | jq</div>
+        <div class="hint" id="last-result">—</div>
+      </div>
+
+      <footer>
+        <span class="warn">Uso educativo.</span> Este servidor no aloja contenido: agrega fuentes públicas de terceros.
+        Cada cliente es responsable de cumplir las leyes de su jurisdicción.
+      </footer>
+    </div>
+
+    <script>
+      const base = window.location.origin;
+      const $ = (id) => document.getElementById(id);
+
+      $('manifest-url').textContent = `${base}/manifest.json`;
+      $('install-link').href = `stremio://${base.replace(/^https?:\/\//, '')}/manifest.json`;
+      $('snippet').textContent = `curl -s "${base}/stream/tv/demo-live.json" | jq`;
+
+      async function load() {
+        try {
+          const [healthRes, manifestRes] = await Promise.all([
+            fetch('/health'),
+            fetch('/manifest.json'),
+          ]);
+          const health = await healthRes.json();
+          const manifest = await manifestRes.json();
+
+          $('status').innerHTML = '<span class="dot"></span> online';
+          $('status').style.color = 'var(--ok)';
+          $('status').style.background = 'rgba(53, 208, 127, 0.12)';
+
+          $('hit-rate').textContent = `${(health.cache.hitRate * 100).toFixed(1)}%`;
+          $('cache-size').textContent = health.cache.size;
+          $('cache-counts').textContent = `${health.cache.hits} / ${health.cache.misses}`;
+          $('cache-ttl').textContent = `${health.addon.liveTtlHours}h / ${health.addon.vodTtlHours}h`;
+          $('types').textContent = manifest.types.join(', ');
+          $('providers').textContent = health.providers.enabled.length;
+          $('uptime').textContent = `${Math.floor(health.uptimeSeconds / 60)}m`;
+        } catch (error) {
+          $('status').innerHTML = '<span class="dot"></span> offline';
+          $('status').style.color = 'var(--warn)';
+          $('status').style.background = 'rgba(245, 185, 66, 0.12)';
+          console.error(error);
+        }
+      }
+
+      async function probe() {
+        const started = performance.now();
+        try {
+          const res = await fetch('/stream/tv/demo-live.json');
+          const data = await res.json();
+          const ms = Math.round(performance.now() - started);
+          const cache = res.headers.get('x-cache') || '?';
+          const first = data.streams?.[0];
+          $('last-result').innerHTML = first
+            ? `Primera fuente: <code>${first.name}</code> · ${cache} · ${ms} ms · ${data.streams.length} fuentes`
+            : `Sin fuentes · ${cache} · ${ms} ms`;
+        } catch (error) {
+          $('last-result').textContent = `Error: ${error.message}`;
+        }
+      }
+
+      load().then(probe);
+      setInterval(load, 10000);
+    </script>
+  </body>
+</html>

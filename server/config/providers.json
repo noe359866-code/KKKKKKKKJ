@@ -1,0 +1,34 @@
+{
+  "$comment": "Priority list of scrapers. Lower 'priority' wins and appears first in the streams array. 'kind' is vod | live | any. 'script' is a file inside SCRAPER_DIR (server/scrapers).",
+  "providers": [
+    {
+      "id": "demo-live",
+      "label": "Demo TV",
+      "script": "example_provider.py",
+      "priority": 10,
+      "kind": "live",
+      "enabled": true,
+      "referer": "https://demo.local/",
+      "userAgent": "Mozilla/5.0 (Linux; Android 12; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "demo-vod",
+      "label": "Demo VOD",
+      "script": "example_provider.py",
+      "priority": 20,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://demo.local/",
+      "userAgent": "Mozilla/5.0 (Linux; Android 12; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "demo-fallback",
+      "label": "Demo Backup",
+      "script": "example_provider.py",
+      "priority": 30,
+      "kind": "any",
+      "enabled": true,
+      "referer": "https://backup.demo.local/"
+    }
+  ]
+}
