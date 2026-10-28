@@ -8,6 +8,9 @@ import test, { before } from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.DEMO_DELAY_MS = '150';
+/* Proveedor real deshabilitado por red en tests: falla al instante. */
+process.env.TVENVIVO_BASE = 'http://127.0.0.1:1';
+process.env.TVENVIVO_INDEX_TTL_SECONDS = '0';
 
 const { runProviderPool } = await import('../src/providers/runner.js');
 const { loadProviders, getProvidersFor } = await import('../src/providers/index.js');

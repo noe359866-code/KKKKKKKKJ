@@ -2,6 +2,16 @@
   "$comment": "Priority list of scrapers. Lower 'priority' wins and appears first in the streams array. 'kind' is vod | live | any. 'script' is a file inside SCRAPER_DIR (server/scrapers).",
   "providers": [
     {
+      "id": "tvenvivo",
+      "label": "TV en Vivo",
+      "script": "tvenvivo.py",
+      "priority": 5,
+      "kind": "live",
+      "enabled": true,
+      "referer": "https://www.tvenvivo.org/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
       "id": "demo-live",
       "label": "Demo TV",
       "script": "example_provider.py",

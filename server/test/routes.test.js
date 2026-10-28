@@ -12,6 +12,11 @@ import assert from 'node:assert/strict';
 
 process.env.DEMO_DELAY_MS = '60';
 process.env.RATE_LIMIT_MAX = '0';
+/* El proveedor real `tvenvivo` está habilitado en config/providers.json.
+ * En los tests se apunta a un puerto cerrado para que falle al instante y la
+ * suite no dependa de la red externa. */
+process.env.TVENVIVO_BASE = 'http://127.0.0.1:1';
+process.env.TVENVIVO_INDEX_TTL_SECONDS = '0';
 
 const { createApp } = await import('../src/app.js');
 const { loadProviders } = await import('../src/providers/index.js');

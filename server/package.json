@@ -13,7 +13,8 @@
     "dev": "node --watch src/server.js",
     "test": "LOG_LEVEL=error NODE_ENV=test node --test",
     "cache:stats": "node scripts/cache-stats.js",
-    "bridge:demo": "node scripts/bridge-demo.js"
+    "bridge:demo": "node scripts/bridge-demo.js",
+    "channels:tvenvivo": "python3 scrapers/tvenvivo.py --list"
   },
   "dependencies": {
     "cors": "^2.8.5",

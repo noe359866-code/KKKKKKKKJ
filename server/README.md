@@ -69,7 +69,8 @@ server/
 ├── scrapers/
 │   ├── _base.py                 # contrato stdin/stdout + helpers
 │   ├── example_provider.py      # demo con streams públicos de prueba
-│   └── template_provider.py     # plantilla para un sitio real
+│   ├── template_provider.py     # plantilla para un sitio real
+│   └── tvenvivo.py              # proveedor real: tvenvivo.org (live)
 ├── scripts/
 │   ├── cache-stats.js           # métricas de caché en vivo
 │   └── bridge-demo.js           # probar un scraper sin HTTP
@@ -249,7 +250,38 @@ Probar un scraper aislado:
 
 ```bash
 npm run bridge:demo -- example_provider.py '{"type":"movie","id":"tt0133093","provider":"demo-vod"}'
+npm run bridge:demo -- tvenvivo.py '{"type":"tv","id":"tv:tvenvivo:espn-2","isLive":true}'
 ```
+
+### Proveedor real incluido: `tvenvivo.py`
+
+`scrapers/tvenvivo.py` scrapea **https://www.tvenvivo.org/** (TV y deportes en
+directo). Está habilitado en `config/providers.json` con prioridad **5**, así
+que sus señales encabezan el array de failover:
+
+```bash
+curl -s "http://localhost:7000/stream/tv/tv:tvenvivo:espn-2.json" | jq
+curl -s "http://localhost:7000/stream/tv/tv:tvenvivo:espn-2.json" -D- -o/dev/null | grep X-Cache
+```
+
+Formas de id admitidas: `tv:tvenvivo:espn-2`, `tvenvivo:espn-2`, `espn-2`,
+`espn-2-en-vivo-online(.php)`, la URL completa de la página del canal, o el
+nombre libre `ESPN 2` (se busca en el índice del sitio).
+
+Listar canales e ids listos para Stremio:
+
+```bash
+npm run channels:tvenvivo                 # tabla nombre → tv:tvenvivo:<slug>
+npm run channels:tvenvivo -- --query espn
+npm run channels:tvenvivo -- --json
+```
+
+Cómo lo resuelve: página del canal → mapa JavaScript `SOURCES` →
+`/live/core.php?canal=…` → `<iframe>` → `.m3u8` del CDN (desescapando
+`https:\/\/…`). Sigue como máximo `TVENVIVO_MAX_DOCS` documentos /
+`TVENVIVO_MAX_DEPTH` saltos, ignora hosts de publicidad y devuelve **una
+entrada por opción**. Detalles y variables de entorno en
+[`scrapers/README.md`](scrapers/README.md#proveedor-incluido-tvenvivopy).
 
 Agregar un proveedor real:
 
@@ -315,6 +347,10 @@ Agregar un proveedor real:
 | `ADMIN_TOKEN` | *(vacío)* | Activa `/admin/*`; sin él devuelven 404. |
 | `PROXY_ENABLED` | `true` | Habilita `/proxy`. |
 | `LOG_LEVEL` / `LOG_JSON` | `info` / `false` | Logging. |
+| `TVENVIVO_BASE` | `https://www.tvenvivo.org` | Base del sitio (los tests usan un fixture local). |
+| `TVENVIVO_INDEX_TTL_SECONDS` | `21600` | TTL del índice de canales (`0` = sin caché). |
+| `TVENVIVO_INDEX_CACHE` | `…/streamflix-tvenvivo-index.json` | Ruta del índice en disco. |
+| `TVENVIVO_MAX_DOCS` / `TVENVIVO_MAX_DEPTH` | `8` / `3` | Topes de documentos y saltos al resolver un reproductor. |
 
 Todas se pueden poner en `server/.env` (se carga automáticamente, sin
 dependencias) o inyectarlas desde el orquestador.
@@ -327,13 +363,16 @@ dependencias) o inyectarlas desde el orquestador.
 npm test
 ```
 
-31 pruebas con `node:test`:
+41 pruebas con `node:test`:
 
 - caché: TTL, expiración, stale, LRU, *single-flight*, caché negativa;
 - protocolo: manifest, forma del stream, cabeceras, ids, calidades, HLS, SSRF;
 - pool de proveedores: ejecución en paralelo, orden por prioridad y deadline;
 - integración: arranca Express en un puerto efímero y ejecuta los scrapers
-  Python reales para validar `MISS → HIT` y la coalescencia de peticiones.
+  Python reales para validar `MISS → HIT` y la coalescencia de peticiones;
+- `tvenvivo.py`: fixture HTTP local que imita el sitio (página → `SOURCES` →
+  wrapper → iframe → `.m3u8` escapado), ids aceptados, búsqueda por nombre,
+  descarte de anuncios, degradación a `{"streams":[]}` y caché del índice.
 
 ---
 
@@ -365,7 +404,7 @@ ordenado). El `HEALTHCHECK` consulta `/health`.
   instancias, sustituye `TtlCache` por Redis (`GET/SET EX` + `SET NX` para el
   *single-flight*) manteniendo la misma interfaz.
 - Desactiva o elimina los proveedores `demo-*` de `config/providers.json`
-  cuando conectes fuentes reales.
+  cuando conectes fuentes reales (`tvenvivo` ya es un proveedor real).
 
 ### Siguientes pasos sugeridos
 
