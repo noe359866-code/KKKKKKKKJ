@@ -69,7 +69,9 @@ For a production build, configure your own release signing as described below.
 ### Features
 
 - **Autonomous by default:** Python 3.11 and the twelve real provider scrapers run inside the APK; no Node.js server, IP address or backend deployment required
-- Direct provider catalogues, local episode discovery and on-device cache; optional Cinemeta catalogues
+- Cinemeta catalogues **on by default** (real 2:3 posters and 16:9 backdrops), followed by the twelve
+  provider catalogues, local episode discovery and on-device cache
+- *Streaming Catalogs* (Netflix, Disney+, HBO Max, Prime Video…) installed automatically on first launch
 - Optional external-server mode remains available in Settings
 - Open-source and ad-free interface
 - Aggregates content from multiple third-party providers
