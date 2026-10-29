@@ -18,6 +18,21 @@ class Settings(context: Context) : AddonSettings {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    init {
+        /*
+         * Migración: las versiones anteriores traían Cinemeta desactivado, así
+         * que quien hubiese pulsado "Guardar" en Ajustes tiene un `false`
+         * persistido. Se activa una vez (el usuario puede volver a apagarlo) o
+         * el Home seguiría sin los pósters y backdrops de Cinemeta.
+         */
+        if (!prefs.getBoolean(KEY_METADATA_MIGRATED, false)) {
+            prefs.edit {
+                putBoolean(KEY_METADATA, true)
+                putBoolean(KEY_METADATA_MIGRATED, true)
+            }
+        }
+    }
+
     override var autonomous: Boolean
         get() = prefs.getBoolean(KEY_AUTONOMOUS, true)
         set(value) = prefs.edit { putBoolean(KEY_AUTONOMOUS, value) }
@@ -53,6 +68,7 @@ class Settings(context: Context) : AddonSettings {
         const val KEY_BASE_URL = "addon.baseUrl"
         const val KEY_AUTONOMOUS = "engine.autonomous"
         const val KEY_METADATA = "engine.metadataCatalogs"
+        const val KEY_METADATA_MIGRATED = "engine.metadataCatalogsMigrated"
         const val KEY_AUTO_UPDATE = "app.autoUpdate"
         const val KEY_LAST_UPDATE_CHECK = "app.lastUpdateCheck"
     }

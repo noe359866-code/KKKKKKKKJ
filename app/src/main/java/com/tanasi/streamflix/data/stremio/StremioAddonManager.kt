@@ -95,13 +95,20 @@ class StremioAddonManager(
      */
     suspend fun seedDefaultAddons(): Boolean {
         if (storage.isSeeded()) return false
-        storage.markSeeded()
-        if (getAddons().isNotEmpty()) return false
-        var installed = false
-        for (preset in PRESETS) {
-            if (preset.bundled) continue
-            if (installAddon(preset.manifestUrl).isSuccess) installed = true
+        if (getAddons().isNotEmpty()) {
+            storage.markSeeded()
+            return false
         }
+        var installed = false
+        for (manifestUrl in SEED_MANIFEST_URLS) {
+            if (installAddon(manifestUrl).isSuccess) {
+                installed = true
+                break
+            }
+        }
+        /* Sólo se marca como sembrado si algo se instaló: si fue un fallo de
+         * red, el siguiente arranque vuelve a intentarlo. */
+        if (installed) storage.markSeeded()
         return installed
     }
 
@@ -120,11 +127,41 @@ class StremioAddonManager(
     }
 
     companion object {
+
+        /** Instancia configurada con todas las plataformas disponibles. */
+        private const val STREAMING_CATALOGS =
+            "https://7a82163c306e-stremio-netflix-catalog-addon.baby-beamup.club/c2hhLGlxaSxzaGQsYmJvLGFjdCx2aWssbWJpLGRwZSxjcmMsc3R6LG5mayxjdHMsbWdsLGNydSxobHUscG1wLHBjcCxhdHAsZG5wLGFtcCxoYm0sbmZ4OjpVUzoxNzkwNjIyNDQyMjI3OjA6MDpHVA%3D%3D/manifest.json"
+
+        /**
+         * Manifest de fábrica del mismo addon (sin configuración guardada).
+         *
+         * El addon se sirve desde instancias distintas y la configuración
+         * incrustada en la URL puede caducar; si la primera falla se prueba
+         * esta, que distribuye las plataformas por defecto.
+         */
+        private const val STREAMING_CATALOGS_DEFAULT =
+            "https://7a82163c306e-stremio-netflix-catalog-addon.baby-beamup.club/manifest.json"
+
+        /** Alternativa conocida con catálogos por plataforma. */
+        private const val CYBERFLIX = "https://cyberflix.elfhosted.com/manifest.json"
+
+        /**
+         * Addons que se intentan instalar solos en el primer arranque, en orden.
+         * Se queda con el primero que responda: son la misma clase de catálogo y
+         * apilarlos llenaría el Home de filas repetidas.
+         */
+        val SEED_MANIFEST_URLS = listOf(STREAMING_CATALOGS, STREAMING_CATALOGS_DEFAULT)
+
         val PRESETS = listOf(
             StremioPreset(
                 name = "Streaming Catalogs",
                 description = "Catálogos de Netflix, Disney+, Prime Video, HBO Max y Apple TV+",
-                manifestUrl = "https://7a82163c306e-stremio-netflix-catalog-addon.baby-beamup.club/c2hhLGlxaSxzaGQsYmJvLGFjdCx2aWssbWJpLGRwZSxjcmMsc3R6LG5mayxjdHMsbWdsLGNydSxobHUscG1wLHBjcCxhdHAsZG5wLGFtcCxoYm0sbmZ4OjpVUzoxNzkwNjIyNDQyMjI3OjA6MDpHVA%3D%3D/manifest.json",
+                manifestUrl = STREAMING_CATALOGS,
+            ),
+            StremioPreset(
+                name = "Cyberflix Catalog",
+                description = "Filas por plataforma (Netflix, Prime, Hulu, HBO…) y listas por género",
+                manifestUrl = CYBERFLIX,
             ),
             StremioPreset(
                 name = "Cinemeta Oficial",
