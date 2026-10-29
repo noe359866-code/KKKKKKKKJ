@@ -331,42 +331,54 @@ except for `MediaSources`, which is the only place that knows about Media3:
 4. DRM errors are the one exception: another CDN cannot fix a license, so the
    user is told instead of being bounced around (`FailoverRules`).
 
-### Player controls (D-Pad first)
+### Reproductor: diseñado sólo para Android TV
 
-The player doesn't use Media3's built-in controller (`useController = false`);
-`ui/player/PlayerControls.kt` draws its own, because the stock one documents no
-behaviour for the direction keys and can't share the app's focus language.
+El reproductor no usa el controlador de Media3 (`useController = false`):
+`ui/player/PlayerControls.kt` dibuja el suyo, con el lenguaje de la app Apple TV
+y **sin una sola línea pensada para el dedo** (no hay `pointerInput` ni barra que
+se arrastre).
 
-| Key | Action |
+Tres zonas sobre el vídeo, con velos en degradado (no cajas):
+
+| Zona | Contenido |
 | --- | --- |
-| `OK` / `ENTER` / `SPACE` / gamepad `A` | play / pause |
-| `◀` / `▶` (and `MEDIA_REWIND` / `MEDIA_FAST_FORWARD`) | −10 s / +10 s (VOD only) |
-| `▼` / `▲` | show the controls and move the focus into them |
-| `BACK` | hide the controls; a second press leaves the player |
-| tap (phone) | show / hide the controls |
+| Arriba | título en 26 sp, chip **EN VIVO** y `Fuente 2 de 5 · Gnula` |
+| Centro | botones redondos: **−10**, **▶/⏸** (blanco, 108 dp), **+10**, **Fuentes** y **CC** |
+| Abajo | barra de progreso con tiempos `0:42 / 1:58:30` y la chuleta de teclas |
 
-Details that matter on a sofa:
+Decisiones de salón:
 
-- everything fades out after **4 s** while playing, and only while the focus is
-  still on the video surface — if you are walking the buttons they stay put;
-- while the controls are hidden, `OK` pauses and the arrows seek **without**
-  bringing the UI back, so the failover and normal playback stay unobtrusive;
-- `LEFT`/`RIGHT` never steal the event when a button is focused: there they move
-  the focus between buttons, as expected;
-- the seek arithmetic lives in `player/SeekPolicy.kt` (clamped to `0..duration`,
-  unknown duration = no upper bound) and is unit-tested;
-- live channels hide the seek buttons and the progress bar: an HLS live window
-  has no duration to show, and seeking it only triggers a rebuffer.
+- **El icono de play/pausa se dibuja en `Canvas`** (triángulo y dos barras): sin
+  `material-icons-extended` y sin glifos `▶`/`❚❚`, que algunos TV boxes pintan
+  como cajas.
+- **Botones circulares con anillo blanco** y escala 1,08 al enfocar: el mismo
+  foco que las tarjetas del Home, así que el salto del catálogo al vídeo no
+  cambia de lenguaje.
+- **Todo fade a los 4 s** mientras se reproduce y el foco sigue en el vídeo. Si
+  el usuario está recorriendo los botones, se quedan.
+- **Subtítulos**: el botón `CC` sólo aparece si el manifiesto trae pistas de
+  texto; activa/desactiva `TRACK_TYPE_TEXT` en el propio `ExoPlayer`.
+- **Directo**: se ocultan −10/+10 y la barra de progreso (una ventana HLS no
+  tiene duración que enseñar); queda el chip EN VIVO y "Señal en directo".
+- **Lista de fuentes** como panel centrado con filas grandes y `LazyColumn` (el
+  foco arrastra la lista), no como `AlertDialog` de Material: en una TV los
+  botones de 40 dp y las listas que no se desplazan no se pueden usar.
+- **Cuando todo falla**, panel de vidrio con *Reintentar* (foco inicial) ·
+  *Elegir fuente* · *Volver*. ATRÁS sale del reproductor, no del aviso.
 
-The red ring + halo is `Modifier.tvFocusGlow` (`ui/theme/Focus.kt`), the Compose
-equivalent of the classic pair of XML state drawables:
+Teclas:
 
-```text
-res/color/card_focus.xml + android:focusable="true"   →  Modifier.tvFocusGlow(progress)
-```
+| Tecla | Acción |
+| --- | --- |
+| `OK` / `ENTER` / `SPACE` / gamepad `A` | play / pausa |
+| `◀` / `▶` | −10 s / +10 s (sólo VOD; con el foco en un botón mueven el foco) |
+| `▼` / `▲` | sacar los controles y llevar el foco a ellos |
+| `MEDIA_PLAY_PAUSE` / `MEDIA_FAST_FORWARD` / `MEDIA_REWIND` | **siempre** funcionan, aunque el foco esté en un botón o en la lista de fuentes |
+| `BACK` | cierra la lista de fuentes, luego oculta los controles, luego sale |
 
-Both the home cards and the player buttons use it, so the focus style is
-identical in the catalogue and on top of the video.
+La aritmética del salto vive en `player/SeekPolicy.kt` (acotada a
+`0..duration`, duración desconocida = sin tope) y la tabla de teclas en
+`player/PlayerKeyMap.kt`; ambas se prueban en JVM, sin emulador.
 
 ### Per-source HTTP headers
 

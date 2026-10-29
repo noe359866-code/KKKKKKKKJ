@@ -48,6 +48,14 @@ para evitar mantener dos copias diferentes.
    y reproduce. Si no se pudo extraer una lista real de episodios, se permite
    indicar temporada y episodio manualmente; no se fabrica una lista.
 
+### Reproductor (TV)
+
+Los controles son propios (no el `PlayerView` de Media3): título y fuente en
+uso arriba, botones redondos en el centro (título · **−10** · **▶/⏸** · **+10** ·
+**Fuentes** · **CC** si hay subtítulos) y barra de progreso con tiempos abajo.
+Se ocultan solos a los 4 s y las teclas multimedia del mando funcionan siempre.
+La lista de fuentes es un panel con filas grandes y ATRÁS la cierra.
+
 ### Perfiles
 
 Al arrancar, la app pregunta **¿Quién está viendo?** con avatares redondos (hasta

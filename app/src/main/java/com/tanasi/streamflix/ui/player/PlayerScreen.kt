@@ -1,7 +1,10 @@
 package com.tanasi.streamflix.ui.player
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,18 +15,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -39,6 +41,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -49,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -62,6 +67,7 @@ import com.tanasi.streamflix.player.PlayerKeyAction
 import com.tanasi.streamflix.player.PlayerKeyMap
 import com.tanasi.streamflix.player.SeekPolicy
 import com.tanasi.streamflix.ui.theme.StreamflixColors
+import com.tanasi.streamflix.ui.theme.tvFocusGlow
 import kotlinx.coroutines.delay
 
 /** Tiempo que los controles se quedan en pantalla sin que nadie toque el mando. */
@@ -107,20 +113,33 @@ fun PlayerScreen(
                 }
             }
 
+            /* Sin fuentes no hay vídeo, pero tampoco una pantalla vacía: mismo
+             * panel de vidrio que el aviso de fallo, con el foco en Reintentar. */
             is PlayerUiState.Unavailable -> CenterBox {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(32.dp),
+                    modifier = Modifier
+                        .widthIn(max = 720.dp)
+                        .background(StreamflixColors.Surface, RoundedCornerShape(20.dp))
+                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 40.dp, vertical = 34.dp),
                 ) {
                     Text(
-                        text = current.message,
-                        color = StreamflixColors.OnSurface,
-                        style = MaterialTheme.typography.titleMedium,
+                        text = "Nada que reproducir",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = Color.White,
                     )
-                    Spacer(Modifier.height(20.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        TextButton(onClick = onBack) { Text("Volver") }
-                        Button(onClick = { viewModel.load() }) { Text("Reintentar") }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = current.message,
+                        color = StreamflixColors.OnSurfaceMuted,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(26.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        PlayerPillButton(text = "Reintentar", primary = true, onClick = { viewModel.load() })
+                        PlayerPillButton(text = "Volver", onClick = onBack)
                     }
                 }
             }
@@ -179,6 +198,11 @@ private fun PlaybackSurface(
     var positionMs by remember { mutableStateOf(0L) }
     var durationMs by remember { mutableStateOf(0L) }
 
+    /* Subtítulos: sólo se ofrece el botón si el manifiesto trae alguna pista.
+     * Arrancan apagados porque muchas señales emiten un CC quemado o vacío. */
+    var hasSubtitles by remember { mutableStateOf(false) }
+    var subtitlesOn by remember { mutableStateOf(false) }
+
     DisposableEffect(controller) {
         controller.start(startIndex = request.startIndex)
         onDispose {
@@ -216,6 +240,7 @@ private fun PlaybackSurface(
             isPlaying = player.isPlaying
             positionMs = player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0L } ?: 0L
+            hasSubtitles = player.currentTracks.groups.any { it.type == C.TRACK_TYPE_TEXT }
             delay(if (controlsVisible) 250L else 1_000L)
         }
     }
@@ -250,6 +275,18 @@ private fun PlaybackSurface(
         interactionTick++
     }
 
+    fun toggleSubtitles() {
+        val next = !subtitlesOn
+        subtitlesOn = next
+        runCatching {
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !next)
+                .build()
+        }
+        interactionTick++
+    }
+
     fun showControls(focusPlayPause: Boolean) {
         interactionTick++
         controlsVisible = true
@@ -261,8 +298,15 @@ private fun PlaybackSurface(
         controlsVisible = false
     }
 
+    /* Con el aviso de fallo en pantalla, ATRÁS sale del reproductor: es lo que
+     * espera cualquiera que vea "No se pudo reproducir" y quiera volver. */
+    val playbackFailed = failoverState.fatalMessage != null || failoverState.exhausted
     BackHandler {
-        if (controlsVisible) hideControls() else onBack()
+        when {
+            playbackFailed -> onBack()
+            controlsVisible -> hideControls()
+            else -> onBack()
+        }
     }
 
     Box(
@@ -271,10 +315,36 @@ private fun PlaybackSurface(
             .onFocusChanged { rootSelfFocused = it.isFocused }
             .focusRequester(rootFocus)
             .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+
+                /* Teclas multimedia: funcionan SIEMPRE, aunque el foco esté en
+                 * un botón o en la lista de fuentes. Muchos mandos de TV y
+                 * barras de sonido sólo emiten estas, y antes se perdían. */
+                when (event.key) {
+                    Key.MediaPlayPause, Key.MediaPlay, Key.MediaPause -> {
+                        togglePlayPause()
+                        return@onPreviewKeyEvent true
+                    }
+
+                    Key.MediaFastForward -> {
+                        showControls(focusPlayPause = false)
+                        seekBy(SeekPolicy.STEP_MS)
+                        return@onPreviewKeyEvent true
+                    }
+
+                    Key.MediaRewind -> {
+                        showControls(focusPlayPause = false)
+                        seekBy(-SeekPolicy.STEP_MS)
+                        return@onPreviewKeyEvent true
+                    }
+
+                    else -> Unit
+                }
+
                 /* `onPreviewKeyEvent` en un ancestro del nodo enfocado se
                  * ejecuta antes que el botón: si el foco está en un control,
-                 * el evento NO se roba (LEFT debe moverse entre botones). */
-                if (event.type != KeyEventType.KeyDown || !rootSelfFocused) {
+                 * el evento NO se roba (IZQUIERDA debe moverse entre botones). */
+                if (!rootSelfFocused) {
                     return@onPreviewKeyEvent false
                 }
                 when (PlayerKeyMap.actionFor(event.key)) {
@@ -339,8 +409,10 @@ private fun PlaybackSurface(
             onRewind = { seekBy(-SeekPolicy.STEP_MS) },
             onForward = { seekBy(SeekPolicy.STEP_MS) },
             onShowSources = { showSources = true },
-            onBack = onBack,
             onInteraction = { interactionTick++ },
+            hasSubtitles = hasSubtitles,
+            subtitlesOn = subtitlesOn,
+            onToggleSubtitles = { toggleSubtitles() },
         )
 
         if (failoverState.switching) {
@@ -374,8 +446,12 @@ private fun PlaybackSurface(
             )
         }
 
+        /* ATRÁS cierra la lista antes de salir del reproductor: si no, el
+         * usuario tendría que pulsar dos veces sin saber por qué. */
+        BackHandler(enabled = showSources) { showSources = false }
+
         if (showSources) {
-            SourcePickerDialog(
+            SourcePickerOverlay(
                 sources = sources,
                 current = failoverState.current,
                 onDismiss = { showSources = false },
@@ -396,18 +472,18 @@ private fun PlaybackSurface(
 private fun SwitchingBadge(modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
-            .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(20.dp))
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .background(StreamflixColors.Surface.copy(alpha = 0.92f), RoundedCornerShape(percent = 50))
+            .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CircularProgressIndicator(
-            color = StreamflixColors.Primary,
+            color = Color.White,
             strokeWidth = 2.dp,
-            modifier = Modifier.width(16.dp).height(16.dp),
+            modifier = Modifier.size(16.dp),
         )
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(12.dp))
         Text(
-            text = "Cambiando de servidor…",
+            text = "Cambiando de fuente…",
             color = Color.White,
             style = MaterialTheme.typography.labelLarge,
         )
@@ -415,11 +491,13 @@ private fun SwitchingBadge(modifier: Modifier = Modifier) {
 }
 
 /**
- * Aviso a pantalla completa cuando no hay nada que reproducir.
+ * Aviso cuando no hay nada que reproducir.
  *
- * Tres salidas: reintentar desde la primera fuente, abrir la lista de fuentes
- * (para elegir otra a mano) o volver al catálogo. La primera opción recibe el
- * foco, así que con el mando basta pulsar OK para reintentar.
+ * Tres salidas, en el orden en que se necesitan: reintentar desde la primera
+ * fuente (foco inicial, así que basta pulsar OK), abrir la lista de fuentes
+ * para elegir otra a mano, o volver al catálogo. El panel es el mismo vidrio
+ * oscuro del resto de la app; nada de diálogos con botones pequeños, que en
+ * una TV no se aciertan.
  */
 @Composable
 private fun PlaybackFailureOverlay(
@@ -440,96 +518,250 @@ private fun PlaybackFailureOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.86f)),
+            .background(Color.Black.copy(alpha = 0.82f)),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(40.dp),
+            modifier = Modifier
+                .widthIn(max = 760.dp)
+                .background(StreamflixColors.Surface, RoundedCornerShape(20.dp))
+                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                .padding(horizontal = 44.dp, vertical = 38.dp),
         ) {
             Text(
                 text = "No se pudo reproducir",
                 style = MaterialTheme.typography.headlineSmall,
-                color = StreamflixColors.OnSurface,
+                color = Color.White,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
                 color = StreamflixColors.OnSurfaceMuted,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(18.dp))
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = StreamflixColors.OnSurfaceMuted,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(24.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(
+            Spacer(Modifier.height(30.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                PlayerPillButton(
+                    text = "Reintentar",
+                    primary = true,
                     onClick = onRetry,
-                    modifier = Modifier.focusRequester(retryFocus),
-                ) { Text("Reintentar") }
-                OutlinedButton(onClick = onPickSource) { Text("Elegir fuente") }
-                OutlinedButton(onClick = onBack) { Text("Volver") }
+                    focusRequester = retryFocus,
+                )
+                PlayerPillButton(text = "Elegir fuente", onClick = onPickSource)
+                PlayerPillButton(text = "Volver", onClick = onBack)
             }
         }
     }
 }
 
-/** Lista de fuentes ordenadas por prioridad, elegible con el D-Pad. */
+/** Cápsula del reproductor: la misma forma que los botones del hero. */
 @Composable
-private fun SourcePickerDialog(
+private fun PlayerPillButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    primary: Boolean = false,
+    focusRequester: FocusRequester? = null,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val ring by animateFloatAsState(
+        targetValue = if (focused) 1f else 0f,
+        animationSpec = tween(durationMillis = 130),
+        label = "pillFocus",
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.05f else 1f,
+        animationSpec = tween(durationMillis = 130),
+        label = "pillScale",
+    )
+
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .tvFocusGlow(progress = ring, cornerRadius = 24.dp)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .background(
+                when {
+                    primary -> Color.White
+                    focused -> StreamflixColors.GlassStrong
+                    else -> StreamflixColors.Glass
+                },
+                RoundedCornerShape(percent = 50),
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onClick)
+            .padding(horizontal = 28.dp, vertical = 14.dp),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (primary) Color.Black else Color.White,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * Lista de fuentes: panel centrado con filas grandes.
+ *
+ * Sustituye al `AlertDialog` de Material, que en una TV deja el foco en un
+ * botón de 40 dp y una lista que no se desplaza al navegar. Aquí cada fila es
+ * enfocable, la `LazyColumn` lleva el foco a la vista y ATRÁS cierra.
+ */
+@Composable
+private fun SourcePickerOverlay(
     sources: List<StreamSource>,
     current: StreamSource?,
     onDismiss: () -> Unit,
     onSelect: (Int) -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Fuentes disponibles") },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                sources.forEachIndexed { index, source ->
-                    val selected = source.url == current?.url
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(index) }
-                            .padding(vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "${index + 1}.",
-                            color = if (selected) StreamflixColors.Primary else StreamflixColors.OnSurfaceMuted,
-                            style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.width(28.dp),
-                        )
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                text = source.label,
-                                color = if (selected) StreamflixColors.Primary else StreamflixColors.OnSurface,
-                                style = MaterialTheme.typography.bodyLarge,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                text = if (source.isHls) "HLS · .m3u8" else "Progresivo",
-                                color = StreamflixColors.OnSurfaceMuted,
-                                style = MaterialTheme.typography.labelMedium,
-                            )
-                        }
-                    }
+    val firstFocus = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        withFrameNanos { }
+        runCatching { firstFocus.requestFocus() }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.78f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.62f)
+                .widthIn(min = 520.dp, max = 900.dp)
+                .background(StreamflixColors.Surface, RoundedCornerShape(20.dp))
+                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                .padding(horizontal = 32.dp, vertical = 28.dp),
+        ) {
+            Text(
+                text = "Fuentes",
+                style = MaterialTheme.typography.headlineSmall,
+                color = Color.White,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "${sources.size} disponibles · el failover sigue hacia abajo · ATRÁS para volver",
+                style = MaterialTheme.typography.labelMedium,
+                color = StreamflixColors.OnSurfaceMuted,
+            )
+            Spacer(Modifier.height(20.dp))
+
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 460.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                itemsIndexed(sources, key = { index, source -> "$index:${source.url}" }) { index, source ->
+                    SourceRow(
+                        index = index,
+                        source = source,
+                        selected = source.url == current?.url,
+                        onClick = { onSelect(index) },
+                        focusRequester = if (index == 0) firstFocus else null,
+                    )
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Cerrar") }
-        },
+
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = "OK elige la fuente marcada · ATRÁS vuelve al vídeo",
+                style = MaterialTheme.typography.labelSmall,
+                color = StreamflixColors.OnSurfaceMuted.copy(alpha = 0.8f),
+            )
+        }
+    }
+}
+
+/** Fila de fuente: número, proveedor, formato y marca de "en uso". */
+@Composable
+private fun SourceRow(
+    index: Int,
+    source: StreamSource,
+    selected: Boolean,
+    onClick: () -> Unit,
+    focusRequester: FocusRequester?,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val ring by animateFloatAsState(
+        targetValue = if (focused) 1f else 0f,
+        animationSpec = tween(durationMillis = 120),
+        label = "sourceFocus",
     )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .tvFocusGlow(progress = ring, cornerRadius = 12.dp)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .background(
+                when {
+                    selected -> Color.White.copy(alpha = 0.12f)
+                    focused -> StreamflixColors.Glass
+                    else -> Color.Transparent
+                },
+                RoundedCornerShape(12.dp),
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "${index + 1}",
+            style = MaterialTheme.typography.titleMedium,
+            color = StreamflixColors.OnSurfaceMuted,
+            modifier = Modifier.width(38.dp),
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = source.label,
+                style = MaterialTheme.typography.titleSmall,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = buildString {
+                    append(if (source.isHls) "HLS" else if (source.isDash) "DASH" else "Progresivo")
+                    source.quality?.takeIf { it.isNotBlank() }?.let { append(" · ").append(it) }
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = StreamflixColors.OnSurfaceMuted,
+                maxLines = 1,
+            )
+        }
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .background(Color.White, RoundedCornerShape(percent = 50))
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = "EN USO",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.Black,
+                )
+            }
+        }
+    }
 }
 
 @Composable
