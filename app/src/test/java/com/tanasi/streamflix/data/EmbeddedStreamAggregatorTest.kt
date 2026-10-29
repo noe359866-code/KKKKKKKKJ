@@ -34,7 +34,7 @@ class EmbeddedStreamAggregatorTest {
         assertEquals(3, response.streams.size)
         assertEquals("uno", response.streams[0].provider)
         assertEquals("4K", response.streams[0].quality)
-        assertEquals("720p", response.streams[1].quality)
+        assertEquals("1080p", response.streams[1].quality)
         assertEquals("dos", response.streams[2].provider)
         assertEquals("UA/1", response.streams[0].behaviorHints?.requestHeaders?.get("User-Agent"))
         assertEquals("https://b.example/", response.streams[2].behaviorHints?.requestHeaders?.get("Referer"))

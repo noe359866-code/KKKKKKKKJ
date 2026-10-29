@@ -30,7 +30,10 @@ private data class ProvidersFile(val providers: List<ProviderConfig> = emptyList
 /** Registro de scrapers embebidos, ordenado por prioridad de failover. */
 class EmbeddedProviders(json: Json, raw: String) {
     val all: List<ProviderConfig> = json.decodeFromString(ProvidersFile.serializer(), raw).providers
-        .filter { it.id.isNotBlank() && it.script.isNotBlank() && !it.script.contains('/') && !it.script.contains('\\') }
+        .filter {
+            it.enabled && it.id.isNotBlank() && it.script.isNotBlank() &&
+                !it.script.contains('/') && !it.script.contains('\\')
+        }
         .sortedBy { it.priority }
 
     fun forContent(isLive: Boolean): List<ProviderConfig> = all.filter { it.supports(isLive) }
