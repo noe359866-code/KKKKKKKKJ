@@ -1,9 +1,12 @@
 package com.tanasi.streamflix.data.embedded
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+
+const val DEFAULT_USER_AGENT =
+    "Mozilla/5.0 (Linux; Android 12; Android TV) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 @Serializable
 data class ProviderConfig(
@@ -31,10 +34,4 @@ class EmbeddedProviders(json: Json, raw: String) {
         .sortedBy { it.priority }
 
     fun forContent(isLive: Boolean): List<ProviderConfig> = all.filter { it.supports(isLive) }
-
-    companion object {
-        const val DEFAULT_USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 12; Android TV) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
 }
