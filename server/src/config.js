@@ -163,6 +163,13 @@ export const config = {
     configPath: process.env.CATALOGS_CONFIG || path.join(ROOT, 'config', 'catalogs.json'),
     /* Curated live TV / sports channels: the "local" half of the home screen. */
     liveCatalogPath: process.env.LIVE_CATALOG_PATH || path.join(ROOT, 'config', 'live-catalog.json'),
+    /* Third-party Stremio addons whose *catalogs* we republish (see the
+     * `addons` block in config/catalogs.json). Their manifest is fetched once
+     * per boot and cached on disk, so a cold start behind a broken WAN still
+     * knows which rows to publish. */
+    remoteTimeoutMs: envInt('CATALOG_REMOTE_TIMEOUT_MS', 8_000, { min: 500, max: 60_000 }),
+    remoteTtlMs: envInt('CATALOG_REMOTE_TTL_HOURS', 6, { min: 1, max: 720 }) * HOUR,
+    remoteCachePath: process.env.CATALOG_REMOTE_CACHE || path.join(ROOT, '.cache', 'remote-catalogs.json'),
   },
 
   scrapers: {

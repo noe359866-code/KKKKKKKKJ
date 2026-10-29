@@ -249,6 +249,10 @@ catalogRouter.get('/catalogs.json', asyncHandler(async (req, res) => {
       posterShape: catalog.posterShape,
       order: catalog.order,
       genres: catalog.genres,
+      /* De dónde sale la fila: `cinemeta` (addon oficial de Stremio),
+       * `local` (canales curados) o `remote` (addon de terceros). */
+      source: catalog.source.kind,
+      ...(catalog.provider ? { provider: catalog.provider } : {}),
       /* La app puede precalcular la URL exacta del catálogo. */
       feed: `/catalog/${catalog.type}/${catalog.id}.json`,
     })),

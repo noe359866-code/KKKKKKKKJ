@@ -190,10 +190,7 @@ export async function getCatalog({ type, id, extra = {} }, options = {}) {
  */
 async function fetchCatalog(definition, extra, options) {
   try {
-    const metas =
-      definition.source.kind === 'cinemeta'
-        ? await cinemetaMetas(definition, extra, options)
-        : await localMetas(definition, extra);
+    const metas = await metasFor(definition, extra, options);
 
     return {
       metas: metas.slice(0, config.catalogs.pageSize),
@@ -207,6 +204,59 @@ async function fetchCatalog(definition, extra, options) {
     });
     return { metas: [], source: definition.source.kind, degraded: true };
   }
+}
+
+/** Despacha según el origen declarado en el registro. */
+function metasFor(definition, extra, options) {
+  switch (definition.source.kind) {
+    case 'cinemeta':
+      return cinemetaMetas(definition, extra, options);
+    case 'remote':
+      return remoteMetas(definition, extra, options);
+    default:
+      return localMetas(definition, extra);
+  }
+}
+
+/**
+ * Catálogo de un addon de terceros (p. ej. *Streaming Catalogs*, el addon que
+ * publica las filas de Netflix, Disney+, Prime Video…).
+ *
+ * Sólo se le mandan los extras que su manifest declara: si no anuncia
+ * `search`, mandarle `search=` devuelve 404 en algunos addons. Las metas se
+ * normalizan igual que las de Cinemeta porque el protocolo es el mismo, y se
+ * etiquetan con `sourceName` para que la ficha sepa de dónde salieron.
+ */
+async function remoteMetas(definition, extra, options) {
+  const { source, capabilities } = definition;
+  const path = buildCatalogPath({
+    type: source.type,
+    id: source.id,
+    extra: {
+      genre: capabilities?.genre ? extra.genre : undefined,
+      skip: capabilities?.skip ? extra.skip : undefined,
+      search: capabilities?.search ? extra.search : undefined,
+    },
+  });
+
+  const payload = await cinemetaGet(path, {
+    ...options,
+    base: source.baseUrl,
+    timeoutMs: config.catalogs.remoteTimeoutMs,
+  });
+
+  if (payload === null) throw new Error(`remote addon ${source.addonName || source.baseUrl} did not answer`);
+
+  const metas = normalizeMetas(payload.metas, { type: source.type });
+
+  return metas
+    .slice(0, source.limit || config.catalogs.pageSize)
+    .map((meta) => ({
+      ...meta,
+      type: definition.type,
+      ...(definition.posterShape === 'landscape' ? { posterShape: 'landscape' } : {}),
+      sourceName: source.addonName || definition.name,
+    }));
 }
 
 /** Cinemeta: traduce tipo publicado → tipo real y aplica extras. */
@@ -335,6 +385,10 @@ export async function getMeta({ type, id }, options = {}) {
       ? { meta: item, cached: true, stale: false, ttlMs: config.catalogs.metaTtlMs, durationMs: elapsedMs(startedAt) }
       : null;
   }
+
+  /* Las filas de terceros también acaban aquí: sus metas llevan ids de IMDb,
+   * así que la ficha (sinopsis, año, episodios) la sirve Cinemeta aunque el
+   * addon remoto sólo publique el recurso `catalog`. */
 
   /* Anime se resuelve como serie: los ids de Cinemeta son IMDb, sin tipo propio. */
   const upstreamType = normalizedType === 'anime' ? 'series' : normalizedType;

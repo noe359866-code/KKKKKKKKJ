@@ -1,5 +1,5 @@
 {
-  "$comment": "Catálogos que publica este addon en /manifest.json. 'type' e 'id' son los del protocolo Stremio: GET /catalog/<type>/<id>.json. 'source' dice de dónde salen las metas: cinemeta (addon oficial de metadatos) o local (config/live-catalog.json). 'posterShape' controla si el cliente pinta tarjetas 2:3 (poster) o 16:9 (landscape).",
+  "$comment": "Catálogos que publica este addon en /manifest.json. 'type' e 'id' son los del protocolo Stremio: GET /catalog/<type>/<id>.json. 'source' dice de dónde salen las metas: cinemeta (addon oficial de metadatos), local (config/live-catalog.json) o remote (un addon de terceros declarado en 'addons'). 'posterShape' controla si el cliente pinta tarjetas 2:3 (poster) o 16:9 (landscape).",
   "catalogs": [
     {
       "type": "tv",
@@ -7,8 +7,14 @@
       "name": "TV en Vivo y Deportes",
       "posterShape": "landscape",
       "order": 1,
-      "genres": ["Deportes", "Canales", "Eventos"],
-      "source": { "kind": "local" }
+      "genres": [
+        "Deportes",
+        "Canales",
+        "Eventos"
+      ],
+      "source": {
+        "kind": "local"
+      }
     },
     {
       "type": "movie",
@@ -16,7 +22,11 @@
       "name": "Películas populares",
       "posterShape": "poster",
       "order": 2,
-      "source": { "kind": "cinemeta", "type": "movie", "id": "top" }
+      "source": {
+        "kind": "cinemeta",
+        "type": "movie",
+        "id": "top"
+      }
     },
     {
       "type": "movie",
@@ -24,7 +34,11 @@
       "name": "Mejor valoradas",
       "posterShape": "poster",
       "order": 3,
-      "source": { "kind": "cinemeta", "type": "movie", "id": "imdbRating" }
+      "source": {
+        "kind": "cinemeta",
+        "type": "movie",
+        "id": "imdbRating"
+      }
     },
     {
       "type": "series",
@@ -32,7 +46,11 @@
       "name": "Series populares",
       "posterShape": "poster",
       "order": 4,
-      "source": { "kind": "cinemeta", "type": "series", "id": "top" }
+      "source": {
+        "kind": "cinemeta",
+        "type": "series",
+        "id": "top"
+      }
     },
     {
       "type": "anime",
@@ -40,7 +58,12 @@
       "name": "Anime en emisión",
       "posterShape": "poster",
       "order": 5,
-      "source": { "kind": "cinemeta", "type": "series", "id": "top", "genre": "Animation" }
+      "source": {
+        "kind": "cinemeta",
+        "type": "series",
+        "id": "top",
+        "genre": "Animation"
+      }
     },
     {
       "type": "anime",
@@ -48,7 +71,35 @@
       "name": "Anime mejor valorado",
       "posterShape": "poster",
       "order": 6,
-      "source": { "kind": "cinemeta", "type": "series", "id": "imdbRating", "genre": "Animation" }
+      "source": {
+        "kind": "cinemeta",
+        "type": "series",
+        "id": "imdbRating",
+        "genre": "Animation"
+      }
+    }
+  ],
+  "addons": [
+    {
+      "id": "streaming",
+      "name": "Streaming Catalogs",
+      "$comment": "Addon de terceros cuyos catálogos se republican como filas propias. 'only' elige qué servicios se publican (los ids son los de su manifest: nfx=Netflix, dnp=Disney+, amp=Prime Video, hbm=HBO Max, atp=Apple TV+, hlu=Hulu, pmp=Paramount+, pcp=Peacock, cru=Crunchyroll, stz=Starz, sha=Shahid, iqi=iQIYI, mbi=Mubi...). Deja 'only' vacío para publicar los 41 catálogos del addon. 'limit' recorta metas por fila.",
+      "manifestUrl": "https://7a82163c306e-stremio-netflix-catalog-addon.baby-beamup.club/c2hhLGlxaSxzaGQsYmJvLGFjdCx2aWssbWJpLGRwZSxjcmMsc3R6LG5mayxjdHMsbWdsLGNydSxobHUscG1wLHBjcCxhdHAsZG5wLGFtcCxoYm0sbmZ4OjpVUzoxNzkwNjIyNDQyMjI3OjA6MDpHVA%3D%3D/manifest.json",
+      "only": [
+        "nfx",
+        "dnp",
+        "amp",
+        "hbm",
+        "atp"
+      ],
+      "types": [
+        "movie",
+        "series"
+      ],
+      "limit": 40,
+      "order": 100,
+      "posterShape": "poster",
+      "enabled": true
     }
   ]
 }

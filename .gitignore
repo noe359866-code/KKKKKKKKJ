@@ -15,6 +15,7 @@ captures/
 # --- Node (server/) ---------------------------------------------------------
 node_modules/
 server/.env
+server/.cache/
 coverage/
 
 # --- Python scraper bridge --------------------------------------------------

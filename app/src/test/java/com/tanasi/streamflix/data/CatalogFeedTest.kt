@@ -95,6 +95,22 @@ class CatalogFeedTest {
     }
 
     @Test
+    fun `una meta de un addon de terceros se etiqueta con su catalogo`() {
+        val descriptor = CatalogDescriptor(
+            type = "movie",
+            id = "streaming_nfx",
+            name = "Netflix",
+            source = "remote",
+            provider = "Streaming Catalogs",
+        )
+        val entry = meta(id = "tt0111161", type = "movie").toEntry(descriptor)
+
+        assertEquals("Streaming Catalogs", entry.provider)
+        assertEquals("movie", entry.type)
+        assertEquals("movies", entry.art)
+    }
+
+    @Test
     fun `los identificadores tt se etiquetan como Cinemeta`() {
         assertEquals("Cinemeta", meta().toEntry().provider)
         assertNull(meta(id = "tv:demo:espn-1", type = "tv").toEntry().provider)

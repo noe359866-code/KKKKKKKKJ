@@ -42,6 +42,13 @@ data class CatalogDescriptor(
     @SerialName("order") val order: Int = 100,
     @SerialName("genres") val genres: List<String> = emptyList(),
     @SerialName("feed") val feed: String? = null,
+    /**
+     * `cinemeta` | `local` | `remote`. Las filas `remote` vienen de un addon de
+     * terceros republicado por nuestro servidor (Netflix, Disney+…).
+     */
+    @SerialName("source") val source: String? = null,
+    /** Nombre del addon de origen cuando [source] es `remote`. */
+    @SerialName("provider") val provider: String? = null,
 ) {
     /** Forma de las tarjetas, decidida por el **servidor**. */
     val rowAspect: RowAspect
@@ -113,6 +120,12 @@ data class RemoteMeta(
      */
     @SerialName("sourceType") val sourceType: String? = null,
     @SerialName("imdb_id") val imdbId: String? = null,
+    /**
+     * Nombre del catálogo de origen cuando la meta viene de un addon de
+     * terceros (`"Streaming Catalogs"`). El servidor lo añade sólo en esas
+     * filas; las de Cinemeta se reconocen por el id `tt…`.
+     */
+    @SerialName("sourceName") val sourceName: String? = null,
     @SerialName("videos") val videos: List<RemoteVideo> = emptyList(),
 ) {
     val mediaType: MediaType get() = MediaType.fromWire(type) ?: MediaType.Movie
@@ -141,12 +154,18 @@ data class RemoteMeta(
         rating = rating,
         runtime = runtime,
         live = mediaType == MediaType.Live,
-        provider = sourceLabel(),
+        provider = providerLabel(descriptor),
     )
 
-    /** "Cinemeta" para lo que viene del addon oficial; el proveedor real lo pone el servidor al scrapear. */
-    private fun sourceLabel(): String? =
-        if (id.startsWith("tt")) "Cinemeta" else null
+    /**
+     * Etiqueta de origen de la ficha: el addon de terceros si lo dijo, si no
+     * "Cinemeta" para los ids de IMDb. El proveedor del *stream* lo pone el
+     * servidor al scrapear, esto es sólo de dónde salieron los metadatos.
+     */
+    private fun providerLabel(descriptor: CatalogDescriptor?): String? =
+        sourceName?.takeIf { it.isNotBlank() }
+            ?: descriptor?.provider?.takeIf { it.isNotBlank() }
+            ?: if (id.startsWith("tt")) "Cinemeta" else null
 
     private companion object {
         fun artKeyFor(type: String): String = when (MediaType.fromWire(type)) {

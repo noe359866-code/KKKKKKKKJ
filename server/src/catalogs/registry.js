@@ -25,6 +25,10 @@
  *     }
  *   }
  *
+ * Además de las filas escritas a mano, `config/catalogs.json` puede declarar
+ * **addons de terceros** en un bloque `addons`; sus catálogos se republican
+ * como filas propias (ver `remoteAddons.js`).
+ *
  * Reglas de validación (un catálogo inválido se descarta con warning, nunca
  * rompe el addon):
  *   - `type` debe ser uno de los tipos que declara el addon (config.addon.types);
@@ -37,11 +41,12 @@ import { readFile } from 'node:fs/promises';
 
 import config from '../config.js';
 import { CINEMETA_TYPES } from '../lib/cinemeta.js';
+import { normalizeAddon, resolveRemoteCatalogs } from './remoteAddons.js';
 import { createLogger } from '../lib/logger.js';
 
 const log = createLogger('catalogs');
 
-const KINDS = new Set(['cinemeta', 'local']);
+const KINDS = new Set(['cinemeta', 'local', 'remote']);
 const SHAPES = new Set(['poster', 'landscape']);
 const ID_RE = /^[a-zA-Z0-9_-]{1,48}$/;
 
@@ -106,8 +111,38 @@ export function normalizeCatalog(raw, index = 0) {
   }
 
   const source = { kind: sourceKind };
+  /* Qué extras anuncia el manifest. Sin esto Stremio (y nuestra app) enseñarían
+   * una barra de búsqueda para catálogos que no saben buscar. */
+  const capabilities = {
+    search: true,
+    skip: true,
+    genre: Array.isArray(raw.genres) && raw.genres.length > 0,
+  };
 
-  if (sourceKind === 'cinemeta') {
+  if (sourceKind === 'remote') {
+    const baseUrl = String(raw.source.baseUrl || '').replace(/\/+$/, '');
+    const remoteType = String(raw.source.type || '').toLowerCase().trim();
+    const remoteId = String(raw.source.id || '').trim();
+
+    if (!/^https?:\/\//i.test(baseUrl) || !remoteType || !remoteId) {
+      log.warn('catalog skipped: remote source is incomplete', { type, id, baseUrl, remoteType, remoteId });
+      return null;
+    }
+    /* El addon remoto sólo entiende los extras que declara. */
+    const extraNames = Array.isArray(raw.extraNames) ? raw.extraNames : [];
+    capabilities.search = extraNames.includes('search');
+    capabilities.skip = extraNames.includes('skip');
+    capabilities.genre = extraNames.includes('genre');
+
+    source.baseUrl = baseUrl;
+    source.type = remoteType;
+    source.id = remoteId;
+    source.addonId = String(raw.source.addonId || '').trim() || null;
+    source.addonName = String(raw.source.addonName || '').trim() || null;
+    source.limit = Number.isInteger(raw.source.limit) && raw.source.limit > 0
+      ? Math.min(raw.source.limit, config.catalogs.pageSize)
+      : config.catalogs.pageSize;
+  } else if (sourceKind === 'cinemeta') {
     const sourceType = String(raw.source.type || type).toLowerCase().trim();
     if (!CINEMETA_TYPES.includes(sourceType)) {
       log.warn('catalog skipped: cinemeta does not serve this type', { type, id, sourceType });
@@ -130,27 +165,58 @@ export function normalizeCatalog(raw, index = 0) {
     order: Number.isFinite(raw.order) ? raw.order : 100 + index,
     genres: Array.isArray(raw.genres) ? raw.genres.map((genre) => String(genre).trim()).filter(Boolean) : [],
     source,
+    capabilities,
+    /* Etiqueta de origen para la UI (sólo las filas de terceros la tienen). */
+    provider: sourceKind === 'remote' ? source.addonName : null,
   };
 }
 
-/** Carga (o recarga) el registro desde disco. */
-export async function loadCatalogs() {
+/**
+ * Carga (o recarga) el registro desde disco.
+ *
+ * @param {object} [options]
+ * @param {typeof fetch} [options.fetchImpl] - inyectable en tests
+ * @param {object} [options.remoteCache]     - caché de manifests ya cargada
+ */
+export async function loadCatalogs(options = {}) {
   try {
     const raw = JSON.parse(await readFile(config.catalogs.configPath, 'utf8'));
     const list = Array.isArray(raw) ? raw : raw.catalogs || [];
     const parsed = list.map(normalizeCatalog).filter(Boolean);
 
-    if (parsed.length === 0) {
+    /* Filas de addons de terceros (Netflix, Disney+…). Si el addon no responde
+     * y no hay caché, simplemente no se publican: el resto del Home sigue. */
+    const addons = Array.isArray(raw.addons) ? raw.addons.map(normalizeAddon).filter(Boolean) : [];
+    let remote = [];
+    if (addons.length > 0) {
+      try {
+        /* Presupuesto global: el arranque no puede quedarse esperando a un
+         * addon de terceros. Si no contesta a tiempo, se publican las filas
+         * locales y las remotas llegan en el siguiente arranque. */
+        remote = await withDeadline(
+          resolveRemoteCatalogs(addons, options),
+          config.catalogs.remoteTimeoutMs + 1_500,
+        );
+      } catch (error) {
+        log.warn('remote addons could not be resolved', { error: error.message });
+      }
+    }
+    const remoteParsed = remote.map(normalizeCatalog).filter(Boolean);
+
+    const all = [...parsed, ...remoteParsed];
+
+    if (all.length === 0) {
       log.warn('catalog config produced no valid catalogs, using defaults', {
         path: config.catalogs.configPath,
       });
       catalogs = DEFAULT_CATALOGS.map(normalizeCatalog).filter(Boolean);
     } else {
-      catalogs = parsed.sort((a, b) => a.order - b.order);
+      catalogs = all.sort((a, b) => a.order - b.order);
     }
     loadedAt = new Date().toISOString();
     log.info('catalogs loaded', {
       count: catalogs.length,
+      remote: remoteParsed.length,
       ids: catalogs.map((catalog) => `${catalog.type}/${catalog.id}`),
       path: config.catalogs.configPath,
     });
@@ -180,6 +246,27 @@ export function ensureCatalogs() {
   return loadPromise;
 }
 
+/**
+ * Resuelve `promise` o `[]` si tarda más de `ms` (y libera el temporizador para
+ * no retener el proceso).
+ */
+function withDeadline(promise, ms) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve([]), ms);
+    timer.unref?.();
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve([]);
+      },
+    );
+  });
+}
+
 /** Todos los catálogos publicados, ordenados. */
 export function getCatalogs() {
   return [...catalogs];
@@ -206,11 +293,11 @@ export function catalogsForType(type) {
  */
 export function manifestCatalogs() {
   return catalogs.map((catalog) => {
-    const extra = [
-      { name: 'search', isRequired: false },
-      { name: 'skip', isRequired: false },
-    ];
-    if ((catalog.genres || []).length > 0) {
+    const capabilities = catalog.capabilities || { search: true, skip: true, genre: false };
+    const extra = [];
+    if (capabilities.search) extra.push({ name: 'search', isRequired: false });
+    if (capabilities.skip) extra.push({ name: 'skip', isRequired: false });
+    if (capabilities.genre && (catalog.genres || []).length > 0) {
       extra.push({ name: 'genre', options: catalog.genres, isRequired: false });
     }
 

@@ -210,6 +210,58 @@ Las filas se declaran en `config/catalogs.json` (misma idea que
 - `posterShape` decide cómo pinta las tarjetas el cliente: `poster` = 2:3
   (películas/series/anime), `landscape` = 16:9 (TV en vivo y deportes).
 
+#### Catálogos de addons de terceros
+
+El bloque `addons` del mismo archivo republica los catálogos de otro addon de
+Stremio sin copiar su código ni su catálogo de datos. Por defecto viene
+configurado **[Streaming Catalogs](https://github.com/powerwork-stremio)** —
+`pw.ers.netflix-catalog`, el addon que publica las filas de Netflix, Disney+,
+Prime Video, HBO Max, Apple TV+, Hulu, Paramount+, Peacock, Crunchyroll…:
+
+```json
+{
+  "addons": [
+    {
+      "id": "streaming",
+      "name": "Streaming Catalogs",
+      "manifestUrl": "https://…/manifest.json",
+      "only": ["nfx", "dnp", "amp", "hbm", "atp"],
+      "types": ["movie", "series"],
+      "limit": 40,
+      "order": 100
+    }
+  ]
+}
+```
+
+- `only` elige qué servicios se publican **y en qué orden** (ids del manifest
+  remoto: `nfx`
+  Netflix, `dnp` Disney+, `amp` Prime Video, `hbm` HBO Max, `atp` Apple TV+,
+  `hlu` Hulu, `pmp` Paramount+, `pcp` Peacock, `cru` Crunchyroll, `stz` Starz,
+  `sha` Shahid, `iqi` iQIYI, `mbi` Mubi…). **Vacío = los 41 catálogos del
+  addon.**
+- `types` limita qué tipos se republican; `limit` recorta metas por fila
+  (por defecto `CATALOG_PAGE_SIZE`).
+- El id publicado se prefija (`streaming_nfx`) para no chocar con los ids
+  propios (`top`, `live`); el id remoto se conserva en `source.id`.
+- Sólo se anuncian los *extras* que el manifest remoto declara: si no anuncia
+  `search`, no se le manda y el cliente no enseña buscador (ver el `extra` del
+  manifest).
+- Las metas se normalizan igual que las de Cinemeta y se etiquetan con
+  `sourceName`. Como sus ids son de IMDb (`tt…`), la ficha
+  (`/meta/{type}/{id}.json`, sinopsis y episodios) la sigue sirviendo Cinemeta y
+  las fuentes, nuestro `/stream`.
+- El **manifest** del addon remoto se lee una vez por arranque y se cachea 6 h
+  en `.cache/remote-catalogs.json`: un reinicio sin red sigue publicando las
+  filas. Si el addon está caído y no hay caché, sus filas no se publican y el
+  resto del Home funciona igual.
+
+```bash
+# tras reiniciar con el bloque `addons`
+curl -s http://localhost:7000/catalogs.json | jq '.catalogs[] | select(.source=="remote") | .name'
+curl -s http://localhost:7000/catalog/movie/streaming_nfx.json | jq '.metas[0]'
+```
+
 Extras del protocolo, como segmentos de path:
 
 ```bash
@@ -601,6 +653,9 @@ Agregar un proveedor real:
 | `CATALOG_PAGE_SIZE` | `100` | Tope de metas por catálogo. |
 | `CATALOGS_CONFIG` | `./config/catalogs.json` | Filas publicadas (tipo, id, nombre, `posterShape`, origen). |
 | `LIVE_CATALOG_PATH` | `./config/live-catalog.json` | Canales de TV en vivo y deportes curados. |
+| `CATALOG_REMOTE_TIMEOUT_MS` | `8000` | Timeout al leer el manifest de un addon de terceros. |
+| `CATALOG_REMOTE_TTL_HOURS` | `6` | Vigencia del manifest cacheado en disco. |
+| `CATALOG_REMOTE_CACHE` | `./.cache/remote-catalogs.json` | Caché de manifests remotos. |
 
 Todas se pueden poner en `server/.env` (se carga automáticamente, sin
 dependencias) o inyectarlas desde el orquestador.

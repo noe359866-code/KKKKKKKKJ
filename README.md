@@ -88,11 +88,15 @@ through the official Addon protocol:
   published catalogs (`catalog` + `meta` resources).
 - `GET /catalog/:type/:id.json` — Stremio catalog protocol, backed by
   **[Cinemeta](https://github.com/Stremio/stremio-addon-sdk)** (the official
-  metadata addon) and merged with the local live TV/sports rows:
+  metadata addon), merged with the local live TV/sports rows and with the
+  catalogs of a third-party Stremio addon:
   `top`, `year`, `imdbRating` for movies and series, `anime/top`
-  (Cinemeta `series` + `genre=Animation`), and `tv/live` from
-  `server/config/live-catalog.json`. Accepts the standard extras as path
-  segments — `/catalog/movie/top/search=matrix.json`,
+  (Cinemeta `series` + `genre=Animation`), `tv/live` from
+  `server/config/live-catalog.json`, and **`streaming_<service>`** rows
+  (Netflix, Disney+, Prime Video, HBO Max, Apple TV+…) republished from
+  *Streaming Catalogs* — any other Stremio addon can be added the same way
+  through the `addons` block (no code, no copying their data).
+  Accepts the standard extras as path segments — `/catalog/movie/top/search=matrix.json`,
   `/catalog/tv/live/genre=Deportes/skip=20.json`.
 - `GET /meta/:type/:id.json` — rich metadata (synopsis, poster, year, rating)
   and, for series, the episode list (`tt0944947:1:2`), so a Cinemeta poster
@@ -365,9 +369,13 @@ then loads every row in parallel from `GET /catalog/{type}/{id}.json`:
   posters (movies, series, anime), `posterShape: "landscape"` renders 16:9
   cards (live TV and sports);
 - rows are `movie/top`, `movie/imdbRating`, `series/top`, `anime/top`,
-  `anime/imdbRating` (Cinemeta, enriched with synopsis/poster/year/rating) and
+  `anime/imdbRating` (Cinemeta, enriched with synopsis/poster/year/rating),
   `tv/live` (curated channels from `server/config/live-catalog.json`, whose ids
-  are exactly the stream ids — `tv:futbolibre:espn-1`);
+  are exactly the stream ids — `tv:futbolibre:espn-1`) and the per-service
+  rows republished from the *Streaming Catalogs* addon
+  (`movie/streaming_nfx` Netflix, `movie/streaming_dnp` Disney+,
+  `series/streaming_amp` Prime Video…, chosen in the `addons` block of
+  `server/config/catalogs.json`; empty `only` publishes all 41);
 - adding, removing or reordering a row is editing
   `server/config/catalogs.json` and restarting Node: no APK rebuild, no
   reinstall on the TV;
