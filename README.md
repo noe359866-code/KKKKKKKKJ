@@ -78,6 +78,7 @@ For a production build, configure your own release signing as described below.
 - No account required for the app interface
 - Educational and personal use only
 - **Android TV only**: D-Pad-first UI, no phone layout, no touch gestures
+- **Perfiles** al estilo Apple TV: avatares, hasta 6, y un "Seguir viendo" distinto por perfil
 - Multiple providers, with automatic silent failover between their streams
 - Home with horizontal carousels, starting with open live channels that play with no setup (iptv-org)
 
@@ -227,49 +228,57 @@ sigue leyendo y ninguna tarjeta queda en gris. Los cuatro JPEG de muestra que
 traía el proyecto (`art_movies`, `art_series`, `art_anime`, `art_live`), el
 `Artwork.kt` que los mapeaba y la captura de diseño del README se eliminaron.
 
-### Diseño para Android TV
+### Diseño: Apple TV, de principio a fin
+
+La interfaz copia el lenguaje de la app **Apple TV (tvOS)**, no el de Netflix.
+Cuatro reglas que se ven en todas las pantallas:
+
+| Regla | Cómo se aplica |
+| --- | --- |
+| **Negro puro** | `#000000` de fondo (no un gris azulado): la foto es lo único que brilla |
+| **El acento es el blanco** | botones primarios en cápsula blanca con texto negro; el resto, vidrio translúcido al 12 % |
+| **Un solo rojo** | sólo para "EN VIVO"; ni el foco ni los títulos usan rojo |
+| **Foco fino** | anillo blanco de 2 dp + halo mínimo + escala 1,05 (tvOS no usa neón) |
+
+Geometría y jerarquía:
+
+- **Hero** a sangre, anclado abajo a la izquierda: estado, título en 44 sp con
+  interletraje negativo, línea de metadatos (`★ 8.2 · 4K · 2026 · 1 h 52 min`),
+  sinopsis de tres líneas y tres cápsulas — **▶ Reproducir** (blanca, la única
+  clara de la pantalla), *Más información* y *Fuentes*.
+- **Deriva Ken Burns** del backdrop (escala 1 → 1,06 en 20 s) en una animación
+  infinita sobre `graphicsLayer`: no recompone, así que un TV box barato no sufre.
+- **Filas** con encabezado mínimo (sólo el nombre, 22 sp). Se eliminaron la barra
+  de acento, el contador de títulos y la etiqueta "16:9" que sólo añadían ruido.
+- **Tarjetas** de 10 dp de radio; el título debajo siempre se lee (atenuado al
+  62 % y blanco pleno al enfocar), en vez de aparecer de la nada.
+- **Canales en vivo**: el logotipo se pinta con `ContentScale.Fit` para no
+  recortar la marca; el cine se recorta a sangre.
 
 Referencias de otros proyectos abiertos de TV (Jellyfin Android TV, SmartTube,
-Stremio, Kodi): hero cinematográfico, filas horizontales con foco explícito y
-cero gestos que dependan del dedo.
-
-| Referencia | Qué se toma |
-| --- | --- |
-| **Apple TV+** | hero cuyo fondo sigue al foco, con deriva Ken Burns y tres acciones (Reproducir / Más información / Cambiar servidor) |
-| **Netflix** | carruseles, tarjetas 2:3, escala 1.08x al enfocar |
-| **Prime Video** | badges flotantes sobre el arte (EN VIVO, calidad, proveedor) y ficha rápida antes de reproducir |
-| **Jellyfin / Kodi** | mando a distancia como única entrada: foco inicial siempre visible, `Back` predecible, sin `pointerInput` |
+Kodi) para lo que no se ve: foco inicial siempre definido, `Back` predecible,
+ningún gesto táctil y ningún menú contextual inalcanzable con el mando.
 
 Todo es Compose (sin layouts XML): `ui/home/HeroBanner.kt`,
 `ui/components/MediaCards.kt`, `ui/components/MediaRow.kt`,
-`ui/components/Badges.kt`, `ui/details/DetailsPanel.kt`.
+`ui/components/Badges.kt`, `ui/details/DetailsPanel.kt`, `ui/theme/`.
 
-**Geometría del hero.** El backdrop ocupa 0.78 del alto de pantalla y el bloque
-de texto se ancla en 0.62, justo donde arranca la primera fila: los CTAs quedan
-libres, se ve una fila 16:9 completa y asoma el título de la siguiente — la pista
-visual de que hay que pulsar ABAJO.
+### Perfiles: ¿quién está viendo?
 
-**Tarjetas.** Un solo `ContentCard` renderiza ambas proporciones y la fila elige
-(`aspect: "poster" | "landscape"` en el catálogo). Los canales en vivo usan
-`ContentScale.Fit` sobre el logotipo para no recortarlo, y las películas
-`Crop` sobre el póster.
+En una tele del salón no ve lo mismo un adulto que un niño. La app tiene
+perfiles propios (no hace falta cuenta):
 
-Foco en TV = escala 1.08 + elevación + anillo neón (`Modifier.tvFocusGlow`, cian
-a propósito: el rojo ya significa "en vivo/marca"). El título bajo la tarjeta
-aparece con el foco, así una fila sin enfocar queda limpia.
-
-**Badges.** `LiveBadge` (punto pulsante), `TrendingBadge` (TOP 10),
-`QualityBadge` (4K en neón), chip de proveedor y barra de progreso. Durante la
-reproducción el reproductor muestra `FailoverBadge` con la fuente que está
-realmente en pantalla ("Fuente 2 de 5").
-
-**Ficha antes de reproducir.** Abrir una tarjeta muestra `DetailsDialog`, un
-`Dialog` con ventana propia (el D-Pad no se escapa a la estantería de detrás):
-cabecera con backdrop, nota/calidad/géneros, sinopsis y el **selector de
-servidores** — las fuentes que devolvió el addon, en su orden de prioridad, ya
-cargadas por `StreamsRepository`. El índice elegido viaja al reproductor como
-`PlaybackRequest.startIndex` y el failover continúa hacia abajo desde ahí.
-"Cambiar servidor" en el hero abre este mismo panel con el foco en la lista.
+- **Selector al arrancar** (`ui/profile/ProfileGate.kt`): avatares redondos de
+  128 dp con las iniciales y un degradado de la paleta de Apple, "Añadir perfil"
+  y **Editar** para borrar. El foco es el mismo anillo blanco que en las tarjetas.
+- **Hasta 6 perfiles**; el nombre se escribe con el teclado del sistema (Android
+  TV lo pone a pantalla completa), sin reinventarlo con una cuadrícula letra a letra.
+- **"Seguir viendo" por perfil**: al salir del reproductor se guarda la posición
+  (`WatchProgressStore`, clave por perfil) y esa fila — 16:9, con barra de
+  progreso y "1 h 00 min restantes" — aparece **la primera** en el Home del perfil
+  que entra. Por debajo de 15 s no se guarda nada; a falta de 90 s se da por vista.
+- **Cambiar de perfil** desde el avatar de la barra superior, sin cerrar la app.
+- El último perfil usado se recuerda: al encender la tele se entra directo a él.
 
 ### Sólo Android TV
 

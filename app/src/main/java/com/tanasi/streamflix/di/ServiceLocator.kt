@@ -4,7 +4,9 @@ import android.content.Context
 import com.tanasi.streamflix.data.ContentClient
 import com.tanasi.streamflix.data.RoutingContentClient
 import com.tanasi.streamflix.data.local.ChaquopyRuntime
+import com.tanasi.streamflix.data.local.ProfileStore
 import com.tanasi.streamflix.data.local.EmbeddedContentClient
+import com.tanasi.streamflix.data.local.WatchProgressStore
 import com.tanasi.streamflix.data.remote.AddonClient
 import com.tanasi.streamflix.data.repo.CatalogRepository
 import com.tanasi.streamflix.data.repo.StreamsRepository
@@ -45,6 +47,12 @@ object ServiceLocator {
 
     @Volatile
     private var catalogInstance: CatalogRepository? = null
+
+    @Volatile
+    private var profileStoreInstance: ProfileStore? = null
+
+    @Volatile
+    private var progressStoreInstance: WatchProgressStore? = null
 
     private val json: Json = Json {
         ignoreUnknownKeys = true
@@ -102,6 +110,20 @@ object ServiceLocator {
                 .also { catalogInstance = it }
         }
 
+    /** Perfiles del dispositivo (quién ve qué en esta televisión). */
+    fun profileStore(context: Context): ProfileStore =
+        profileStoreInstance ?: synchronized(this) {
+            profileStoreInstance ?: ProfileStore(context.applicationContext)
+                .also { profileStoreInstance = it }
+        }
+
+    /** Progreso por perfil: alimenta la fila "Seguir viendo". */
+    fun watchProgressStore(context: Context): WatchProgressStore =
+        progressStoreInstance ?: synchronized(this) {
+            progressStoreInstance ?: WatchProgressStore(context.applicationContext)
+                .also { progressStoreInstance = it }
+        }
+
     /** Sólo para tests de instrumentación: deja el contenedor como recién creado. */
     fun reset() {
         synchronized(this) {
@@ -112,6 +134,8 @@ object ServiceLocator {
             settingsInstance = null
             addonManagerInstance = null
             stremioClientInstance = null
+            profileStoreInstance = null
+            progressStoreInstance = null
         }
     }
 }

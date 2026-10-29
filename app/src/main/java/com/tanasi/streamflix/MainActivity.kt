@@ -11,11 +11,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.PlaybackRequest
+import com.tanasi.streamflix.data.model.Profile
 import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.di.ServiceLocator
 import com.tanasi.streamflix.ui.details.DetailsDialog
@@ -23,6 +26,7 @@ import com.tanasi.streamflix.ui.details.DetailsViewModel
 import com.tanasi.streamflix.ui.home.HomeScreen
 import com.tanasi.streamflix.ui.home.HomeViewModel
 import com.tanasi.streamflix.ui.player.PlayerActivity
+import com.tanasi.streamflix.ui.profile.ProfileGate
 import com.tanasi.streamflix.ui.settings.ServerSettingsDialog
 import com.tanasi.streamflix.ui.theme.StreamflixTheme
 import com.tanasi.streamflix.ui.update.UpdateDialog
@@ -55,22 +59,82 @@ class MainActivity : ComponentActivity() {
         setContent {
             /* `StreamflixTheme` ya publica el perfil en `LocalDeviceProfile`. */
             StreamflixTheme(deviceProfile = deviceProfile) {
-                Catalogue(
-                    onPlay = { request -> openPlayer(request) },
+                Profiles(
+                    onPlay = { request, profileId -> openPlayer(request, profileId) },
                 )
             }
         }
     }
 
     /**
-     * Catálogo + hojas.
+     * Perfiles ("¿Quién está viendo?").
+     *
+     * Al arrancar se entra directo al último perfil usado; el selector aparece
+     * la primera vez (con "Espectador" ya creado) y siempre que se pulse el
+     * avatar de la barra superior. Cada perfil tiene su propio "Seguir viendo",
+     * que es lo que hace que la tele se comporte como si fueran dos personas.
+     */
+    @Composable
+    private fun Profiles(onPlay: (PlaybackRequest, String) -> Unit) {
+        val store = remember { ServiceLocator.profileStore(applicationContext) }
+        var profiles by remember { mutableStateOf(store.ensureDefault()) }
+        var active by remember { mutableStateOf(store.activeProfile()) }
+        var pickerOpen by remember { mutableStateOf(false) }
+
+        val current = active
+        if (current == null || pickerOpen) {
+            ProfileGate(
+                profiles = profiles,
+                onSelect = { profile ->
+                    store.select(profile.id)
+                    active = profile
+                    pickerOpen = false
+                    profiles = store.profiles()
+                },
+                onCreate = { name ->
+                    store.create(name)?.let { created ->
+                        store.select(created.id)
+                        active = created
+                        pickerOpen = false
+                    }
+                    profiles = store.profiles()
+                },
+                onDelete = { profile ->
+                    store.delete(profile.id)
+                    if (active?.id == profile.id) active = null
+                    profiles = store.profiles()
+                },
+                /* Salir del selector sólo tiene sentido si ya había un perfil:
+                 * en el primer arranque hay que elegir uno. */
+                onDismiss = if (pickerOpen && current != null) {
+                    { pickerOpen = false }
+                } else {
+                    null
+                },
+            )
+            return
+        }
+
+        Catalogue(
+            profile = current,
+            onPlay = { request -> onPlay(request, current.id) },
+            onSwitchProfile = { pickerOpen = true },
+        )
+    }
+
+    /**
+     * Catálogo + hojas del perfil activo.
      *
      * La hoja de detalles es estado de UI (`DetailsTarget`) y no una pantalla
      * aparte: se abre encima del Home, conserva el foco de la tarjeta que la
      * lanzó y se cierra volviendo exactamente ahí.
      */
     @Composable
-    private fun Catalogue(onPlay: (PlaybackRequest) -> Unit) {
+    private fun Catalogue(
+        profile: Profile,
+        onPlay: (PlaybackRequest) -> Unit,
+        onSwitchProfile: () -> Unit,
+    ) {
         val settings = remember { ServiceLocator.settings(applicationContext) }
         val homeFactory = remember {
             viewModelFactory {
@@ -86,6 +150,16 @@ class MainActivity : ComponentActivity() {
             }
         }
         val homeViewModel: HomeViewModel = viewModel(factory = homeFactory)
+
+        /* "Seguir viendo" del perfil activo. Se relee al volver del reproductor
+         * (ON_RESUME), que es cuando el progreso acaba de guardarse. */
+        val progressStore = remember { ServiceLocator.watchProgressStore(applicationContext) }
+        var continueWatching by remember(profile.id) {
+            mutableStateOf(progressStore.entriesFor(profile.id))
+        }
+        LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+            continueWatching = progressStore.entriesFor(profile.id)
+        }
 
         var details by remember { mutableStateOf<DetailsTarget?>(null) }
         /* Primer arranque autónomo: no pide IP, dominio ni un backend. */
@@ -132,6 +206,9 @@ class MainActivity : ComponentActivity() {
                 details = DetailsTarget(entry, openOnSources)
             },
             onOpenSettings = { showSettings = true },
+            profile = profile,
+            continueWatching = continueWatching,
+            onSwitchProfile = onSwitchProfile,
         )
 
         details?.let { target ->
@@ -196,14 +273,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun openPlayer(request: PlaybackRequest) {
+    private fun openPlayer(request: PlaybackRequest, profileId: String) {
         startActivity(
             Intent(this, PlayerActivity::class.java)
                 .putExtra(PlayerActivity.EXTRA_ID, request.id)
                 .putExtra(PlayerActivity.EXTRA_TYPE, request.type)
                 .putExtra(PlayerActivity.EXTRA_TITLE, request.title)
                 .putExtra(PlayerActivity.EXTRA_IS_LIVE, request.isLive)
-                .putExtra(PlayerActivity.EXTRA_START_INDEX, request.startIndex),
+                .putExtra(PlayerActivity.EXTRA_START_INDEX, request.startIndex)
+                /* Con estos tres extras el reproductor puede guardar el
+                 * progreso del perfil y su arte para "Seguir viendo". */
+                .putExtra(PlayerActivity.EXTRA_PROFILE_ID, profileId)
+                .putExtra(PlayerActivity.EXTRA_POSTER, request.poster)
+                .putExtra(PlayerActivity.EXTRA_BACKDROP, request.backdrop),
         )
     }
 

@@ -49,12 +49,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.core.LocalDeviceProfile
-import com.tanasi.streamflix.data.model.HomeCatalog
+import com.tanasi.streamflix.data.model.CatalogRow
 import com.tanasi.streamflix.data.model.MediaEntry
+import com.tanasi.streamflix.data.model.Profile
 import com.tanasi.streamflix.data.model.hasEpisodeNumber
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.ui.components.MediaRow
+import com.tanasi.streamflix.ui.profile.ProfileBadge
 import com.tanasi.streamflix.ui.theme.Dimens
 import com.tanasi.streamflix.ui.theme.StreamflixColors
 import com.tanasi.streamflix.ui.theme.tvFocusGlow
@@ -92,6 +94,10 @@ fun HomeScreen(
     onPlay: (PlaybackRequest) -> Unit,
     onOpenDetails: (MediaEntry, Boolean) -> Unit,
     onOpenSettings: () -> Unit,
+    profile: Profile? = null,
+    /** Filas propias del perfil activo ("Seguir viendo"), ya resueltas. */
+    continueWatching: List<MediaEntry> = emptyList(),
+    onSwitchProfile: () -> Unit = {},
 ) {
     val deviceProfile = LocalDeviceProfile.current
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -164,6 +170,24 @@ fun HomeScreen(
             is HomeUiState.Ready -> {
                 val spotlight = hero ?: current.catalog.featured
 
+                /* "Seguir viendo" va primero y sale del perfil activo: es la
+                 * fila que Apple TV pone arriba y la que hace que cambiar de
+                 * perfil cambie de verdad el Home. */
+                val rows = remember(current.catalog.rows, continueWatching, profile?.id) {
+                    if (continueWatching.isEmpty()) {
+                        current.catalog.rows
+                    } else {
+                        listOf(
+                            CatalogRow(
+                                id = "continue:${profile?.id ?: "me"}",
+                                title = "Seguir viendo",
+                                aspect = "landscape",
+                                items = continueWatching,
+                            ),
+                        ) + current.catalog.rows
+                    }
+                }
+
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val isTv = deviceProfile.isTelevision
                     val heroHeight = maxHeight * TV_BACKDROP_FRACTION
@@ -210,13 +234,13 @@ fun HomeScreen(
                         )
                     }
 
-                    val rows: @Composable (Modifier) -> Unit = { modifier ->
+                    val rowsContent: @Composable (Modifier) -> Unit = { modifier ->
                         CatalogList(
-                            catalog = current.catalog,
+                            rows = rows,
                             deviceProfile = deviceProfile,
                             onEntryClick = { entry -> onOpenDetails(entry, false) },
                             onEntryFocused = viewModel::onCardFocused,
-                            rowsTopPadding = if (isTv) contentBaseline else heroHeight + 24.dp,
+                            rowsTopPadding = contentBaseline,
                             firstCardFocus = firstCardFocus,
                             firstRowFocusUp = heroPlayFocus,
                             modifier = modifier,
@@ -230,7 +254,7 @@ fun HomeScreen(
                                 .fillMaxWidth()
                                 .height(heroHeight),
                         )
-                        rows(Modifier.fillMaxSize())
+                        rowsContent(Modifier.fillMaxSize())
                     }
 
                     HomeTopBar(
@@ -241,6 +265,8 @@ fun HomeScreen(
                         onOpenSearch = { showSearch = true },
                         onClearSearch = { viewModel.search("") },
                         searching = query.isNotBlank(),
+                        profile = profile,
+                        onSwitchProfile = onSwitchProfile,
                         modifier = Modifier.align(Alignment.TopStart),
                     )
 
@@ -249,7 +275,7 @@ fun HomeScreen(
                      * usuario ya puede moverse sin adivinar nada. */
                     if (deviceProfile.requiresDpadFocus) {
                         var initialFocusRequested by remember { mutableStateOf(false) }
-                        LaunchedEffect(current.catalog.rows.firstOrNull()?.id) {
+                        LaunchedEffect(rows.firstOrNull()?.id) {
                             if (initialFocusRequested) return@LaunchedEffect
                             /* `LaunchedEffect` corre antes del layout: sin
                              * esperar un frame, `requestFocus()` lanza
@@ -272,6 +298,8 @@ fun HomeScreen(
                 onOpenSearch = { showSearch = true },
                 onClearSearch = { viewModel.search("") },
                 searching = query.isNotBlank(),
+                profile = profile,
+                onSwitchProfile = onSwitchProfile,
             )
         }
     }
@@ -287,7 +315,7 @@ fun HomeScreen(
  */
 @Composable
 private fun CatalogList(
-    catalog: HomeCatalog,
+    rows: List<CatalogRow>,
     deviceProfile: DeviceProfile,
     rowsTopPadding: Dp,
     onEntryClick: (MediaEntry) -> Unit,
@@ -307,7 +335,7 @@ private fun CatalogList(
         ),
     ) {
         itemsIndexed(
-            items = catalog.rows,
+            items = rows,
             key = { _, row -> row.id },
         ) { index, row ->
             MediaRow(
@@ -337,6 +365,8 @@ private fun HomeTopBar(
     onOpenSearch: () -> Unit,
     onClearSearch: () -> Unit,
     searching: Boolean,
+    profile: Profile?,
+    onSwitchProfile: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -356,17 +386,19 @@ private fun HomeTopBar(
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        /* Marca sobria: en tvOS el logotipo no compite con el hero, y el
+         * acento blanco ya está reservado para los botones. */
         Text(
-            text = "STREAMFLIX",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Black,
-            color = StreamflixColors.Primary,
+            text = "Streamflix",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = StreamflixColors.OnSurface,
         )
-        Spacer(Modifier.width(14.dp))
-        if (deviceProfile.isTelevision) Text(
-            text = "Películas · Series · Anime · TV y deportes",
-            style = MaterialTheme.typography.labelMedium,
-            color = StreamflixColors.OnSurfaceMuted.copy(alpha = 0.9f),
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = "TV",
+            style = MaterialTheme.typography.labelSmall,
+            color = StreamflixColors.OnSurfaceMuted,
             maxLines = 1,
         )
         Spacer(Modifier.weight(1f))
@@ -389,16 +421,24 @@ private fun HomeTopBar(
             onClick = onOpenSettings,
             focusDown = settingsDownFocus,
             focusRequester = settingsFocus,
+            modifier = Modifier.padding(end = if (profile != null) 8.dp else 0.dp),
         )
+        if (profile != null) {
+            ProfileBadge(
+                profile = profile,
+                onClick = onSwitchProfile,
+                focusDown = settingsDownFocus,
+            )
+        }
     }
 }
 
 /**
  * Píldora de la barra superior.
  *
- * Las tres acciones (Inicio, Buscar, Ajustes) comparten forma para que la barra
- * se lea como un menú y no como texto suelto; el foco del mando añade el anillo
- * neón y sube el brillo del vidrio.
+ * Las acciones (Inicio, Buscar, Ajustes) comparten forma para que la barra se
+ * lea como un menú y no como texto suelto; el foco del mando añade el anillo
+ * blanco y sube el brillo del vidrio.
  */
 @Composable
 private fun TopBarChip(
@@ -419,10 +459,12 @@ private fun TopBarChip(
         modifier = modifier
             .then(if (focusDown != null) Modifier.focusProperties { down = focusDown } else Modifier)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .tvFocusGlow(progress = glow, cornerRadius = 6.dp)
+            /* Cápsula translúcida: mismo lenguaje que los botones del hero y
+             * que el avatar del perfil. */
+            .tvFocusGlow(progress = glow, cornerRadius = 20.dp)
             .background(
-                Color.White.copy(alpha = 0.10f + 0.14f * glow),
-                RoundedCornerShape(6.dp),
+                if (focused) StreamflixColors.GlassStrong else StreamflixColors.Glass,
+                RoundedCornerShape(percent = 50),
             )
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)

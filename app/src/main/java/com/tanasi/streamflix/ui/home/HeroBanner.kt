@@ -154,23 +154,26 @@ fun HeroBanner(
         ) {
             val entry = spotlight.entry
 
+            /* tvOS no llena el hero de etiquetas: como mucho el estado (en
+             * directo / tendencia) y, debajo del título, los metadatos. */
             Row(verticalAlignment = Alignment.CenterVertically) {
-                when {
-                    spotlight.isLive -> LiveBadge()
-                    entry.trending -> TrendingBadge()
-                    else -> GlassBadge(text = spotlight.rowTitle)
+                if (spotlight.isLive) {
+                    LiveBadge()
+                    Spacer(Modifier.width(10.dp))
+                } else if (entry.trending) {
+                    TrendingBadge()
+                    Spacer(Modifier.width(10.dp))
                 }
-                Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "${spotlight.position} de ${spotlight.total} · ${spotlight.rowTitle}",
-                    style = MaterialTheme.typography.labelMedium,
+                    text = spotlight.rowTitle,
+                    style = MaterialTheme.typography.labelSmall,
                     color = StreamflixColors.OnSurfaceMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
 
-            Spacer(Modifier.height(if (isTv) 14.dp else 8.dp))
+            Spacer(Modifier.height(if (isTv) 12.dp else 8.dp))
 
             Text(
                 text = entry.title,
@@ -223,7 +226,7 @@ fun HeroBanner(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 HeroButton(
-                    text = "Reproducir",
+                    text = "▶  Reproducir",
                     deviceProfile = deviceProfile,
                     primary = true,
                     focusRequester = playFocusRequester,
@@ -240,7 +243,7 @@ fun HeroBanner(
                     onClick = onDetails,
                 )
                 HeroButton(
-                    text = if (isTv) "Cambiar servidor" else "Servidor",
+                    text = "Fuentes",
                     deviceProfile = deviceProfile,
                     focusRequester = sourcesFocusRequester,
                     upFocus = upFocus,
@@ -309,17 +312,19 @@ private fun HeroButton(
         label = "heroFocus",
     )
     val scale by animateFloatAsState(
-        targetValue = if (focused) 1.04f else 1f,
+        targetValue = if (focused) 1.06f else 1f,
         animationSpec = tween(durationMillis = 130),
         label = "heroScale",
     )
 
-    val shape = RoundedCornerShape(6.dp)
+    /* Cápsula, como los botones de tvOS. `RoundedCornerShape(percent = 50)`
+     * siempre es un óvalo perfecto, sin depender de la altura. */
+    val shape = RoundedCornerShape(percent = 50)
     val background = when {
         primary && focused -> Color.White
-        primary -> Color.White.copy(alpha = 0.94f)
-        focused -> Color.White.copy(alpha = 0.26f)
-        else -> Color.White.copy(alpha = 0.14f)
+        primary -> Color.White.copy(alpha = 0.92f)
+        focused -> StreamflixColors.GlassStrong
+        else -> StreamflixColors.Glass
     }
     val contentColor = if (primary) Color.Black else Color.White
 
@@ -329,7 +334,7 @@ private fun HeroButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .tvFocusGlow(progress = focusProgress, cornerRadius = 6.dp)
+            .tvFocusGlow(progress = focusProgress, cornerRadius = 28.dp)
             .focusProperties {
                 /* Se asigna el destino del D-Pad sólo si existe: dejar el
                  * `FocusRequester.Default` es lo correcto cuando no lo hay. */
@@ -340,18 +345,19 @@ private fun HeroButton(
             .background(background, shape)
             .border(
                 width = 1.dp,
-                color = if (focused) {
-                    StreamflixColors.Neon.copy(alpha = 0.9f)
-                } else {
-                    Color.White.copy(alpha = 0.18f)
+                color = when {
+                    /* En la cápsula blanca el borde sólo aporta al enfocar. */
+                    primary -> Color.Transparent
+                    focused -> Color.White.copy(alpha = 0.55f)
+                    else -> Color.White.copy(alpha = 0.14f)
                 },
                 shape = shape,
             )
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
             .padding(
-                horizontal = if (deviceProfile.requiresDpadFocus) 22.dp else 14.dp,
-                vertical = if (deviceProfile.requiresDpadFocus) 13.dp else 10.dp,
+                horizontal = 26.dp,
+                vertical = 14.dp,
             ),
         contentAlignment = Alignment.Center,
     ) {

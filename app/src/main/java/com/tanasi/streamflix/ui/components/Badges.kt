@@ -129,7 +129,9 @@ fun TrendingBadge(modifier: Modifier = Modifier) {
     GlassBadge(
         text = "TOP 10",
         modifier = modifier,
-        background = StreamflixColors.Primary.copy(alpha = 0.92f),
+        /* Blanco, no rojo: el rojo está reservado para "en directo". */
+        background = Color.White.copy(alpha = 0.94f),
+        contentColor = Color.Black,
         borderColor = Color.White.copy(alpha = 0.24f),
     )
 }

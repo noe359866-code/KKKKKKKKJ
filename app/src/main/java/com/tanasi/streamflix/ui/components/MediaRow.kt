@@ -1,19 +1,13 @@
 package com.tanasi.streamflix.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.data.model.CatalogRow
@@ -71,39 +66,17 @@ fun MediaRow(
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            /* Acento de marca: separa el título de la fila del póster de al
-             * lado sin añadir cajas ni ruido. */
-            Box(
-                modifier = Modifier
-                    .padding(end = 10.dp)
-                    .width(3.dp)
-                    .height(if (deviceProfile.requiresDpadFocus) 20.dp else 16.dp)
-                    .background(StreamflixColors.Primary, RoundedCornerShape(2.dp)),
-            )
+            /* Encabezado mínimo, como en tvOS: sólo el nombre de la fila. Sin
+             * barra de acento, sin contador y sin etiqueta de formato — tres
+             * adornos que competían con las carátulas y no aportaban nada. */
             Text(
                 text = row.title,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = StreamflixColors.OnSurface,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = "${row.items.size} títulos",
-                style = MaterialTheme.typography.labelMedium,
-                color = StreamflixColors.OnSurfaceMuted,
-                maxLines = 1,
-                modifier = Modifier.padding(end = 10.dp),
-            )
-            if (row.rowAspect == RowAspect.Landscape) {
-                /* Pista de formato discreta: en las filas 16:9 se ve menos
-                 * contenido por pantalla y el usuario agradece saber por qué. */
-                Box(
-                    modifier = Modifier.padding(start = 8.dp),
-                ) {
-                    GlassBadge(text = "16:9")
-                }
-            }
         }
 
         LazyRow(

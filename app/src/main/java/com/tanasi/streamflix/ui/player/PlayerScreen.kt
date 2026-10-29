@@ -80,6 +80,12 @@ fun PlayerScreen(
     viewModel: PlayerViewModel,
     request: PlaybackRequest,
     onBack: () -> Unit,
+    /**
+     * Posición alcanzada, justo antes de liberar el reproductor. Es lo que
+     * alimenta "Seguir viendo" **del perfil activo**: sin esto, cada perfil
+     * volvía a empezar la serie desde el principio.
+     */
+    onProgress: (positionMs: Long, durationMs: Long) -> Unit = { _, _ -> },
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
@@ -174,6 +180,9 @@ private fun PlaybackSurface(
     DisposableEffect(controller) {
         controller.start(startIndex = request.startIndex)
         onDispose {
+            /* Antes de soltar el decodificador: después, `currentPosition` ya
+             * es 0 y el progreso se perdería. */
+            runCatching { onProgress(player.currentPosition.coerceAtLeast(0L), player.duration) }
             controller.release()
             player.release()
         }

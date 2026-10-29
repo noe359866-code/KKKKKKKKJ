@@ -13,6 +13,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tanasi.streamflix.core.DeviceDetector
 import com.tanasi.streamflix.core.DpadKeys
 import com.tanasi.streamflix.data.model.PlaybackRequest
+import com.tanasi.streamflix.data.model.WatchProgress
 import com.tanasi.streamflix.di.ServiceLocator
 import com.tanasi.streamflix.ui.theme.StreamflixTheme
 
@@ -39,6 +40,11 @@ class PlayerActivity : ComponentActivity() {
             return
         }
 
+        val profileId = intent.getStringExtra(EXTRA_PROFILE_ID)
+        val poster = intent.getStringExtra(EXTRA_POSTER)
+        val backdrop = intent.getStringExtra(EXTRA_BACKDROP)
+        val progressStore = ServiceLocator.watchProgressStore(this)
+
         val deviceProfile = DeviceDetector.detect(this)
         if (deviceProfile.requiresDpadFocus) {
             DpadKeys.applyImmersive(window.decorView)
@@ -62,6 +68,25 @@ class PlayerActivity : ComponentActivity() {
                     viewModel = playerViewModel,
                     request = request,
                     onBack = { finish() },
+                    onProgress = { positionMs, durationMs ->
+                        /* Un directo no se "continúa": no hay posición que
+                         * guardar. Sin perfil (lanzado desde fuera) tampoco. */
+                        if (!profileId.isNullOrBlank() && !request.isLive) {
+                            progressStore.save(
+                                profileId,
+                                WatchProgress(
+                                    id = request.id,
+                                    type = request.type,
+                                    title = request.title,
+                                    poster = poster,
+                                    backdrop = backdrop,
+                                    positionMs = positionMs,
+                                    durationMs = durationMs,
+                                    updatedAt = System.currentTimeMillis(),
+                                ),
+                            )
+                        }
+                    },
                 )
             }
         }
@@ -84,5 +109,8 @@ class PlayerActivity : ComponentActivity() {
         const val EXTRA_TITLE = "extra.title"
         const val EXTRA_IS_LIVE = "extra.isLive"
         const val EXTRA_START_INDEX = "extra.startIndex"
+        const val EXTRA_PROFILE_ID = "extra.profileId"
+        const val EXTRA_POSTER = "extra.poster"
+        const val EXTRA_BACKDROP = "extra.backdrop"
     }
 }

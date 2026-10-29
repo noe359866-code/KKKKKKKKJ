@@ -48,6 +48,14 @@ para evitar mantener dos copias diferentes.
    y reproduce. Si no se pudo extraer una lista real de episodios, se permite
    indicar temporada y episodio manualmente; no se fabrica una lista.
 
+### Perfiles
+
+Al arrancar, la app pregunta **¿Quién está viendo?** con avatares redondos (hasta
+seis perfiles). Cada perfil guarda su propio **Seguir viendo**: la posición se
+apunta al salir del reproductor y la fila aparece la primera en el Home de esa
+persona. El avatar de la barra superior cambia de perfil sin cerrar la app y el
+último usado se recuerda para el siguiente encendido.
+
 En **Ajustes** se puede activar **Añadir catálogos de Cinemeta**. Es opcional:
 las filas de los proveedores y la TV guardada no dependen de ese servicio.
 Los títulos IMDb de Cinemeta se traducen a nombres antes de invocar los

@@ -114,6 +114,8 @@ fun MediaEntry.playbackRequest(startIndex: Int = 0) = PlaybackRequest(
     title = title,
     isLive = isLive,
     startIndex = startIndex,
+    poster = poster,
+    backdrop = backdrop,
 )
 
 /** Lo que el reproductor necesita saber para abrir un título. */
@@ -127,6 +129,12 @@ data class PlaybackRequest(
      * (`0` = la de mayor prioridad; el failover sigue desde ahí hacia abajo).
      */
     val startIndex: Int = 0,
+    /**
+     * Arte del título. No hace falta para reproducir; viaja para poder pintar
+     * la tarjeta de "Seguir viendo" sin volver a pedir el catálogo.
+     */
+    val poster: String? = null,
+    val backdrop: String? = null,
 )
 
 /** Tanto :temporada:episodio como los ids de anime proveedor:slug:episodio. */

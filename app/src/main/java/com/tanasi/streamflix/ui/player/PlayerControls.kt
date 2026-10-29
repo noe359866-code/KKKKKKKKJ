@@ -388,7 +388,8 @@ private fun ControlButton(
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge,
-            color = Color.White,
+            /* El botón primario es blanco: el texto tiene que ser negro. */
+            color = if (primary) Color.Black else Color.White,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
