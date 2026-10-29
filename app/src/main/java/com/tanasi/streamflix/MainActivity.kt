@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +25,9 @@ import com.tanasi.streamflix.ui.home.HomeViewModel
 import com.tanasi.streamflix.ui.player.PlayerActivity
 import com.tanasi.streamflix.ui.settings.ServerSettingsDialog
 import com.tanasi.streamflix.ui.theme.StreamflixTheme
+import com.tanasi.streamflix.ui.update.UpdateDialog
+import com.tanasi.streamflix.update.AppUpdateManager
+import com.tanasi.streamflix.update.UpdateInfo
 
 /**
  * Única actividad del catálogo.
@@ -80,6 +84,26 @@ class MainActivity : ComponentActivity() {
         var details by remember { mutableStateOf<DetailsTarget?>(null) }
         /* Primer arranque autónomo: no pide IP, dominio ni un backend. */
         var showSettings by remember { mutableStateOf(false) }
+        var pendingUpdate by remember { mutableStateOf<UpdateInfo?>(null) }
+
+        // Comprobación automática de actualización al iniciar la app (100% autónoma)
+        LaunchedEffect(Unit) {
+            if (settings.autoCheckUpdates) {
+                val now = System.currentTimeMillis()
+                // Throttle: como mucho una comprobación automática cada 4 horas
+                if (now - settings.lastUpdateCheckTime > 4 * 3600 * 1000L) {
+                    try {
+                        val update = AppUpdateManager().checkForUpdate()
+                        settings.lastUpdateCheckTime = now
+                        if (update != null) {
+                            pendingUpdate = update
+                        }
+                    } catch (_: Exception) {
+                        // En caso de fallo de red, continuar sin interrumpir al usuario
+                    }
+                }
+            }
+        }
 
         HomeScreen(
             viewModel = homeViewModel,
@@ -137,6 +161,17 @@ class MainActivity : ComponentActivity() {
                     ServiceLocator.catalogRepository(applicationContext).invalidate()
                     homeViewModel.refresh()
                 },
+                onUpdateFound = { update ->
+                    showSettings = false
+                    pendingUpdate = update
+                },
+            )
+        }
+
+        pendingUpdate?.let { update ->
+            UpdateDialog(
+                updateInfo = update,
+                onDismiss = { pendingUpdate = null },
             )
         }
     }

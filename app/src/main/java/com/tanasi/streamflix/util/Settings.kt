@@ -27,6 +27,14 @@ class Settings(context: Context) : AddonSettings {
         get() = prefs.getBoolean(KEY_METADATA, false)
         set(value) = prefs.edit { putBoolean(KEY_METADATA, value) }
 
+    var autoCheckUpdates: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_UPDATE, true)
+        set(value) = prefs.edit { putBoolean(KEY_AUTO_UPDATE, value) }
+
+    var lastUpdateCheckTime: Long
+        get() = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
+        set(value) = prefs.edit { putLong(KEY_LAST_UPDATE_CHECK, value) }
+
     override var baseUrl: String
         get() = prefs.getString(KEY_BASE_URL, null) ?: BuildConfig.DEFAULT_ADDON_BASE_URL
         set(value) = prefs.edit { putString(KEY_BASE_URL, value.trim()) }
@@ -40,5 +48,7 @@ class Settings(context: Context) : AddonSettings {
         const val KEY_BASE_URL = "addon.baseUrl"
         const val KEY_AUTONOMOUS = "engine.autonomous"
         const val KEY_METADATA = "engine.metadataCatalogs"
+        const val KEY_AUTO_UPDATE = "app.autoUpdate"
+        const val KEY_LAST_UPDATE_CHECK = "app.lastUpdateCheck"
     }
 }

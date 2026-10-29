@@ -4,6 +4,8 @@
     <!-- The addon (and the media CDNs) are reached over the network. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Instalación de actualizaciones autónomas del APK sin tienda. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!--
       Hybrid app, one APK for both form factors:
@@ -28,6 +30,17 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.Streamflix">
+
+        <!-- FileProvider para instalar actualizaciones descargadas -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!--
           Single activity for the catalogue. `configChanges` avoids a full
