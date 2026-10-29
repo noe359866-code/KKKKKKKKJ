@@ -7,14 +7,14 @@
   <br />
   An open-source Android TV and mobile app for educational streaming interface, made with Android Studio, in Kotlin
   <br />
-  <a href="https://github.com/streamflix-reborn/streamflix/releases/latest">
-    <strong>Download app »</strong>
+  <a href="https://github.com/noe359866-code/KKKKKKKKJ/actions/workflows/autonomous-checks.yml">
+    <strong>Autonomous APK builds (this fork) »</strong>
   </a>
   <br />
   <br />
-  <a href="https://github.com/streamflix-reborn/streamflix/issues">Report Bug</a>
+  <a href="https://github.com/noe359866-code/KKKKKKKKJ/issues">Report Bug</a>
   ·
-  <a href="https://github.com/streamflix-reborn/streamflix/issues">Request Feature</a>
+  <a href="https://github.com/noe359866-code/KKKKKKKKJ/issues">Request Feature</a>
 </p>
 
 <details>
@@ -57,6 +57,14 @@ Streamflix Reborn is an open-source Android TV and mobile app that provides a us
 This app is designed for educational purposes and personal use only. Users are responsible for ensuring they have proper authorization to access any content they view through this application.
 
 The interface aggregates content from multiple sources and provides a convenient way to browse available streaming options.
+
+### APK downloads for this fork
+
+The link above opens this repository's Android checks, **not an upstream app**.
+Open a successful run and download **`autonomous-debug-apk`** under Artifacts
+(GitHub sign-in may be required), extract the ZIP and install `app-debug.apk`.
+It is a signed, installable **test build**; artifacts are retained for 14 days.
+For a production build, configure your own release signing as described below.
 
 ### Features
 
