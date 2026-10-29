@@ -8,14 +8,14 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!--
-      Hybrid app, one APK for both form factors:
-        - leanback is NOT required, so phones can install it;
-        - touchscreen is NOT required, so Android TV boxes can install it.
-      Play Store uses these two flags to decide which devices see the app.
+      App exclusiva de Android TV / Google TV.
+        - leanback REQUIRED: Play Store (y los launchers) sólo la ofrecen a TV;
+        - sin pantalla táctil: no hay ninguna pantalla pensada para el dedo.
+      La interfaz es 100 % D-Pad: no existen gestos ni botones táctiles.
     -->
     <uses-feature
         android:name="android.software.leanback"
-        android:required="false" />
+        android:required="true" />
     <uses-feature
         android:name="android.hardware.touchscreen"
         android:required="false" />
@@ -54,13 +54,7 @@
             android:launchMode="singleTask"
             android:theme="@style/Theme.Streamflix">
 
-            <!-- Phone / tablet launcher -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-
-            <!-- Android TV launcher (Leanback): appears in the TV home row. -->
+            <!-- Launcher de Android TV (Leanback): la app vive en la fila de apps. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />

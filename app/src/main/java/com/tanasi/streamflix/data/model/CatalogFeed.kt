@@ -53,14 +53,6 @@ data class CatalogDescriptor(
      */
     val rowId: String get() = "remote:$type/$id"
 
-    /** Clave del arte local de respaldo (`movies`, `series`, `anime`, `live`). */
-    val artKey: String
-        get() = when (mediaType) {
-            MediaType.Live -> "live"
-            MediaType.Anime -> "anime"
-            MediaType.Series -> "series"
-            MediaType.Movie -> "movies"
-        }
 }
 
 /**
@@ -125,9 +117,9 @@ data class RemoteMeta(
     /**
      * Convierte la meta en la tarjeta que pinta el Home.
      *
-     * @param descriptor catálogo del que salió: presta la forma y la clave de
-     *   arte local (las metas de Cinemeta traen póster remoto, pero si la red
-     *   falla al cargarlo la tarjeta cae al `drawable` de la app).
+     * @param descriptor catálogo del que salió: presta la etiqueta de origen.
+     *   Las metas traen póster remoto; si la red falla al cargarlo, la tarjeta
+     *   usa el arte generado a partir del título.
      */
     fun toEntry(descriptor: CatalogDescriptor? = null): MediaEntry = MediaEntry(
         id = id,
@@ -136,7 +128,6 @@ data class RemoteMeta(
         title = name.ifBlank { id },
         poster = normalizeArtworkUrl(poster),
         backdrop = normalizeArtworkUrl(background),
-        art = descriptor?.artKey ?: artKeyFor(type),
         year = year ?: releaseInfo?.let { info -> parseYear(info) },
         subtitle = releaseInfo,
         synopsis = description,
@@ -158,13 +149,6 @@ data class RemoteMeta(
             ?: if (id.startsWith("tt")) "Cinemeta" else null
 
     private companion object {
-        fun artKeyFor(type: String): String = when (MediaType.fromWire(type)) {
-            MediaType.Live -> "live"
-            MediaType.Anime -> "anime"
-            MediaType.Series -> "series"
-            else -> "movies"
-        }
-
         fun parseYear(releaseInfo: String): Int? =
             Regex("(\\d{4})").find(releaseInfo)?.groupValues?.getOrNull(1)?.toIntOrNull()
     }

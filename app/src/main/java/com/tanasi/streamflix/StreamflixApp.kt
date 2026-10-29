@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit
  */
 class StreamflixApp : Application(), ImageLoaderFactory {
 
-    var deviceProfile: DeviceProfile = DeviceProfile.Phone
+    var deviceProfile: DeviceProfile = DeviceProfile.Tv
         private set
 
     override fun onCreate() {
@@ -35,12 +35,7 @@ class StreamflixApp : Application(), ImageLoaderFactory {
          * arrancada y no en el primer frame del Home. */
         ServiceLocator.addonClient()
 
-        AppLog.i(
-            "arranque: tv=%s táctil=%s ancho=%ddp",
-            deviceProfile.isTelevision,
-            deviceProfile.hasTouchScreen,
-            deviceProfile.screenWidthDp,
-        )
+        AppLog.i("arranque: Android TV, ancho=%ddp", deviceProfile.screenWidthDp)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {

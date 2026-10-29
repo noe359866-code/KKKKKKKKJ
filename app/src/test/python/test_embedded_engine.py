@@ -91,8 +91,11 @@ class EngineTests(unittest.TestCase):
             rows = self.engine.dispatch("catalogs", {})["catalogs"]
             health = self.engine.dispatch("health", {})
         self.assertEqual(12, len(health["providers"]))
-        self.assertEqual("bundled_live", rows[0]["id"])
-        self.assertTrue(all(row["source"] == "embedded" for row in rows))
+        # Primero los canales abiertos (iptv-org): reproducen sin depender de
+        # ninguna web scrapeada. Después los canales guardados y los proveedores.
+        self.assertEqual("iptvorg", rows[0]["id"])
+        self.assertEqual("bundled_live", rows[1]["id"])
+        self.assertTrue(all(row["source"] in ("embedded", "iptv") for row in rows))
         self.assertTrue(all(callable(catalogs.module_for(p).scrape) for p in health["providers"]))
 
     def test_cinemeta_is_explicit_opt_in_and_always_first_when_enabled(self):
@@ -102,7 +105,40 @@ class EngineTests(unittest.TestCase):
         self.assertFalse(any("cinemeta" in row["id"] for row in base_rows))
         # Cinemeta encabeza el Home: sus pósters y backdrops son el arte bueno.
         self.assertTrue(all(row["provider"] == "Cinemeta" for row in extra_rows[:len(embedded.CINEMETA_CATALOGS)]))
-        self.assertEqual("bundled_live", extra_rows[len(embedded.CINEMETA_CATALOGS)]["id"])
+        self.assertEqual("iptvorg", extra_rows[len(embedded.CINEMETA_CATALOGS)]["id"])
+        self.assertEqual("bundled_live", extra_rows[len(embedded.CINEMETA_CATALOGS) + 1]["id"])
+
+    def test_iptv_playlist_parsing_drops_geo_blocked_and_non_hls(self):
+        playlist = "\r\n".join((
+            "#EXTM3U",
+            '#EXTINF:-1 tvg-logo="https://logos.invalid/a.png",Canal Abierto',
+            "https://cdn.invalid/a/index.m3u8",
+            '#EXTINF:-1 tvg-logo="https://logos.invalid/a.png",Canal Abierto',
+            "https://cdn.invalid/a/index.m3u8",
+            '#EXTINF:-1,Canal Geobloqueado [Geo-blocked]',
+            "https://cdn.invalid/b/index.m3u8",
+            "#EXTINF:-1,Nada reproducible",
+            "https://cdn.invalid/c/embed",
+            "#EXTINF:-1,Canal DASH",
+            "https://cdn.invalid/d/manifest.mpd",
+        ))
+        channels = embedded.parse_playlist(playlist)
+        self.assertEqual(["Canal Abierto", "Canal DASH"], [item["name"] for item in channels])
+        self.assertEqual("https://logos.invalid/a.png", channels[0]["logo"])
+
+    def test_iptv_channels_are_playable_without_any_provider(self):
+        channel = {"name": "Canal de prueba", "logo": "https://logos.invalid/x.png",
+                   "url": "https://cdn.invalid/live/index.m3u8"}
+        with patch.object(embedded, "iptv_channels", return_value=[channel]):
+            metas = self.engine.catalogue("tv", "iptvorg")["metas"]
+            self.assertEqual(1, len(metas))
+            self.assertEqual("Canal de prueba", metas[0]["name"])
+            self.assertEqual("https://logos.invalid/x.png", metas[0]["poster"])
+            streams = self.engine.streams("tv", metas[0]["id"])["streams"]
+        self.assertEqual(1, len(streams))
+        self.assertEqual("https://cdn.invalid/live/index.m3u8", streams[0]["url"])
+        self.assertTrue(streams[0]["isLive"])
+        self.assertEqual("Canal de prueba", streams[0]["title"])
 
     def test_can_browse_bundled_live_cards_without_network_or_url(self):
         with patch("urllib.request.urlopen", side_effect=AssertionError("No backend")):

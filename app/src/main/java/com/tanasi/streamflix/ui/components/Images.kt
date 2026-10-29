@@ -1,6 +1,5 @@
 package com.tanasi.streamflix.ui.components
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,7 +18,6 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,9 +34,8 @@ import com.tanasi.streamflix.ui.theme.StreamflixColors
  *
  *  1. **La imagen remota manda, pero siempre hay algo debajo.** El póster se
  *     dibuja *encima* de una tarjeta generada con el título; si Coil falla (sin
- *     red, host caído, 403 por hotlink) la tarjeta generada sigue ahí. Antes se
- *     usaba un `drawable` fijo por categoría y una fila entera acababa con la
- *     misma foto repetida: eso es lo que hacía que el Home pareciera roto.
+ *     red, host caído, 403 por hotlink) la tarjeta generada sigue ahí. La app no
+ *     lleva ninguna foto de relleno empaquetada: el arte de respaldo se dibuja.
  *  2. **Nada de huecos grises.** La tarjeta generada lleva degradado, iniciales
  *     y título, así que una fila sin pósters remotos sigue leyéndose.
  *  3. **El hero nunca se queda sin fondo.** Si el título no trae backdrop 16:9
@@ -72,13 +69,12 @@ fun PosterImage(
  * Backdrop 16:9: miniatura de un canal/deporte, cabecera de la ficha o fondo
  * del hero.
  *
- * @param url imagen 16:9 del catálogo; si es `null` (o falla) se pinta [artKey]
- *   y, cuando se conoce el título, su tarjeta generada.
+ * @param url imagen 16:9 del catálogo; si es `null` (o falla) se pinta la
+ *   tarjeta generada del título.
  */
 @Composable
 fun BackdropImage(
     url: String?,
-    artKey: String?,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     entry: MediaEntry? = null,
@@ -89,11 +85,10 @@ fun BackdropImage(
         if (entry != null) {
             ArtworkFallback(entry = entry, modifier = Modifier.fillMaxSize(), landscape = true)
         } else {
-            Image(
-                painter = painterResource(Artwork.backdrop(artKey)),
-                contentDescription = null,
-                contentScale = contentScale,
-                modifier = Modifier.fillMaxSize(),
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(StreamflixColors.Surface),
             )
         }
         if (remote != null) {
@@ -111,8 +106,9 @@ fun BackdropImage(
  * Fondo del hero.
  *
  * Prioridad: backdrop 16:9 → póster desenfocado (rellena el ancho sin bandas)
- * → arte local. El desenfoque es un no-op en Android < 31, donde el póster
- * recortado sigue siendo mejor que un color plano.
+ * → tarjeta generada. No hay ninguna imagen empaquetada: si la red no trae
+ * arte, se dibuja un degradado con el título. El desenfoque es un no-op en
+ * Android < 31, donde el póster recortado sigue siendo mejor que un color plano.
  */
 @Composable
 fun HeroBackdropImage(entry: MediaEntry, modifier: Modifier = Modifier) {
@@ -149,12 +145,8 @@ fun HeroBackdropImage(entry: MediaEntry, modifier: Modifier = Modifier) {
         return
     }
 
-    Image(
-        painter = painterResource(Artwork.backdrop(entry.art)),
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
-        modifier = modifier,
-    )
+    /* Ni póster ni backdrop: degradado con el título, nunca una foto de relleno. */
+    ArtworkFallback(entry = entry, modifier = modifier, landscape = true)
 }
 
 /**

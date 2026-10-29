@@ -30,6 +30,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tanasi.streamflix.core.DeviceProfile
@@ -116,11 +117,18 @@ fun LandscapeCard(
         widthDp = deviceProfile.landscapeWidthDp,
         aspectRatio = 16f / 9f,
     ) {
+        /* Un canal en vivo casi siempre publica un logotipo cuadrado: se
+         * ajusta (Fit) en vez de recortarlo, para que se lea la marca. Un
+         * backdrop real 16:9 sí se recorta a sangre. */
+        val logoOnly = entry.backdrop.isNullOrBlank()
+        val fitLogo = entry.isLive && logoOnly
         BackdropImage(
             url = entry.backdrop ?: entry.poster,
-            artKey = entry.art,
             entry = entry,
-            modifier = Modifier.fillMaxSize(),
+            contentScale = if (fitLogo) ContentScale.Fit else ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(if (fitLogo) 24.dp else 0.dp),
         )
     }
 }

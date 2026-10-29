@@ -67,7 +67,6 @@ class CatalogFeedTest {
 
         /* El endpoint de streams es /stream/anime/tt…: el tipo publicado manda. */
         assertEquals("anime", entry.type)
-        assertEquals("anime", entry.art)
     }
 
     @Test
@@ -76,7 +75,7 @@ class CatalogFeedTest {
         val entry = meta(id = "tv:demo:espn-1", type = "tv", releaseInfo = "En directo").toEntry(descriptor)
 
         assertTrue(entry.isLive)
-        assertEquals("live", entry.art)
+        assertEquals("tv", entry.type)
         assertEquals(RowAspect.Landscape, descriptor.rowAspect)
     }
 
@@ -107,7 +106,6 @@ class CatalogFeedTest {
 
         assertEquals("Streaming Catalogs", entry.provider)
         assertEquals("movie", entry.type)
-        assertEquals("movies", entry.art)
     }
 
     @Test

@@ -6,6 +6,7 @@ Only an allowlist of the twelve bundled providers can be imported.
 """
 from __future__ import annotations
 
+import base64
 import concurrent.futures
 from collections import OrderedDict
 import json
@@ -22,7 +23,7 @@ from typing import Any, Dict, List, Optional
 import _embedded_catalogs as providers
 from _base import DEFAULT_USER_AGENT, log
 from _embedded_cache import JsonCache
-from _htmlkit import http_get_json, install_url_opener, normalize, token_expiry
+from _htmlkit import http_get, http_get_json, install_url_opener, normalize, token_expiry
 
 TYPES = frozenset(("movie", "series", "anime", "tv"))
 PLAYABLE = (".m3u8", ".mpd", ".mp4", ".m4v", ".webm", ".mkv", ".ts")
@@ -39,6 +40,100 @@ CINEMETA_CATALOGS = (
     ("movie", "year", "Estrenos recientes"),
     ("anime", "top", "Anime popular"),
 )
+
+# --------------------------------------------------------------------------- #
+# Canales abiertos (iptv-org)
+# --------------------------------------------------------------------------- #
+# Las webs scrapeadas cambian cada semana y muchos días no devuelven ni un
+# `.m3u8`. Para que la TV en vivo reproduzca siempre algo se añade una fila con
+# la lista pública de iptv-org (https://github.com/iptv-org/iptv, datos CC0):
+# señales HLS de emisión libre, sin registro ni DRM. Si GitHub no responde se
+# usa esta copia mínima empaquetada.
+IPTV_PREFIX = "iptvorg:"
+IPTV_PLAYLISTS = (
+    "https://iptv-org.github.io/iptv/languages/spa.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/mx.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/es.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/ar.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/co.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/cl.m3u",
+    "https://raw.githubusercontent.com/iptv-org/iptv/master/streams/pe.m3u",
+)
+BUNDLED_IPTV = (
+    ("ADN 40", "https://mdstrm.com/live-stream-playlist/60b578b060947317de7b57ac.m3u8"),
+    ("Azteca Internacional", "https://azt-mun.otteravision.com/azt/mun/mun.m3u8"),
+    ("Imagen TV", "https://igd-it-runtime.otteravision.com/igd/it/it.m3u8"),
+    ("Las Estrellas", "https://channel01-onlymex.akamaized.net/hls/live/2022749/event01/index.m3u8"),
+    ("TeleFormula", "https://mdstrm.com/live-stream-playlist/62f2c855f7981b5a5a2d8763.m3u8"),
+    ("Teleritmo", "https://mdstrm.com/live-stream-playlist/57b4dc126338448314449d0c.m3u8"),
+    ("Popcorn Central", "https://oly-ftvpc.otteravision.com/oly/ftvpc/ftvpc.m3u8"),
+)
+
+
+def iptv_encode(url: str) -> str:
+    """Id estable y sin caracteres problemáticos para una señal abierta."""
+    return IPTV_PREFIX + base64.urlsafe_b64encode(url.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def iptv_decode(content_id: str) -> Optional[str]:
+    if not content_id.startswith(IPTV_PREFIX):
+        return None
+    payload = content_id[len(IPTV_PREFIX):]
+    try:
+        padded = payload + "=" * (-len(payload) % 4)
+        return base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
+def parse_playlist(text: str, limit: int = 120) -> List[Dict[str, str]]:
+    """M3U -> [{name, logo, url}] sin duplicados y sólo señales reproducibles."""
+    channels: List[Dict[str, str]] = []
+    seen = set()
+    name, logo, blocked = "", "", False
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if line.startswith("#EXTINF"):
+            meta, _, title = line.partition(",")
+            name = title.strip()
+            logo_match = re.search(r'tvg-logo="([^"]*)"', meta)
+            logo = logo_match.group(1) if logo_match else ""
+            blocked = "geo-blocked" in line.lower()
+        elif line and not line.startswith("#"):
+            if blocked or not name or line in seen:
+                continue
+            if not line.lower().split("?")[0].endswith((".m3u8", ".mpd")):
+                continue
+            seen.add(line)
+            channels.append({"name": name[:120], "logo": logo[:400], "url": line[:1500]})
+            if len(channels) >= limit:
+                break
+    return channels
+
+
+def iptv_channels(budget: float = 12.0) -> List[Dict[str, str]]:
+    """Primera lista que responda; si ninguna, la copia empaquetada.
+
+    `budget` es el tiempo TOTAL que se puede gastar sondeando listas: un
+    televisor con DNS lento no debe quedarse 40 s en blanco la primera vez que
+    se abre el Inicio. En cuanto se acaba el presupuesto se devuelve la copia
+    empaquetada, que se reproduce sin más.
+    """
+    headers = {"Accept": "application/x-mpegURL,text/plain,*/*", "User-Agent": DEFAULT_USER_AGENT}
+    deadline = time.monotonic() + budget
+    for url in IPTV_PLAYLISTS:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0.5:
+            break
+        try:
+            text, _, _ = http_get(url, headers, min(6.0, remaining))
+        except Exception:
+            continue
+        channels = parse_playlist(text)
+        if channels:
+            return channels
+    return [{"name": name, "logo": "", "url": url} for name, url in BUNDLED_IPTV]
+
 
 
 def normalize_meta(raw: Dict[str, Any], media_type: str) -> Optional[Dict[str, Any]]:
@@ -154,6 +249,9 @@ class Engine:
                 rows.append({"id": "cinemeta_" + catalog_id, "type": media_type, "name": title,
                              "posterShape": "poster", "order": order, "source": "cinemeta",
                              "provider": "Cinemeta"})
+        rows.append({"id": "iptvorg", "type": "tv", "name": "TV en vivo · Canales abiertos",
+                     "posterShape": "landscape", "order": len(rows), "source": "iptv",
+                     "provider": "iptv-org"})
         rows.append({"id": "bundled_live", "type": "tv", "name": "TV en vivo · Canales guardados",
                      "posterShape": "landscape", "order": len(rows), "source": "embedded"})
         for order, (name, provider) in enumerate(self.providers.items(), len(rows)):
@@ -163,6 +261,32 @@ class Engine:
                          "posterShape": "landscape" if media_type == "tv" else "poster", "order": order,
                          "source": "embedded", "provider": provider["label"]})
         return {"catalogs": rows}
+
+    def iptv_metas(self) -> List[Dict[str, Any]]:
+        """Canales abiertos ya normalizados, con caché de 6 h (y 7 días de respaldo)."""
+        cached = self.cache.get("iptv:channels", stale_seconds=7 * 86400)
+        if cached:
+            self._remember(cached["metas"])
+            return cached["metas"]
+        metas: List[Dict[str, Any]] = []
+        for channel in iptv_channels():
+            url = channel.get("url") or ""
+            meta = {"id": iptv_encode(url), "type": "tv", "name": channel.get("name") or "Canal abierto",
+                    "sourceName": "iptv-org", "genres": ["Abierto"], "live": True}
+            if channel.get("logo"):
+                meta["poster"] = channel["logo"]
+            metas.append(meta)
+        bundled = {url for _, url in BUNDLED_IPTV}
+        from_playlist = any(
+            iptv_decode(meta["id"]) not in bundled for meta in metas
+        )
+        only_fallback = bool(metas) and not from_playlist
+        if metas and not only_fallback:
+            # Sólo se guarda lo que vino de la lista pública: si esto era la
+            # copia empaquetada, la próxima apertura vuelve a intentar GitHub.
+            self.cache.put("iptv:channels", {"metas": metas}, 6 * 3600)
+        self._remember(metas)
+        return metas
 
     def _remember(self, metas: List[Dict[str, Any]]) -> None:
         with self.lock:
@@ -179,7 +303,9 @@ class Engine:
         if cached is not None:
             self._remember(cached["metas"])
             return cached
-        if catalog_id == "bundled_live" and media_type == "tv":
+        if catalog_id == "iptvorg" and media_type == "tv":
+            metas = self.iptv_metas()
+        elif catalog_id == "bundled_live" and media_type == "tv":
             metas = self.live
         else:
             try:
@@ -270,6 +396,22 @@ class Engine:
             return cached
         base_id, season, episode = providers.split_id(content_id, media_type)
         is_live = media_type == "tv"
+
+        if base_id.startswith(IPTV_PREFIX):
+            url = iptv_decode(base_id)
+            if url:
+                known = self.known.get(f"meta:{media_type}:{base_id}") or {}
+                result = {"streams": [{
+                    "url": url,
+                    "name": "iptv-org",
+                    "title": str(known.get("name") or "Canal abierto"),
+                    "provider": "iptv-org",
+                    "isLive": True,
+                    "behaviorHints": {"isLive": True,
+                                      "requestHeaders": {"User-Agent": DEFAULT_USER_AGENT}},
+                }], "cacheMaxAge": 3600}
+                return result
+            return {"streams": [], "cacheMaxAge": 0}
         parts = base_id.split(":")
         explicit = parts[1] if is_live and len(parts) > 1 and parts[0] == "tv" else parts[0]
         selected = [self.providers[explicit]] if explicit in self.providers else [

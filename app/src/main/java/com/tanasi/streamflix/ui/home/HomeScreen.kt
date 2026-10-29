@@ -72,19 +72,16 @@ import com.tanasi.streamflix.ui.theme.tvFocusGlow
  */
 private const val TV_BACKDROP_FRACTION = 0.78f
 private const val TV_CONTENT_BASELINE = 0.62f
-private const val PHONE_HERO_FRACTION = 0.62f
 
 /**
  * Home: hero cinematográfico + carruseles.
  *
- * Dos composiciones, una sola fuente de datos:
+ * Una sola composición, sólo TV:
  *
- *  - **TV** — el hero ocupa la parte alta y **queda fijo**; las filas se
- *    deslizan por encima de su borde inferior (Apple TV+). Con el mando, subir
- *    desde la primera fila lleva a los botones del hero, y desde ahí a la barra
- *    superior.
- *  - **Móvil** — todo en una `LazyColumn`: el hero se va con el dedo y deja
- *    sitio al catálogo, que es lo que se viene a ver.
+ *  - El hero ocupa la parte alta y **queda fijo**; las filas se deslizan por
+ *    encima de su borde inferior (Apple TV+). Con el mando, subir desde la
+ *    primera fila lleva a los botones del hero, y desde ahí a la barra superior.
+ *  - No hay variante táctil: la app es sólo Android TV.
  *
  * El enfocar una tarjeta no cambia el catálogo: sólo el `Spotlight` del hero
  * ([HomeViewModel.onCardFocused]).
@@ -169,8 +166,7 @@ fun HomeScreen(
 
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val isTv = deviceProfile.isTelevision
-                    val heroHeight = maxHeight *
-                        (if (isTv) TV_BACKDROP_FRACTION else PHONE_HERO_FRACTION)
+                    val heroHeight = maxHeight * TV_BACKDROP_FRACTION
                     val contentBaseline = maxHeight * TV_CONTENT_BASELINE
                     /* En TV la caja del hero es más alta que el contenido. */
                     val contentBottomPadding = if (isTv) {
@@ -227,44 +223,14 @@ fun HomeScreen(
                         )
                     }
 
-                    if (deviceProfile.isTelevision) {
-                        /* Hero fijo detrás, filas delante que lo tapan al bajar. */
-                        Box(Modifier.fillMaxSize()) {
-                            heroBanner(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .height(heroHeight),
-                            )
-                            rows(Modifier.fillMaxSize())
-                        }
-                    } else {
-                        /* Móvil: el hero es la primera celda de la lista. */
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            item(key = "hero") {
-                                heroBanner(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .height(heroHeight),
-                                )
-                            }
-                            itemsIndexed(
-                                items = current.catalog.rows,
-                                key = { _, row -> row.id },
-                            ) { index, row ->
-                                MediaRow(
-                                    row = row,
-                                    deviceProfile = deviceProfile,
-                                    onEntryClick = { entry -> onOpenDetails(entry, false) },
-                                    onEntryFocused = viewModel::onCardFocused,
-                                    modifier = Modifier.padding(
-                                        top = if (index == 0) 0.dp else 22.dp,
-                                    ),
-                                )
-                            }
-                            item(key = "footer") {
-                                Spacer(Modifier.height(48.dp))
-                            }
-                        }
+                    /* Hero fijo detrás, filas delante que lo tapan al bajar. */
+                    Box(Modifier.fillMaxSize()) {
+                        heroBanner(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(heroHeight),
+                        )
+                        rows(Modifier.fillMaxSize())
                     }
 
                     HomeTopBar(

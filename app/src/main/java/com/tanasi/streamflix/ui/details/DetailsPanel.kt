@@ -216,7 +216,6 @@ private fun DetailsHeader(entry: MediaEntry, isTv: Boolean) {
     ) {
         BackdropImage(
             url = entry.backdrop ?: entry.poster,
-            artKey = entry.art,
             entry = entry,
             modifier = Modifier.fillMaxSize(),
         )

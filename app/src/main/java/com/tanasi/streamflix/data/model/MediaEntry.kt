@@ -47,16 +47,10 @@ data class MediaEntry(
     val id: String,
     val type: String,
     val title: String,
-    /** Póster 2:3 (TMDB o el proveedor). Si falta o falla, se usa [art]. */
+    /** Póster 2:3 (Cinemeta o el proveedor). Si falta o falla, se genera uno. */
     val poster: String? = null,
-    /** Backdrop 16:9 para el hero. Si falta, se usa [art]. */
+    /** Backdrop 16:9 para el hero. Si falta, se usa el póster desenfocado. */
     val backdrop: String? = null,
-    /**
-     * Clave del arte local de respaldo: `movies`, `series`, `anime` o `live`.
-     * Se resuelve en `ui/components/Artwork.kt`, porque un JSON no puede
-     * contener `R.drawable.*`.
-     */
-    val art: String? = null,
     val year: Int? = null,
     val subtitle: String? = null,
     /** Sólo informativo: de qué proveedor salió (lo pinta la tarjeta). */

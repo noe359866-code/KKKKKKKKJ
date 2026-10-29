@@ -5,7 +5,7 @@
   <br />
   <strong>🔄 Reborn Version</strong> - Community continuation of the original Streamflix project
   <br />
-  An open-source Android TV and mobile app for educational streaming interface, made with Android Studio, in Kotlin
+  An open-source **Android TV** app for an educational streaming interface, made with Android Studio, in Kotlin
   <br />
   <a href="https://github.com/noe359866-code/KKKKKKKKJ/actions/workflows/autonomous-checks.yml">
     <strong>Autonomous APK builds (this fork) »</strong>
@@ -40,7 +40,7 @@
 ## About the project
 
 <p align="center">
-  <img src="./.github/docs/screenshot.png" alt="Streamflix Preview">
+  <img src="./app/src/main/res/drawable-nodpi/tv_banner.png" alt="Streamflix para Android TV" width="640">
 </p>
 
 **Streamflix Reborn** is an independent continuation of the original Streamflix project created by [Lory-Stan TANASI](https://github.com/stantanasi). This reborn version maintains the same educational purpose and functionality while ensuring continued development and support.
@@ -52,7 +52,7 @@
 - **Enhanced Support**: Continued development and bug fixes by an independent developer
 - **Respectful Fork**: Built with full respect for the original creator's work
 
-Streamflix Reborn is an open-source Android TV and mobile app that provides a user interface for accessing publicly available streaming content from various third-party providers.
+Streamflix Reborn is an open-source Android TV app that provides a user interface for accessing publicly available streaming content from various third-party providers.
 
 This app is designed for educational purposes and personal use only. Users are responsible for ensuring they have proper authorization to access any content they view through this application.
 
@@ -77,9 +77,9 @@ For a production build, configure your own release signing as described below.
 - Aggregates content from multiple third-party providers
 - No account required for the app interface
 - Educational and personal use only
-- One APK with an adaptive UI: D-Pad-first on Android TV, touch-first on phones
+- **Android TV only**: D-Pad-first UI, no phone layout, no touch gestures
 - Multiple providers, with automatic silent failover between their streams
-- Home with horizontal carousels for Películas, Series, Anime and TV en Vivo
+- Home with horizontal carousels, starting with open live channels that play with no setup (iptv-org)
 
 ### Built with
 
@@ -89,7 +89,7 @@ For a production build, configure your own release signing as described below.
 - [Media3 ExoPlayer](https://developer.android.com/media/media3/exoplayer)
 - [OkHttp](https://square.github.io/okhttp) + kotlinx.serialization
 - MVVM architecture (`ViewModel` + `StateFlow`)
-- One APK for phones and Android TV
+- Android TV (Leanback) only, `LEANBACK_LAUNCHER`
 
 
 ## Stremio addon backend (Node.js)
@@ -209,95 +209,101 @@ requirements, offline tests and limitations.
 | Embedded scraping | Chaquopy `17.1.0`, Python `3.11`, standard library only |
 | SDK | `minSdk 24`, `targetSdk 35`, `compileSdk 36`, JVM 17 |
 
-### Visual design
+### Arte: cero imágenes de relleno
 
-Three references, each doing one job:
+La app **no empaqueta ninguna foto, póster ni fondo de demostración**. Todo lo
+que se ve viene de la red:
 
-| Reference | What is borrowed |
+| Qué | De dónde sale | Si falta |
+| --- | --- | --- |
+| Póster 2:3 | `poster` del catálogo (Cinemeta, addon, página del proveedor) | tarjeta generada: degradado determinista + iniciales + título (`ui/components/Images.kt`) |
+| Backdrop 16:9 | `backdrop` del catálogo | póster desenfocado; si tampoco hay, tarjeta generada |
+| Fondo del hero | backdrop → póster desenfocado | tarjeta generada a pantalla completa |
+| Logo de canal | `tvg-logo` de la lista, o el póster del proveedor | tarjeta generada |
+
+Regla dura: **nunca una foto de stock**. `ArtworkFallback` dibuja el degradado y
+el título con la semilla del propio título, así que una fila sin arte remoto se
+sigue leyendo y ninguna tarjeta queda en gris. Los cuatro JPEG de muestra que
+traía el proyecto (`art_movies`, `art_series`, `art_anime`, `art_live`), el
+`Artwork.kt` que los mapeaba y la captura de diseño del README se eliminaron.
+
+### Diseño para Android TV
+
+Referencias de otros proyectos abiertos de TV (Jellyfin Android TV, SmartTube,
+Stremio, Kodi): hero cinematográfico, filas horizontales con foco explícito y
+cero gestos que dependan del dedo.
+
+| Referencia | Qué se toma |
 | --- | --- |
-| **Apple TV+** | a cinematic hero whose backdrop follows the focus, with a slow Ken Burns drift and three actions (Reproducir / Más información / Cambiar servidor) |
-| **Netflix** | fluid horizontal carousels, 2:3 poster cards, focus scale 1.08x and a floating "Continuar viendo" row |
-| **Prime Video** | floating state badges on the artwork (EN VIVO, quality, provider) and a quick-look details panel before playback |
+| **Apple TV+** | hero cuyo fondo sigue al foco, con deriva Ken Burns y tres acciones (Reproducir / Más información / Cambiar servidor) |
+| **Netflix** | carruseles, tarjetas 2:3, escala 1.08x al enfocar |
+| **Prime Video** | badges flotantes sobre el arte (EN VIVO, calidad, proveedor) y ficha rápida antes de reproducir |
+| **Jellyfin / Kodi** | mando a distancia como única entrada: foco inicial siempre visible, `Back` predecible, sin `pointerInput` |
 
-Everything is Compose (no XML layouts): `ui/home/HeroBanner.kt`,
+Todo es Compose (sin layouts XML): `ui/home/HeroBanner.kt`,
 `ui/components/MediaCards.kt`, `ui/components/MediaRow.kt`,
 `ui/components/Badges.kt`, `ui/details/DetailsPanel.kt`.
 
-![Home design preview: Android TV and mobile](docs/design-preview.jpg)
+**Geometría del hero.** El backdrop ocupa 0.78 del alto de pantalla y el bloque
+de texto se ancla en 0.62, justo donde arranca la primera fila: los CTAs quedan
+libres, se ve una fila 16:9 completa y asoma el título de la siguiente — la pista
+visual de que hay que pulsar ABAJO.
 
-*(Static render of the same colours, sizes and artwork the Compose code uses —
-useful as a reference while the APK cannot be built in this environment.)*
+**Tarjetas.** Un solo `ContentCard` renderiza ambas proporciones y la fila elige
+(`aspect: "poster" | "landscape"` en el catálogo). Los canales en vivo usan
+`ContentScale.Fit` sobre el logotipo para no recortarlo, y las películas
+`Crop` sobre el póster.
 
-**Hero geometry (TV).** Two different numbers: the backdrop box is 0.78 of the
-screen height, but the text block is anchored at a 0.62 baseline, and that is
-exactly where the first shelf starts. That leaves the CTAs clear, one full 16:9
-row visible and the next row's title peeking — the visual cue to press DOWN.
-On phones the hero is simply the first cell of the list (0.62 of the screen).
+Foco en TV = escala 1.08 + elevación + anillo neón (`Modifier.tvFocusGlow`, cian
+a propósito: el rojo ya significa "en vivo/marca"). El título bajo la tarjeta
+aparece con el foco, así una fila sin enfocar queda limpia.
 
-**Hero.** `HomeCatalog` + `HomeViewModel` keep a `Spotlight`: the card currently
-focused (TV) or the featured title (phone). Focusing a card swaps the backdrop
-with a 420 ms crossfade, so the hero reads like it is following intent rather
-than looping slides. The backdrop is one of four 1280×720 stills shipped in
-`res/drawable-nodpi` (`art_movies`, `art_series`, `art_anime`, `art_live`), used
-when a title has no 16:9 artwork of its own — which is the normal case for
-provider catalogues (they publish 2:3 posters only).
+**Badges.** `LiveBadge` (punto pulsante), `TrendingBadge` (TOP 10),
+`QualityBadge` (4K en neón), chip de proveedor y barra de progreso. Durante la
+reproducción el reproductor muestra `FailoverBadge` con la fuente que está
+realmente en pantalla ("Fuente 2 de 5").
 
-**Cards.** One shared `ContentCard` skeleton renders both proportions, and the
-row decides which one it wants (`aspect: "poster" | "landscape"` in the
-catalogue JSON):
+**Ficha antes de reproducir.** Abrir una tarjeta muestra `DetailsDialog`, un
+`Dialog` con ventana propia (el D-Pad no se escapa a la estantería de detrás):
+cabecera con backdrop, nota/calidad/géneros, sinopsis y el **selector de
+servidores** — las fuentes que devolvió el addon, en su orden de prioridad, ya
+cargadas por `StreamsRepository`. El índice elegido viaja al reproductor como
+`PlaybackRequest.startIndex` y el failover continúa hacia abajo desde ahí.
+"Cambiar servidor" en el hero abre este mismo panel con el foco en la lista.
 
-| Row | Aspect | Content |
-| --- | --- | --- |
-| Continuar viendo | 16:9 | progress bar under the artwork |
-| Películas populares | 2:3 | poster |
-| Series que enganchan | 2:3 | poster |
-| Anime en emisión | 2:3 | poster |
-| Deportes en directo | 16:9 | live channel tile |
+### Sólo Android TV
 
-Focus in TV = scale 1.08 + elevation + the neon ring (`Modifier.tvFocusGlow`,
-cyan on purpose: red is already "live/brand"). The title under a card fades in
-with the focus, so an unfocused shelf stays clean.
+`core/DeviceProfile.kt` es TV-only: `isTelevision = true`, `hasTouchScreen =
+false`, `requiresDpadFocus = true`. No hay ramas de móvil, ni hero de teléfono,
+ni `pointerInput`, ni rotaciones especiales.
 
-**Badges.** `LiveBadge` (pulsing dot), `TrendingBadge` (TOP 10),
-`QualityBadge` (4K in neon), provider chip at the bottom and a progress bar for
-resumed titles. During playback the player shows `FailoverBadge` with the source
-actually on screen ("Fuente 2 de 5"), which is where that number is truthful.
+- Tarjetas grandes (200×300 dp póster / 360×203 dp 16:9), 48 dp de margen
+  lateral y tipografía ×1.15–1.25.
+- Toda tarjeta dibuja anillo de foco rojo y escala 8 % al enfocarse; el foco
+  inicial de cada pantalla está definido (hero → primera fila → rejilla).
+- `AndroidManifest.xml`: `android.software.leanback` **required="true"**,
+  `android.hardware.touchscreen` **required="false"** y un único intent-filter,
+  `LEANBACK_LAUNCHER`. El APK no aparece en el cajón de apps de un teléfono.
+- `PlayerActivity` fuerza inmersivo con `DpadKeys.applyImmersive` (rama API 30+
+  con `WindowInsetsController` y rama legacy) y el reproductor no tiene gestos
+  táctiles: play/pausa, avance, retroceso, fuentes y subtítulos por D-Pad.
 
-**Details before playback.** Tapping a card opens `DetailsDialog`, a `Dialog`
-(its own window, so the D-Pad cannot escape to the shelf behind): backdrop
-header with rating/quality/genres, synopsis, and the **server selector** — the
-list of sources the addon returned, in its priority order, already loaded
-through `StreamsRepository`. The chosen index travels to the player as
-`PlaybackRequest.startIndex`, and the silent failover continues downward from
-there. "Cambiar servidor" in the hero opens this same panel with the focus
-already on the list.
+### Canales abiertos sin configurar nada (iptv-org)
 
-### One APK, two form factors
+Para que la app reproduzca algo **el primer día, sin claves ni addons**, se
+sincroniza la lista pública [iptv-org/iptv](https://github.com/iptv-org/iptv)
+(emisión libre, HLS) desde el motor Python:
 
-`core/DeviceProfile.kt` decides once (in `Application.onCreate`) whether the app
-is running on a TV:
-
-```text
-UI_MODE_TYPE_TELEVISION               -> TV
-FEATURE_LEANBACK or FEATURE_TELEVISION and no touchscreen -> TV
-otherwise                             -> touch
-```
-
-The result is published through `LocalDeviceProfile`, so every composable reads
-it without touching the `Context`:
-
-- **TV** — larger cards (196×292 dp), 48 dp side margins, typography scaled
-  ×1.15–1.25, and every card draws a red focus ring plus an 8 % scale-up when
-  the D-Pad lands on it. The first card of the top row grabs focus on purpose:
-  without it a remote does nothing until the user guesses to press a key. The
-  player overlay chips (Fuentes / Volver) get the same treatment.
-- **Touch** — compact cards (128×192 dp), 16 dp margins, ripple instead of a
-  focus ring.
-
-`AndroidManifest.xml` declares `android.software.leanback` and
-`android.hardware.touchscreen` as `required="false"` and registers both
-`LAUNCHER` and `LEANBACK_LAUNCHER`, so the same APK shows up on a phone and in
-the Android TV home row.
+- Filas: `iptvorg` (abiertos del mundo + México/España/Argentina/Colombia/Chile/
+  Perú) y, debajo, `bundled_live` con los canales guardados del servidor.
+- Ids `iptvorg:<base64url de la URL>`: `streams()` los decodifica y devuelve la
+  URL tal cual, con `isLive` y el `User-Agent` del reproductor. **No pasan por
+  ningún proveedor ni scraper**, así que no dependen de una web caída.
+- Sólo se aceptan `.m3u8`/`.mpd`, se descartan los marcados `[Geo-blocked]` y se
+  deduplica por URL (tope 120 por lista). Caché de 6 h y respaldo de 7 días.
+- Si la red del televisor no alcanza `api.github.com`, quedan siete canales
+  empaquetados (ADN 40, Azteca Internacional, Imagen TV, Las Estrellas,
+  TeleFormula, Teleritmo, Popcorn Central) con su URL de HLS verificada.
 
 ### Player and automatic failover
 
@@ -379,6 +385,9 @@ A changed domain, anti-bot challenge or dead video host can still break a source
 
 ### Home catalogue
 
+- **Canales abiertos primero.** La fila `iptvorg` (iptv-org, HLS libre) es la
+  primera del Inicio y se reproduce sin cuenta, sin addon y sin proveedor; ver
+  *Canales abiertos sin configurar nada*.
 - The twelve provider definitions and curated live-channel IDs are packaged
   from `server/config/`; the demo Python providers and server-only third-party
   addon configuration are excluded.
@@ -431,8 +440,8 @@ libraries; a small file size is never used as proof of completeness.
 
 ### Release build (APK + AAB)
 
-One signed artifact installs on both a phone and an Android TV box (see
-[One APK, two form factors](#one-apk-two-form-factors)).
+One signed artifact installs on an Android TV box or TV stick (see
+[Sólo Android TV](#sólo-android-tv)).
 
 ```bash
 ./scripts/release-android.sh       # autonomous APK + AAB + package verification

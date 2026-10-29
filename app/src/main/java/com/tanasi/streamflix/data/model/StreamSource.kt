@@ -44,13 +44,28 @@ data class StreamSource(
         private val playableExtensions = listOf(".m3u8", ".mpd", ".mp4", ".m4v", ".webm", ".mkv", ".ts")
 
         /**
+         * Lo que sí es una página web o una imagen, nunca un vídeo. Antes se
+         * exigía una extensión de vídeo y se tiraban las URLs sin extensión:
+         * muchos CDN sirven HLS en `https://host/live/abc123` o detrás de una
+         * ruta firmada, así que la app descartaba fuentes que sí funcionaban.
+         * Eso era una causa directa de "no reproduce nada".
+         */
+        private val rejectedExtensions = listOf(
+            ".html", ".htm", ".php", ".asp", ".aspx", ".jsp", ".json", ".txt",
+            ".css", ".js", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
+        )
+
+        /**
          * Descarta lo que ExoPlayer no puede abrir (una página HTML de embed, un
-         * `magnet:`…). Se aplica al normalizar la respuesta, no al reproducir.
+         * `magnet:`, una imagen…) sin exigir extensión: si el esquema es HTTP(S)
+         * y no es claramente una página, se intenta y el failover decide. Se
+         * aplica al normalizar la respuesta, no al reproducir.
          */
         fun looksPlayable(url: String): Boolean {
-            val cleaned = url.substringBefore('#').substringBefore('?').lowercase()
+            val cleaned = url.trim().substringBefore('#').substringBefore('?').lowercase()
             if (!cleaned.startsWith("http://") && !cleaned.startsWith("https://")) return false
-            return playableExtensions.any { cleaned.endsWith(it) }
+            if (playableExtensions.any { cleaned.endsWith(it) }) return true
+            return rejectedExtensions.none { cleaned.endsWith(it) }
         }
     }
 }

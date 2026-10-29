@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit
 import org.junit.Assert.fail
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,6 +44,35 @@ class EmbeddedEngineSmokeTest {
         val channels = client.catalog("", "tv", "bundled_live")!!.metas
         assertTrue(channels.isNotEmpty())
         assertTrue(channels.all { it.type == "tv" })
+    }
+
+    /**
+     * El requisito que rompió la versión anterior: la app tiene que reproducir
+     * algo sin cuenta, sin addon y sin red de proveedores. La fila `iptvorg`
+     * devuelve canales abiertos y cada id se resuelve a una URL HLS directa,
+     * sin pasar por ningún scraper. Aquí se corre sin Internet: el motor cae a
+     * la copia empaquetada y aun así hay fuentes reproducibles.
+     */
+    @Test
+    fun openChannelsPlayWithNoProviderAndNoNetwork() = runBlocking {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        val client = EmbeddedContentClient(ChaquopyRuntime(app))
+
+        val rows = client.catalogs("")
+        assertTrue("La fila de canales abiertos debe existir", rows.any { it.id == "iptvorg" })
+        assertEquals("iptvorg", rows.first { it.id == "iptvorg" }.id)
+
+        val channels = client.catalog("", "tv", "iptvorg")!!.metas
+        assertTrue("Sin red debe quedar la lista empaquetada", channels.isNotEmpty())
+        assertTrue(channels.all { it.type == "tv" })
+        assertTrue(channels.all { it.id.startsWith("iptvorg:") })
+
+        val streams = client.streams("", "tv", channels.first().id)!!.streams
+        assertTrue("Cada canal abierto tiene que dar al menos una fuente", streams.isNotEmpty())
+        val url = streams.first().url
+        assertTrue(url.startsWith("https://") || url.startsWith("http://"))
+        assertTrue("Un canal en vivo se marca como tal", streams.first().isLive)
+        assertNotNull(streams.first().toSource(0))
     }
 
     @Test

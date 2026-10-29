@@ -35,10 +35,13 @@ para evitar mantener dos copias diferentes.
 
 ## Cómo usarla
 
-1. Instala el APK en Android TV o móvil con **Android 7.0 / API 24 o posterior**.
+1. Instala el APK en un **Android TV / TV box / Fire TV** con **Android 7.0 /
+   API 24 o posterior**. La app es sólo de televisión: declara
+   `android.software.leanback` como requisito y no instala en teléfonos.
 2. Abre la app: entra en modo autónomo sin pedir IP o dominio.
-3. Aparece la fila de canales guardados; las filas consultadas directamente a
-   los proveedores se añaden conforme responden.
+3. La primera fila es **Canales abiertos** (iptv-org, HLS libre): se reproduce
+   con el mando sin claves, sin addon y sin proveedor. Debajo aparece la fila de
+   canales guardados y, conforme responden, las de los proveedores.
 4. Usa **Buscar** para consultar los proveedores por título/canal y **Inicio**
    para volver a la portada.
 5. Abre una ficha, elige capítulo cuando corresponda, selecciona una fuente

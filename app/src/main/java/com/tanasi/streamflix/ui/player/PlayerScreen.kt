@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +21,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,8 +43,8 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -292,12 +292,7 @@ private fun PlaybackSurface(
                     null -> false
                 }
             }
-            .focusable()
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = {
-                    if (controlsVisible) hideControls() else showControls(focusPlayPause = false)
-                })
-            },
+            .focusable(),
     ) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -347,6 +342,27 @@ private fun PlaybackSurface(
             )
         }
 
+        /* Sin este aviso, cuando todas las fuentes fallaban la pantalla se
+         * quedaba en negro: parecía que la app "no reproduce nada" y no había
+         * forma de saber por qué ni de reintentar. */
+        val failure = when {
+            failoverState.fatalMessage != null ->
+                "El reproductor rechazó el vídeo (${failoverState.fatalMessage})."
+            failoverState.exhausted ->
+                "Ninguna de las ${sources.size} fuentes respondió." +
+                    (failoverState.lastError?.let { " Último error: $it." } ?: "")
+            else -> null
+        }
+        if (failure != null) {
+            PlaybackFailureOverlay(
+                title = request.title,
+                message = failure,
+                onRetry = { controller.selectSource(0) },
+                onPickSource = { showSources = true },
+                onBack = onBack,
+            )
+        }
+
         if (showSources) {
             SourcePickerDialog(
                 sources = sources,
@@ -387,7 +403,73 @@ private fun SwitchingBadge(modifier: Modifier = Modifier) {
     }
 }
 
-/** Lista de fuentes ordenadas por prioridad, elegible con D-Pad o dedo. */
+/**
+ * Aviso a pantalla completa cuando no hay nada que reproducir.
+ *
+ * Tres salidas: reintentar desde la primera fuente, abrir la lista de fuentes
+ * (para elegir otra a mano) o volver al catálogo. La primera opción recibe el
+ * foco, así que con el mando basta pulsar OK para reintentar.
+ */
+@Composable
+private fun PlaybackFailureOverlay(
+    title: String,
+    message: String,
+    onRetry: () -> Unit,
+    onPickSource: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val retryFocus = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        withFrameNanos { }
+        runCatching { retryFocus.requestFocus() }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.86f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(40.dp),
+        ) {
+            Text(
+                text = "No se pudo reproducir",
+                style = MaterialTheme.typography.headlineSmall,
+                color = StreamflixColors.OnSurface,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = StreamflixColors.OnSurfaceMuted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = StreamflixColors.OnSurfaceMuted,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(24.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                    onClick = onRetry,
+                    modifier = Modifier.focusRequester(retryFocus),
+                ) { Text("Reintentar") }
+                OutlinedButton(onClick = onPickSource) { Text("Elegir fuente") }
+                OutlinedButton(onClick = onBack) { Text("Volver") }
+            }
+        }
+    }
+}
+
+/** Lista de fuentes ordenadas por prioridad, elegible con el D-Pad. */
 @Composable
 private fun SourcePickerDialog(
     sources: List<StreamSource>,
