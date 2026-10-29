@@ -2,8 +2,7 @@
  * testsupport/pelis.js
  * ---------------------------------------------------------------------------
  * Utilidades compartidas por los tests offline de los proveedores de películas
- * y series (Gnula, Cuevana, PelisPlus, Repelis, PeliculasFlix, PelisJuanita,
- * Comodín Libre).
+ * y series (Gnula, Cuevana, PelisPlus, Repelis, PeliculasFlix, PelisJuanita).
  *
  * Cada test levanta un `http.createServer` local que imita al sitio real y
  * apunta el scraper a él con su variable de entorno (`GNULA_BASE`, …). Así se

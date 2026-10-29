@@ -28,7 +28,6 @@ process.env.PELISPLUSHD_BASE = 'http://127.0.0.1:1';
 process.env.REPELIS_BASE = 'http://127.0.0.1:1';
 process.env.PELICULASFLIX_API = 'http://127.0.0.1:1/api/gql';
 process.env.PELISJUANITA_BASE = 'http://127.0.0.1:1';
-process.env.COMODIN_BASE = 'http://127.0.0.1:1';
 process.env.FUTBOLIBRE_BASE = 'http://127.0.0.1:1';
 process.env.FUTBOLIBRE_AGENDA_URL = 'http://127.0.0.1:1/agenda.json';
 process.env.FUTBOLIBRE_INDEX_TTL_SECONDS = '0';

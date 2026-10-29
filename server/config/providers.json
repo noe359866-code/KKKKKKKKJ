@@ -122,16 +122,6 @@
       "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
     },
     {
-      "id": "comodin",
-      "label": "Comodín Libre",
-      "script": "comodin.py",
-      "priority": 17,
-      "kind": "vod",
-      "enabled": false,
-      "referer": "",
-      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-    },
-    {
       "id": "demo-live",
       "label": "Demo TV",
       "script": "example_provider.py",

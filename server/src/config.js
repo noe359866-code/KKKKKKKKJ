@@ -61,16 +61,19 @@ function envList(name, fallback) {
 const HOUR = 60 * 60 * 1000;
 
 /*
- * The requirement asks for a configurable TTL between 2 and 6 hours.
- *  - LIVE  (live TV, sports, IPTV): shortest TTL, streams rotate constantly.
- *  - VOD   (movies / series / anime): longest TTL, links are stable.
- *  Both stay inside the 2h–6h contract; the clamp below enforces it even if a
- *  careless env override is supplied.
+ * TTL contract (enforced at boot and again when the cache is written):
+ *  - LIVE (live TV, sports, IPTV): 2h – 4h. The .m3u8 URLs of tvenvivo,
+ *    deportelibre and futbolibre must be answered from a cache hit, but they
+ *    rotate, so the window is capped at 4 hours.
+ *  - VOD  (movies / series / anime): 2h – 6h. Links are stable for longer.
  */
 const TTL_MIN_MS = 2 * HOUR;
 const TTL_MAX_MS = 6 * HOUR;
+const TTL_LIVE_MIN_MS = 2 * HOUR;
+const TTL_LIVE_MAX_MS = 4 * HOUR;
 
-const ttlLiveMs = envInt('CACHE_TTL_LIVE_HOURS', 2, { min: 2, max: 6 }) * HOUR;
+/* Out of range => throw at boot instead of silently caching stale links. */
+const ttlLiveMs = envInt('CACHE_TTL_LIVE_HOURS', 2, { min: 2, max: 4 }) * HOUR;
 const ttlVodMs = envInt('CACHE_TTL_VOD_HOURS', 6, { min: 2, max: 6 }) * HOUR;
 
 /* -------------------------------------------------------------------------- */
@@ -116,9 +119,11 @@ export const config = {
   },
 
   cache: {
-    /* Hard contract: 2h <= TTL <= 6h. */
+    /* Hard contract: 2h <= TTL <= 6h (live: 2h <= TTL <= 4h). */
     ttlMinMs: TTL_MIN_MS,
     ttlMaxMs: TTL_MAX_MS,
+    ttlLiveMinMs: TTL_LIVE_MIN_MS,
+    ttlLiveMaxMs: TTL_LIVE_MAX_MS,
     /* VOD / movies / series / anime. */
     ttlVodMs,
     /* Live TV + sports: streams expire fast, so cache them conservatively. */
@@ -154,9 +159,10 @@ export const config = {
   },
 
   streams: {
-    /* Per-provider budget. A slow provider must never delay the whole
-     * response: after this budget its (partial) results are dropped. */
-    providerTimeoutMs: envInt('PROVIDER_TIMEOUT_MS', 12_000, { min: 500, max: 60_000 }),
+    /* Per-provider budget (8 s). A slower script is killed by the bridge and
+     * its slot is filled by the secondary sources that did answer, so one dead
+     * site never delays the playable response. */
+    providerTimeoutMs: envInt('PROVIDER_TIMEOUT_MS', 8_000, { min: 500, max: 60_000 }),
     /* Give up when this many providers returned at least one stream, so the
      * response is fast even if the last provider is slow. */
     minProvidersForFastReturn: envInt('MIN_PROVIDERS_FOR_FAST_RETURN', 2, { min: 1, max: 10 }),

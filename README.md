@@ -91,7 +91,7 @@ through the official Addon protocol:
 - In-memory TTL cache (2 h live / 6 h VOD) with single-flight and
   stale-while-revalidate: a cached live `.m3u8` is served in a few milliseconds.
 - Python scraper bridge (`child_process.spawn`) invoked only on cache misses.
-- Thirteen real providers ship in `server/scrapers/`, ordered by priority.
+- Twelve real providers ship in `server/scrapers/`, ordered by priority.
 
   **Live** (`kind: "live"`, requested as `tv:<id>`):
 
@@ -128,8 +128,6 @@ through the official Addon protocol:
     `peliculasflix:<slug>` (own GraphQL API);
   - `pelisjuanita.py` — [pelisjuanita.org](https://pelisjuanita.org/) (16):
     `pelisjuanita:spider-man-un-nuevo-dia-2026`;
-  - `comodin.py` — Comodín Libre (17): **needs `COMODIN_BASE`**, shipped with
-    `enabled: false` until the domain is confirmed.
 
   The anime and movie providers return **one stream per resolved server**
   (Streamwish, VOE, Filemoon, Streamtape…), in the site's order, so the

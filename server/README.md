@@ -86,8 +86,7 @@ server/
 │   ├── pelisplushd.py           # proveedor real: pelisplushd.la (vod)
 │   ├── repelis.py               # proveedor real: repelis (vod, dominio por env)
 │   ├── peliculasflix.py         # proveedor real: peliculasflix.co (vod, GraphQL)
-│   ├── pelisjuanita.py          # proveedor real: pelisjuanita.org (vod)
-│   └── comodin.py               # Comodín Libre (vod, falta el dominio)
+│   └── pelisjuanita.py          # proveedor real: pelisjuanita.org (vod)
 ├── scripts/
 │   ├── cache-stats.js           # métricas de caché en vivo
 │   └── bridge-demo.js           # probar un scraper sin HTTP
@@ -212,7 +211,7 @@ Ida y vuelta con la app Android:
 
 | Característica | Detalle |
 | --- | --- |
-| TTL por entrada | live/deportes `CACHE_TTL_LIVE_HOURS` (2 h), VOD `CACHE_TTL_VOD_HOURS` (6 h). Validado entre **2 y 6 h** al arrancar. |
+| TTL por entrada | live/deportes `CACHE_TTL_LIVE_HOURS` (2 h, ventana **2–4 h**), VOD `CACHE_TTL_VOD_HOURS` (6 h, ventana **2–6 h**). Fuera de rango el servidor no arranca. |
 | Hot path | Un *hit* de un `.m3u8` live responde en **1–3 ms** sin lanzar Python. |
 | `stale-while-revalidate` | Pasado el TTL, sirve el valor viejo al instante y refresca en segundo plano (hasta `ttl × CACHE_STALE_FACTOR`). |
 | *Single-flight* | N peticiones simultáneas del mismo canal = **un solo** proceso Python (`X-Cache: COALESCED` en las demás). |
@@ -381,7 +380,7 @@ anotan en `meta.unresolved`. Detalles y variables de entorno en
 
 ### Proveedores reales de películas y series (VOD)
 
-Siete sitios `kind: "vod"`, del 11 al 17 en prioridad:
+Seis sitios `kind: "vod"`, del 11 al 16 en prioridad:
 
 | Prioridad | Proveedor (`id`) | Sitio | Id de ejemplo |
 | --- | --- | --- | --- |
@@ -391,7 +390,6 @@ Siete sitios `kind: "vod"`, del 11 al 17 en prioridad:
 | 14 | `repelis` | dominio por `REPELIS_BASE` | `repelis:spider-man-de-regreso-a-casa` |
 | 15 | `peliculasflix` | [peliculasflix.co](https://peliculasflix.co/) | `peliculasflix:spider-man-de-regreso-a-casa` |
 | 16 | `pelisjuanita` | [pelisjuanita.org](https://pelisjuanita.org/) | `pelisjuanita:spider-man-un-nuevo-dia-2026` |
-| 17 | `comodin` | **dominio pendiente** (`enabled: false`) | `comodin:<slug>` |
 
 ```bash
 curl -s "http://localhost:7000/stream/movie/gnula:street-fighter.json" | jq
@@ -442,7 +440,8 @@ Agregar un proveedor real:
 ## 6. Failover / prioridad
 
 - Los proveedores se lanzan **en paralelo**, cada uno con
-  `PROVIDER_TIMEOUT_MS` (12 s por defecto).
+  `PROVIDER_TIMEOUT_MS` (8 s por defecto): al vencer, el proceso Python se
+  SIGKILL-ea y su hueco lo ocupan las fuentes secundarias que sí respondieron.
 - Los resultados se ordenan por `priority` ascendente y, dentro del mismo
   proveedor, por calidad (`4K > 1080p > 720p > 480p > SD`).
 - Se eliminan URLs duplicadas conservando la del proveedor con más prioridad.
@@ -464,7 +463,7 @@ Agregar un proveedor real:
 | `PUBLIC_URL` | *(derivada)* | Origen público para el manifest detrás de proxy. |
 | `CORS_ORIGINS` | `*` | Orígenes permitidos (lista separada por comas). |
 | `RATE_LIMIT_MAX` | `120` | Peticiones/min/IP en `/stream` y `/proxy` (0 = off). |
-| `CACHE_TTL_LIVE_HOURS` | `2` | TTL live/deportes (2–6). |
+| `CACHE_TTL_LIVE_HOURS` | `2` | TTL live/deportes. Ventana válida **2–4 h** (fuera de rango no arranca). |
 | `CACHE_TTL_VOD_HOURS` | `6` | TTL VOD/anime/series (2–6). |
 | `CACHE_TTL_MISS_SECONDS` | `120` | Caché negativa. |
 | `CACHE_MAX_ENTRIES` | `5000` | Cota LRU. |
@@ -473,7 +472,7 @@ Agregar un proveedor real:
 | `SCRAPER_DIR` | `./scrapers` | Carpeta de scripts. |
 | `SCRAPER_TIMEOUT_MS` | `15000` | Timeout por script. |
 | `SCRAPER_MAX_CONCURRENCY` | `4` | Procesos Python simultáneos. |
-| `PROVIDER_TIMEOUT_MS` | `12000` | Presupuesto por proveedor. |
+| `PROVIDER_TIMEOUT_MS` | `8000` | Presupuesto por proveedor; lo que tarde más se mata y se sirve el failover. |
 | `MIN_PROVIDERS_FOR_FAST_RETURN` | `2` | Respuesta temprana. |
 | `FAST_RETURN_GRACE_MS` | `1500` | Ventana extra antes de responder. |
 | `ADMIN_TOKEN` | *(vacío)* | Activa `/admin/*`; sin él devuelven 404. |
@@ -497,7 +496,6 @@ Agregar un proveedor real:
 | `*_MIRRORS` | vacío | Dominios alternativos separados por comas, probados si la base no responde. |
 | `PELICULASFLIX_API` / `PELICULASFLIX_ACCESS` | API y clave del sitio | Endpoint GraphQL y `x-access-platform`. |
 | `TMDB_API_KEY` | vacío | Opcional: traduce ids IMDb a título/año para acertar el slug. |
-| `COMODIN_BASE` | vacío | Dominio de Comodín Libre; sin él el proveedor responde `not_configured`. |
 
 Todas se pueden poner en `server/.env` (se carga automáticamente, sin
 dependencias) o inyectarlas desde el orquestador.
@@ -510,7 +508,7 @@ dependencias) o inyectarlas desde el orquestador.
 npm test
 ```
 
-155 pruebas con `node:test`:
+161 pruebas con `node:test`:
 
 - caché: TTL, expiración, stale, LRU, *single-flight*, caché negativa;
 - protocolo: manifest, forma del stream, cabeceras, ids, calidades, HLS, SSRF;
@@ -527,12 +525,18 @@ npm test
   salto `sw3.html?get=`, agenda con señales duplicadas (agrupadas y
   deduplicadas), parámetro `ip` descartado, token caducado al final, agenda
   inalcanzable sin romper y `--list` de canales + partidos;
+- `src/bridge/pythonBridge.js`: payload por stdin, ids con caracteres raros sin
+  pasar por un shell, timeout que mata el proceso, salida no-JSON, script que
+  falla, script inexistente, intento de salir de `SCRAPER_DIR` y liberación del
+  semáforo en todos los desenlaces;
+- `src/config.js`: el presupuesto de 8 s y las ventanas de TTL (live 2–4 h, VOD
+  2–6 h), incluido el arranque rechazado cuando el TTL se sale de rango;
 - `animeflv.py` / `jkanime.py` / `monoschinos.py`: fixtures por sitio (página del
   episodio → lista de servidores en base64 → embed → `.m3u8`/`.mp4`), incluidos
   el JS empaquetado, el redirect por JavaScript de VOE, los servidores de
   descarga o caídos, el respaldo por búsqueda y la degradación a `streams: []`.
 - `gnula.py` / `cuevana.py` / `pelisplushd.py` / `repelis.py` /
-  `peliculasflix.py` / `pelisjuanita.py` / `comodin.py`: fixtures por sitio
+  `peliculasflix.py` / `pelisjuanita.py`: fixtures por sitio
   (ficha → servidores → `.m3u8`), incluidos el objeto `GNRD` y su cadena de
   desofuscado, `showEmbed` en base64, el token legado `player.php?t=`, la API
   GraphQL de PeliculasFlix, la caída a los espejos `*_MIRRORS`, el seguimiento

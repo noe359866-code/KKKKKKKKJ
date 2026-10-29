@@ -53,7 +53,6 @@ Reglas:
 | `repelis.py` | **Proveedor real** de Repelis (dominio configurable por entorno). |
 | `peliculasflix.py` | **Proveedor real** de `peliculasflix.co` (API GraphQL). |
 | `pelisjuanita.py` | **Proveedor real** de `pelisjuanita.org`. |
-| `comodin.py` | Proveedor de Comodín Libre — **falta el dominio**: se activa con `COMODIN_BASE`. |
 
 ## Añadir un proveedor
 
@@ -541,7 +540,7 @@ respaldo por búsqueda y la degradación a `{"streams": []}`.
 
 ## Proveedores de películas y series (VOD)
 
-Siete sitios con el mismo esqueleto: ficha por título, buscador y una lista de
+Seis sitios con el mismo esqueleto: ficha por título, buscador y una lista de
 "servidores" (Streamwish, VOE, Filemoon, Streamtape, Mixdrop, Mp4upload…) que
 esconden el `.m3u8`/`.mp4`. Lo compartido vive en dos módulos:
 
@@ -573,8 +572,7 @@ que ExoPlayer hace failover de servidor a servidor sin cambiar de película:
 Mega, Mediafire y 1fichier no son reproducibles: se descartan y se listan en
 `meta.download_only`. Si no queda nada, `{"streams": [], "meta": {"reason": …}}`
 y el addon sigue con el proveedor siguiente. Motivos posibles: `not_vod`,
-`no_id`, `not_found`, `page_unavailable`, `no_servers`, `no_streams`,
-`not_configured` (Comodín Libre sin dominio).
+`no_id`, `not_found`, `page_unavailable`, `no_servers`, `no_streams`.
 
 ### Prioridades
 
@@ -586,7 +584,6 @@ y el addon sigue con el proveedor siguiente. Motivos posibles: `not_vod`,
 | 14 | `repelis` | dominio configurable |
 | 15 | `peliculasflix` | [peliculasflix.co](https://peliculasflix.co/) |
 | 16 | `pelisjuanita` | [pelisjuanita.org](https://pelisjuanita.org/) |
-| 17 | `comodin` | sin dominio verificado (`enabled: false`) |
 
 ```bash
 curl -s "http://localhost:7000/stream/movie/gnula:street-fighter.json" | jq
@@ -679,21 +676,6 @@ literales JS y `og:video`; si la ficha de la serie no trae reproductores, se
 sigue el enlace del capítulo pedido (`1x05`, `temporada/1/capitulo/5`,
 `episodio-5`…).
 
-#### `comodin.py` — Comodín Libre (prioridad 17, desactivado)
-
-⚠️ **Falta el dominio.** `comodinlibre.com` y `comodinlibre.net` no resuelven y
-el nombre no aparece en los índices de sitios de cine, así que el proveedor no
-trae base por defecto: responde `meta.reason: "not_configured"` sin hacer una
-sola petición. Para activarlo:
-
-```bash
-COMODIN_BASE=https://comodin.ejemplo
-COMODIN_MIRRORS=https://comodin2.ejemplo
-```
-
-y pon `"enabled": true` en su entrada de `config/providers.json`. Con base
-configurada se comporta como el resto (recogida genérica + `_hosters`).
-
 ### TMDB (opcional)
 
 Sin `TMDB_API_KEY` los ids IMDb (`gnula:tt0145487`) no se pueden traducir a un
@@ -704,7 +686,7 @@ por su cuenta.
 
 ### Pruebas
 
-Cada uno de los siete tiene su fixture HTTP local (ficha → servidores → `.m3u8`)
+Cada uno de los seis tiene su fixture HTTP local (ficha → servidores → `.m3u8`)
 y su propio archivo:
 
 ```bash
@@ -714,7 +696,6 @@ node --test test/pelisplushd.test.js
 node --test test/repelis.test.js
 node --test test/peliculasflix.test.js
 node --test test/pelisjuanita.test.js
-node --test test/comodin.test.js
 ```
 
 Los fixtures (`testsupport/pelis.js`) cubren `showEmbed` en base64, el token
@@ -722,7 +703,7 @@ legado `player.php?t=`, la API GNRD con su cadena de desofuscado, los literales
 JS, los servidores empaquetados, los hostings de descarga, la caída al espejo y
 la degradación a `{"streams": []}`.
 
-> ⚠️ Los siete leen páginas públicas y no alojan ni redistribuyen contenido.
+> ⚠️ Los seis leen páginas públicas y no alojan ni redistribuyen contenido.
 > Úsalos con autorización y respetando los términos de cada sitio y la ley de tu
 > país. Los dominios cambian a menudo: si un proveedor devuelve `not_found`,
 > abre la ficha en el navegador y ajusta `*_BASE` / `*_MIRRORS`.
