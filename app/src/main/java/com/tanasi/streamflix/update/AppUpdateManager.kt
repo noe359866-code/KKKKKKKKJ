@@ -69,7 +69,7 @@ object VersionComparator {
  * Gestor autónomo de actualizaciones directas desde GitHub Releases.
  * Sin depender de tiendas de aplicaciones ni servidores intermedios.
  */
-class AppUpdateManager(
+open class AppUpdateManager(
     private val http: OkHttpClient = defaultHttpClient(),
     private val json: Json = defaultJson(),
 ) {

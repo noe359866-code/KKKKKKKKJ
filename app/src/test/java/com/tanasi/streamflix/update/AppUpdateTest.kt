@@ -74,10 +74,7 @@ class AppUpdateTest {
                 .setBody(releaseJson),
         )
 
-        // Custom repo url redirected to mock server
-        val manager = object : AppUpdateManager() {
-            // override or test through checkForUpdate
-        }
+        val manager = AppUpdateManager()
 
         // Simula la llamada directa con el cliente
         val update = run {
