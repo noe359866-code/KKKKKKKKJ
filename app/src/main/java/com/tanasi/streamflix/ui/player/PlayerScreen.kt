@@ -129,6 +129,7 @@ fun PlayerScreen(
                 sources = current.sources,
                 request = request,
                 onBack = onBack,
+                onProgress = onProgress,
             )
         }
     }
@@ -143,6 +144,7 @@ private fun PlaybackSurface(
     sources: List<StreamSource>,
     request: PlaybackRequest,
     onBack: () -> Unit,
+    onProgress: (positionMs: Long, durationMs: Long) -> Unit,
 ) {
     val context = LocalContext.current
     val deviceProfile = LocalDeviceProfile.current
