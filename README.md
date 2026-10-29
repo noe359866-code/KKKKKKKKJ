@@ -506,7 +506,9 @@ boxes and on current phones.
   is `false` and `AppLog.d/i` are stripped.
 - **Smaller, faster**: `shrinkResources`, `resConfigs` not needed (single
   locale), packaging excludes, and `versionCode`/`versionName` overridable with
-  `-PVERSION_CODE=…  -PVERSION_NAME=…` for store uploads.
+  `-PVERSION_CODE=…  -PVERSION_NAME=…` for store uploads. The current release
+  defaults to **0.9.9** (version code **2**); CI checks both values inside the
+  APK and names it `streamflix-0.9.9.apk`.
 
 #### Install and verify
 

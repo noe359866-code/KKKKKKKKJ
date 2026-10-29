@@ -104,8 +104,10 @@ if (storeFilePath != null && !hasReleaseKeystore) {
     )
 }
 
-def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '1').toInteger()
-def versionNameValue = resolve(['VERSION_NAME', 'versionName']) ?: '1.0.0'
+/* El código interno aumenta aunque la versión visible sea 0.9.9: Android
+ * exige un código igual o mayor para instalar una actualización. */
+def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '2').toInteger()
+def versionNameValue = resolve(['VERSION_NAME', 'versionName']) ?: '0.9.9'
 
 android {
     namespace 'com.tanasi.streamflix'
