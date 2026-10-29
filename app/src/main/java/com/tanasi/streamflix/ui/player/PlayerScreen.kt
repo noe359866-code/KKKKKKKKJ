@@ -159,7 +159,7 @@ private fun PlaybackSurface(
 
     var showSources by remember { mutableStateOf(false) }
 
-    /* --- estado de los controles (D-Pad y táctil) ------------------------- */
+    /* --- estado de los controles (D-Pad) ---------------------------------- */
     val rootFocus = remember { FocusRequester() }
     val playPauseFocus = remember { FocusRequester() }
     var controlsVisible by remember { mutableStateOf(true) }

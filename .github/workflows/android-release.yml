@@ -1,6 +1,7 @@
 name: Android release
 
-# Compila el APK/AAB de producción en un runner con JDK 17 + Android SDK.
+# Compila el APK/AAB de producción exclusivo para Android TV / Google TV
+# en un runner con JDK 17 + Android SDK.
 #
 # Disparadores:
 #   - manual (workflow_dispatch): URL del backend opcional;
@@ -152,7 +153,7 @@ jobs:
           set -o pipefail
           ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
 
-      - name: Verificar versión, firma y digests de la APK
+      - name: Verificar versión, distribución TV, firma y digests de la APK
         run: |
           set -euo pipefail
           APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
@@ -160,7 +161,8 @@ jobs:
           AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -1)
           BADGING=$("$AAPT" dump badging "$APK")
           printf '%s\n' "$BADGING" | grep '^package:'
-          printf '%s\n' "$BADGING" | grep -F "versionName='0.9.9'" | grep -F "versionCode='2'"
+          printf '%s\n' "$BADGING" | grep -F "versionName='0.9.9'" | grep -F "versionCode='3'"
+          python3 scripts/verify-tv-apk.py "$APK" --aapt "$AAPT"
           VERSIONED_APK="$(dirname "$APK")/streamflix-0.9.9.apk"
           mv "$APK" "$VERSIONED_APK"
           APK="$VERSIONED_APK"
@@ -177,7 +179,8 @@ jobs:
             echo ""
             echo "| | |"
             echo "| --- | --- |"
-            echo "| Versión | \`0.9.9 (código interno 2)\` |"
+            echo "| Versión | \`0.9.9 (código interno 3)\` |"
+            echo "| Distribución | \`Solo Android TV / Google TV\` |"
             echo "| Backend por defecto | \`${{ steps.url.outputs.value }}\` |"
             echo "| Firma | \`${{ steps.signing.outputs.kind }}\` |"
             echo "| APK | \`$(basename "$APK")\` ($(du -h "$APK" | cut -f1)) |"
@@ -276,11 +279,12 @@ jobs:
           {
             echo "## Streamflix $VERSION"
             echo
-            echo "APK firmada para Android y Android TV (Android 6.0 o posterior)."
-            echo "Descarga \`streamflix-$VERSION.apk\` y ábrela en el dispositivo."
+            echo "APK firmada **solo para Android TV / Google TV** (Android 6.0 o posterior)."
+            echo "Descarga \`streamflix-$VERSION.apk\` e instálala en el televisor o TV box."
             echo
-            echo "- Versión visible: $VERSION; código interno: 2."
-            echo "- Pruebas unitarias, lint y firma comprobados por GitHub Actions."
+            echo "- Versión visible: $VERSION; código interno: 3."
+            echo "- Leanback obligatorio, sin launcher móvil y con navegación por mando (D-Pad)."
+            echo "- Pruebas unitarias, lint, manifiesto TV y firma comprobados por GitHub Actions."
             echo "- Si no hay un backend configurado, la app pide su dirección al abrir."
             echo "- Si Android informa de un conflicto de firma, hace falta desinstalar la versión anterior antes de instalar esta."
             echo "- Conserva el keystore de firma para futuras actualizaciones."
@@ -290,6 +294,8 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "$APK" "$AAB" digests.txt \
               --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --title "Streamflix $VERSION" --notes-file "$NOTES"
           else
             gh release create "$GITHUB_REF_NAME" "$APK" "$AAB" digests.txt \
               --repo "$GITHUB_REPOSITORY" --verify-tag \

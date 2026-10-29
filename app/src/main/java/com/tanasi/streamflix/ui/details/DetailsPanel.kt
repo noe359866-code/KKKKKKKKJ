@@ -123,8 +123,8 @@ fun DetailsDialog(
                         .heightIn(max = if (isTv) 420.dp else 460.dp),
                 ) {
                     if (isTv) {
-                        /* Póster a la izquierda sólo en TV: en el móvil el ancho
-                         * se necesita para el texto y las fuentes. */
+                        /* Póster a la izquierda; el texto y las fuentes ocupan
+                         * el resto del panel de TV. */
                         PosterImage(
                             entry = entry,
                             modifier = Modifier

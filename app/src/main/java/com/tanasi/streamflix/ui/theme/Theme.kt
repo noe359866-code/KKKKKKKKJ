@@ -16,9 +16,8 @@ import com.tanasi.streamflix.core.LocalDeviceProfile
 /**
  * Paleta de la app.
  *
- * En TV no hay "modo claro": el salón está a oscuras y un fondo blanco deslumbra.
- * En móvil se sigue igualmente el tema oscuro para que el paso del catálogo al
- * reproductor (siempre negro) no dé un flash.
+ * Tema oscuro de Android TV: el salón está a oscuras y un fondo blanco
+ * deslumbra. El catálogo y el reproductor comparten fondo para evitar flashes.
  */
 object StreamflixColors {
     val Background = Color(0xFF0B0B12)
@@ -66,14 +65,12 @@ private val StreamflixColorScheme = darkColorScheme(
 )
 
 /**
- * Tipografía adaptativa: en TV todo se ve a 3 metros del sofá, así que títulos y
- * etiquetas crecen ~25 %. Se construye aquí y no en cada pantalla para que el
- * cambio sea consistente en toda la app.
+ * Tipografía de TV: todo se ve a 3 metros del sofá, así que títulos y etiquetas
+ * crecen ~25 %. Se construye aquí para que sea consistente en toda la app.
  */
 @Composable
-private fun typographyFor(isTelevision: Boolean): Typography {
+private fun tvTypography(): Typography {
     val base = Typography()
-    if (!isTelevision) return base
 
     fun TextStyle.tv(factor: Float) = copy(
         fontSize = fontSize * factor,
@@ -102,7 +99,7 @@ fun StreamflixTheme(
     CompositionLocalProvider(LocalDeviceProfile provides deviceProfile) {
         MaterialTheme(
             colorScheme = StreamflixColorScheme,
-            typography = typographyFor(deviceProfile.isTelevision),
+            typography = tvTypography(),
             content = content,
         )
     }

@@ -1,19 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- The addon (and the media CDNs) are reached over the network. -->
+    <!-- El addon y los CDN de vídeo necesitan acceso a la red. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!--
-      Hybrid app, one APK for both form factors:
-        - leanback is NOT required, so phones can install it;
-        - touchscreen is NOT required, so Android TV boxes can install it.
-      Play Store uses these two flags to decide which devices see the app.
+      Distribución exclusiva para Android TV:
+        - Leanback es obligatorio: Google Play no ofrece la app a móviles/tablets;
+        - la pantalla táctil NO es obligatoria: se navega con el mando (D-Pad).
+      La instalación por ADB no aplica los filtros de Google Play; MainActivity
+      también comprueba el entorno y muestra una salida en dispositivos no TV.
     -->
     <uses-feature
         android:name="android.software.leanback"
-        android:required="false" />
+        android:required="true" />
     <uses-feature
         android:name="android.hardware.touchscreen"
         android:required="false" />
@@ -30,24 +31,19 @@
         android:theme="@style/Theme.Streamflix">
 
         <!--
-          Single activity for the catalogue. `configChanges` avoids a full
-          recomposition (and a re-fetch) when a TV box switches resolution or a
-          phone rotates; the UI is already responsive.
+          Única entrada de la app: la fila de aplicaciones de Android TV.
+          No se registra LAUNCHER, por lo que no aparece en el launcher móvil.
+          El banner rectangular es obligatorio para esta entrada.
         -->
         <activity
             android:name=".MainActivity"
+            android:banner="@drawable/tv_banner"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode|density"
             android:exported="true"
             android:launchMode="singleTask"
+            android:screenOrientation="sensorLandscape"
             android:theme="@style/Theme.Streamflix">
 
-            <!-- Phone / tablet launcher -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-
-            <!-- Android TV launcher (Leanback): appears in the TV home row. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
@@ -55,14 +51,14 @@
         </activity>
 
         <!--
-          Player lives in its own activity so the D-Pad focus graph starts
-          clean, the screen can be kept awake independently, and pressing BACK
-          releases the decoder without touching the catalogue state.
+          El reproductor conserva su propio grafo de foco y libera el decoder
+          al volver con BACK. No tiene entrada de launcher ni es exportado.
         -->
         <activity
             android:name=".ui.player.PlayerActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode|density"
             android:exported="false"
+            android:screenOrientation="sensorLandscape"
             android:theme="@style/Theme.Streamflix.Player" />
     </application>
 </manifest>

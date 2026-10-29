@@ -104,9 +104,9 @@ if (storeFilePath != null && !hasReleaseKeystore) {
     )
 }
 
-/* El código interno aumenta aunque la versión visible sea 0.9.9: Android
- * exige un código igual o mayor para instalar una actualización. */
-def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '2').toInteger()
+/* La variante exclusiva de Android TV mantiene la versión visible 0.9.9 y
+ * sube el código interno para poder actualizar instalaciones con la misma firma. */
+def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '3').toInteger()
 def versionNameValue = resolve(['VERSION_NAME', 'versionName']) ?: '0.9.9'
 
 android {

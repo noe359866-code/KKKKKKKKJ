@@ -51,12 +51,12 @@ import com.tanasi.streamflix.ui.theme.tvFocusGlow
  * │ ▓▓▓▓▓░░░░░░░░░░░ │  ← progreso (sólo "Continuar viendo")
  * │ PelisPlus        │  ← proveedor / servidor previsto
  * └──────────────────┘
- *   Título            ← aparece al enfocar (TV) o siempre (móvil)
+ *   Título            ← aparece al enfocar con el D-Pad
  *   T1 E3 · 62 %
  * ```
  *
- * En TV la tarjeta enfocada escala **1.08x**, se eleva y dibuja el anillo neón;
- * en móvil se queda quieta y responde con ripple.
+ * La tarjeta enfocada escala **1.08x**, se eleva y dibuja el anillo neón para
+ * que el cursor del mando se lea desde el sofá.
  *
  * @param onFocused se llama al entrar en foco; el Home lo usa para cambiar el
  *   backdrop del hero (Apple TV+). Sólo se dispara al *entrar*, no en cada
@@ -226,8 +226,7 @@ private fun ContentCard(
             }
         }
 
-        /* Título bajo la tarjeta. En TV aparece con el foco (Netflix); en móvil
-         * está siempre porque no hay cursor que lo revele. */
+        /* Título bajo la tarjeta: aparece con el foco del D-Pad (Netflix). */
         Text(
             text = entry.title,
             style = MaterialTheme.typography.labelLarge,

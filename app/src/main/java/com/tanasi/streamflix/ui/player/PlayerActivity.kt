@@ -14,6 +14,7 @@ import com.tanasi.streamflix.core.DeviceDetector
 import com.tanasi.streamflix.core.DpadKeys
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.di.ServiceLocator
+import com.tanasi.streamflix.ui.components.AndroidTvOnlyScreen
 import com.tanasi.streamflix.ui.theme.StreamflixTheme
 
 /**
@@ -34,15 +35,22 @@ class PlayerActivity : ComponentActivity() {
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        val deviceProfile = DeviceDetector.detect(this)
+        if (!deviceProfile.isAndroidTv) {
+            setContent {
+                StreamflixTheme(deviceProfile = deviceProfile) {
+                    AndroidTvOnlyScreen(onExit = { finish() })
+                }
+            }
+            return
+        }
+
         val request = intent.toPlaybackRequest() ?: run {
             finish()
             return
         }
 
-        val deviceProfile = DeviceDetector.detect(this)
-        if (deviceProfile.requiresDpadFocus) {
-            DpadKeys.applyImmersive(window.decorView)
-        }
+        DpadKeys.applyImmersive(window.decorView)
 
         setContent {
             StreamflixTheme(deviceProfile = deviceProfile) {

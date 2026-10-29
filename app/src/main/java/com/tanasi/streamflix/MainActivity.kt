@@ -17,6 +17,7 @@ import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.di.ServiceLocator
+import com.tanasi.streamflix.ui.components.AndroidTvOnlyScreen
 import com.tanasi.streamflix.ui.details.DetailsDialog
 import com.tanasi.streamflix.ui.details.DetailsViewModel
 import com.tanasi.streamflix.ui.home.HomeScreen
@@ -49,11 +50,16 @@ class MainActivity : ComponentActivity() {
         val deviceProfile = (application as StreamflixApp).deviceProfile
 
         setContent {
-            /* `StreamflixTheme` ya publica el perfil en `LocalDeviceProfile`. */
+            /* Los filtros de Play no se aplican al sideload: no cargar datos
+             * ni permitir reproducción si la APK terminó en un móvil/tablet. */
             StreamflixTheme(deviceProfile = deviceProfile) {
-                Catalogue(
-                    onPlay = { request -> openPlayer(request) },
-                )
+                if (deviceProfile.isAndroidTv) {
+                    Catalogue(
+                        onPlay = { request -> openPlayer(request) },
+                    )
+                } else {
+                    AndroidTvOnlyScreen(onExit = { finish() })
+                }
             }
         }
     }

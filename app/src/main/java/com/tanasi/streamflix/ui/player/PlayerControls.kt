@@ -332,9 +332,8 @@ private fun LiveRow() {
 /**
  * Botón de los controles.
  *
- * En TV dibuja borde+halo y crece un 6 % al recibir el foco; en móvil mantiene
- * el fondo translúcido y el ripple. El `onFocusChanged` va **antes** de
- * `clickable` para envolver al nodo enfocable.
+ * Dibuja borde+halo y crece un 6 % al recibir el foco del mando. El
+ * `onFocusChanged` va **antes** de `clickable` para envolver al nodo enfocable.
  */
 @Composable
 private fun ControlButton(

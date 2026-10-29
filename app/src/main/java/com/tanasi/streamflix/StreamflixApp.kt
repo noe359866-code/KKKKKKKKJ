@@ -10,28 +10,24 @@ import com.tanasi.streamflix.util.AppLog
 /**
  * Punto de entrada del proceso.
  *
- * Deja dos cosas listas antes de la primera pantalla:
- *  1. el [DeviceProfile] (TV vs móvil), que se detecta una sola vez;
- *  2. el árbol de dependencias ([ServiceLocator]).
- *
- * Android TV informa el modo de interfaz en la `Application` (`onConfigurationChanged`
- * llega antes que el `Activity`), así que aquí se guarda el perfil y la UI lo lee.
+ * Mantiene el perfil de Android TV y el árbol de dependencias. La interfaz es
+ * siempre de TV; la detección sirve para bloquear instalaciones manuales en
+ * móviles/tablets y para adaptar las medidas al ancho real de la televisión.
  */
 class StreamflixApp : Application() {
 
-    var deviceProfile: DeviceProfile = DeviceProfile.Phone
+    var deviceProfile: DeviceProfile = DeviceProfile.Television
         private set
 
     override fun onCreate() {
         super.onCreate()
         deviceProfile = DeviceDetector.detect(this)
-        /* Toca el contenedor para que el cliente HTTP se cree con la app ya
-         * arrancada y no en el primer frame del Home. */
+        /* Inicializa HTTP antes del primer frame del catálogo. */
         ServiceLocator.addonClient()
 
         AppLog.i(
-            "arranque: tv=%s táctil=%s ancho=%ddp",
-            deviceProfile.isTelevision,
+            "arranque: android_tv=%s táctil=%s ancho=%ddp",
+            deviceProfile.isAndroidTv,
             deviceProfile.hasTouchScreen,
             deviceProfile.screenWidthDp,
         )
@@ -39,8 +35,7 @@ class StreamflixApp : Application() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        /* Una TV puede cambiar de resolución en caliente (1080p → 4K); el perfil
-         * se recalcula pero sólo cambia si el modo de interfaz cambió de verdad. */
+        /* Una TV puede cambiar de resolución en caliente (1080p → 4K). */
         val refreshed = DeviceDetector.detect(this)
         if (refreshed != deviceProfile) deviceProfile = refreshed
     }

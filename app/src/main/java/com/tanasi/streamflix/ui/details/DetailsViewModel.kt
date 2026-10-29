@@ -79,7 +79,7 @@ sealed interface EpisodesUiState {
  * failover sigue bajando desde ahí.
  *
  * Vive separado de la UI para que abrir/cerrar la hoja no repita la petición ni
- * pierda la selección al rotar el móvil.
+ * pierda la selección al cambiar la resolución de la TV.
  */
 class DetailsViewModel(
     val entry: MediaEntry,

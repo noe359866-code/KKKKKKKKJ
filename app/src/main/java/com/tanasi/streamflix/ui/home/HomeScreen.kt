@@ -65,21 +65,14 @@ import com.tanasi.streamflix.ui.theme.tvFocusGlow
  */
 private const val TV_BACKDROP_FRACTION = 0.78f
 private const val TV_CONTENT_BASELINE = 0.62f
-private const val PHONE_HERO_FRACTION = 0.62f
-
 /**
- * Home: hero cinematográfico + carruseles.
+ * Home de Android TV: hero cinematográfico + carruseles.
  *
- * Dos composiciones, una sola fuente de datos:
+ * El hero ocupa la parte alta y queda fijo; las filas se deslizan por encima
+ * de su borde inferior (Apple TV+). Con el mando, subir desde la primera fila
+ * lleva a los botones del hero, y desde ahí a la barra superior.
  *
- *  - **TV** — el hero ocupa la parte alta y **queda fijo**; las filas se
- *    deslizan por encima de su borde inferior (Apple TV+). Con el mando, subir
- *    desde la primera fila lleva a los botones del hero, y desde ahí a la barra
- *    superior.
- *  - **Móvil** — todo en una `LazyColumn`: el hero se va con el dedo y deja
- *    sitio al catálogo, que es lo que se viene a ver.
- *
- * El enfocar una tarjeta no cambia el catálogo: sólo el `Spotlight` del hero
+ * Enfocar una tarjeta no cambia el catálogo: sólo el `Spotlight` del hero
  * ([HomeViewModel.onCardFocused]).
  */
 @Composable
@@ -151,16 +144,11 @@ fun HomeScreen(
                 val spotlight = hero ?: current.catalog.featured
 
                 BoxWithConstraints(Modifier.fillMaxSize()) {
-                    val isTv = deviceProfile.isTelevision
-                    val heroHeight = maxHeight *
-                        (if (isTv) TV_BACKDROP_FRACTION else PHONE_HERO_FRACTION)
+                    val heroHeight = maxHeight * TV_BACKDROP_FRACTION
                     val contentBaseline = maxHeight * TV_CONTENT_BASELINE
-                    /* En TV la caja del hero es más alta que el contenido. */
-                    val contentBottomPadding = if (isTv) {
+                    /* La caja del hero es más alta que el contenido. */
+                    val contentBottomPadding =
                         (heroHeight - contentBaseline).coerceAtLeast(24.dp)
-                    } else {
-                        20.dp
-                    }
 
                     /* Un único juego de `FocusRequester` por pantalla: el hero y
                      * las filas se los pasan entre sí para que el D-Pad sepa
@@ -202,57 +190,27 @@ fun HomeScreen(
                             deviceProfile = deviceProfile,
                             onEntryClick = { entry -> onOpenDetails(entry, false) },
                             onEntryFocused = viewModel::onCardFocused,
-                            rowsTopPadding = if (isTv) contentBaseline else heroHeight + 24.dp,
+                            rowsTopPadding = contentBaseline,
                             firstCardFocus = firstCardFocus,
                             firstRowFocusUp = heroPlayFocus,
                             modifier = modifier,
                         )
                     }
 
-                    if (deviceProfile.isTelevision) {
-                        /* Hero fijo detrás, filas delante que lo tapan al bajar. */
-                        Box(Modifier.fillMaxSize()) {
-                            heroBanner(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .height(heroHeight),
-                            )
-                            rows(Modifier.fillMaxSize())
-                        }
-                    } else {
-                        /* Móvil: el hero es la primera celda de la lista. */
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            item(key = "hero") {
-                                heroBanner(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .height(heroHeight),
-                                )
-                            }
-                            itemsIndexed(
-                                items = current.catalog.rows,
-                                key = { _, row -> row.id },
-                            ) { index, row ->
-                                MediaRow(
-                                    row = row,
-                                    deviceProfile = deviceProfile,
-                                    onEntryClick = { entry -> onOpenDetails(entry, false) },
-                                    onEntryFocused = viewModel::onCardFocused,
-                                    modifier = Modifier.padding(
-                                        top = if (index == 0) 0.dp else 22.dp,
-                                    ),
-                                )
-                            }
-                            item(key = "footer") {
-                                Spacer(Modifier.height(48.dp))
-                            }
-                        }
+                    /* Hero fijo detrás, filas delante que lo tapan al bajar. */
+                    Box(Modifier.fillMaxSize()) {
+                        heroBanner(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(heroHeight),
+                        )
+                        rows(Modifier.fillMaxSize())
                     }
 
                     HomeTopBar(
                         deviceProfile = deviceProfile,
-                        settingsFocus = if (deviceProfile.isTelevision) serverFocus else null,
-                        settingsDownFocus = if (deviceProfile.isTelevision) heroPlayFocus else null,
+                        settingsFocus = serverFocus,
+                        settingsDownFocus = heroPlayFocus,
                         onOpenSettings = onOpenSettings,
                         modifier = Modifier.align(Alignment.TopStart),
                     )
@@ -280,10 +238,9 @@ fun HomeScreen(
 /**
  * Las filas.
  *
- * En TV la lista lleva un `top` igual a la línea base del hero: la primera fila
+ * La lista lleva un `top` igual a la línea base del hero: la primera fila
  * aparece justo debajo de los botones, y al desplazarse las tarjetas pasan **por
- * encima** del backdrop (efecto Apple TV+). En móvil el hero es una celda de la
- * propia lista y no hay sangrado.
+ * encima** del backdrop (efecto Apple TV+).
  */
 @Composable
 private fun CatalogList(

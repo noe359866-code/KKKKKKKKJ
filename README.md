@@ -5,7 +5,7 @@
   <br />
   <strong>🔄 Reborn Version</strong> - Community continuation of the original Streamflix project
   <br />
-  An open-source Android TV and mobile app for educational streaming interface, made with Android Studio, in Kotlin
+  An open-source Android TV / Google TV app for educational streaming interface, made with Android Studio, in Kotlin
   <br />
   <a href="https://github.com/streamflix-reborn/streamflix/releases/latest">
     <strong>Download app »</strong>
@@ -51,7 +51,7 @@
 - **Enhanced Support**: Continued development and bug fixes by an independent developer
 - **Respectful Fork**: Built with full respect for the original creator's work
 
-Streamflix Reborn is an open-source Android TV and mobile app that provides a user interface for accessing publicly available streaming content from various third-party providers.
+Streamflix Reborn is an open-source Android TV / Google TV app that provides a user interface for accessing publicly available streaming content from various third-party providers.
 
 This app is designed for educational purposes and personal use only. Users are responsible for ensuring they have proper authorization to access any content they view through this application.
 
@@ -63,7 +63,7 @@ The interface aggregates content from multiple sources and provides a convenient
 - Aggregates content from multiple third-party providers
 - No account required for the app interface
 - Educational and personal use only
-- One APK with an adaptive UI: D-Pad-first on Android TV, touch-first on phones
+- Android TV-only APK: Leanback launcher, D-Pad navigation and TV-sized UI
 - Multiple providers, with automatic silent failover between their streams
 - Home with horizontal carousels for Películas, Series, Anime and TV en Vivo
 
@@ -75,7 +75,7 @@ The interface aggregates content from multiple sources and provides a convenient
 - [Media3 ExoPlayer](https://developer.android.com/media/media3/exoplayer)
 - [OkHttp](https://square.github.io/okhttp) + kotlinx.serialization
 - MVVM architecture (`ViewModel` + `StateFlow`)
-- One APK for phones and Android TV
+- Android TV / Google TV only (Leanback required)
 
 
 ## Stremio addon backend (Node.js)
@@ -204,7 +204,7 @@ Everything is Compose (no XML layouts): `ui/home/HeroBanner.kt`,
 `ui/components/MediaCards.kt`, `ui/components/MediaRow.kt`,
 `ui/components/Badges.kt`, `ui/details/DetailsPanel.kt`.
 
-![Home design preview: Android TV and mobile](docs/design-preview.jpg)
+![Home design preview: Android TV](docs/design-preview.jpg)
 
 *(Static render of the same colours, sizes and artwork the Compose code uses —
 useful as a reference while the APK cannot be built in this environment.)*
@@ -213,10 +213,9 @@ useful as a reference while the APK cannot be built in this environment.)*
 screen height, but the text block is anchored at a 0.62 baseline, and that is
 exactly where the first shelf starts. That leaves the CTAs clear, one full 16:9
 row visible and the next row's title peeking — the visual cue to press DOWN.
-On phones the hero is simply the first cell of the list (0.62 of the screen).
 
 **Hero.** `HomeCatalog` + `HomeViewModel` keep a `Spotlight`: the card currently
-focused (TV) or the featured title (phone). Focusing a card swaps the backdrop
+focused. Focusing a card swaps the backdrop
 with a 420 ms crossfade, so the hero reads like it is following intent rather
 than looping slides. The backdrop is one of four 1280×720 stills shipped in
 `res/drawable-nodpi` (`art_movies`, `art_series`, `art_anime`, `art_live`), used
@@ -244,7 +243,7 @@ with the focus, so an unfocused shelf stays clean.
 resumed titles. During playback the player shows `FailoverBadge` with the source
 actually on screen ("Fuente 2 de 5"), which is where that number is truthful.
 
-**Details before playback.** Tapping a card opens `DetailsDialog`, a `Dialog`
+**Details before playback.** Selecting a card with the D-Pad opens `DetailsDialog`, a `Dialog`
 (its own window, so the D-Pad cannot escape to the shelf behind): backdrop
 header with rating/quality/genres, synopsis, and the **server selector** — the
 list of sources the addon returned, in its priority order, already loaded
@@ -253,32 +252,25 @@ through `StreamsRepository`. The chosen index travels to the player as
 there. "Cambiar servidor" in the hero opens this same panel with the focus
 already on the list.
 
-### One APK, two form factors
+### Android TV only
 
-`core/DeviceProfile.kt` decides once (in `Application.onCreate`) whether the app
-is running on a TV:
+`core/DeviceProfile.kt` always uses TV dimensions and D-Pad focus. It detects
+whether the device is Android TV / Google TV (`UI_MODE_TYPE_TELEVISION` or
+`FEATURE_LEANBACK`) so manual installs on phones/tablets can be blocked before
+loading the catalogue or player. A touchscreen does not disqualify a TV.
 
-```text
-UI_MODE_TYPE_TELEVISION               -> TV
-FEATURE_LEANBACK or FEATURE_TELEVISION and no touchscreen -> TV
-otherwise                             -> touch
-```
-
-The result is published through `LocalDeviceProfile`, so every composable reads
+The profile is published through `LocalDeviceProfile`, so every composable reads
 it without touching the `Context`:
 
-- **TV** — larger cards (196×292 dp), 48 dp side margins, typography scaled
-  ×1.15–1.25, and every card draws a red focus ring plus an 8 % scale-up when
-  the D-Pad lands on it. The first card of the top row grabs focus on purpose:
-  without it a remote does nothing until the user guesses to press a key. The
-  player overlay chips (Fuentes / Volver) get the same treatment.
-- **Touch** — compact cards (128×192 dp), 16 dp margins, ripple instead of a
-  focus ring.
+- 220 dp poster cards and 400 dp landscape cards, with 48 dp side margins.
+- Typography scaled ×1.15–1.25 for viewing from the sofa.
+- Cyan focus ring, elevation and 8 % scale-up when the D-Pad lands on a card.
+- The first card of the top row grabs focus on purpose; the player overlay chips
+  (Fuentes / Volver) get the same treatment.
 
-`AndroidManifest.xml` declares `android.software.leanback` and
-`android.hardware.touchscreen` as `required="false"` and registers both
-`LAUNCHER` and `LEANBACK_LAUNCHER`, so the same APK shows up on a phone and in
-the Android TV home row.
+`AndroidManifest.xml` declares `android.software.leanback` as `required="true"`,
+`android.hardware.touchscreen` as `required="false"`, and registers only
+`LEANBACK_LAUNCHER` with a TV banner. There is no phone `LAUNCHER` entry.
 
 ### Player and automatic failover
 
@@ -309,7 +301,6 @@ behaviour for the direction keys and can't share the app's focus language.
 | `◀` / `▶` (and `MEDIA_REWIND` / `MEDIA_FAST_FORWARD`) | −10 s / +10 s (VOD only) |
 | `▼` / `▲` | show the controls and move the focus into them |
 | `BACK` | hide the controls; a second press leaves the player |
-| tap (phone) | show / hide the controls |
 
 Details that matter on a sofa:
 
@@ -427,8 +418,8 @@ to the next source without losing your position.
 
 ### Release build (APK + AAB)
 
-One signed artifact installs on both a phone and an Android TV box (see
-[One APK, two form factors](#one-apk-two-form-factors)).
+One signed artifact targets Android TV / Google TV only (see
+[Android TV only](#android-tv-only)).
 
 ```bash
 export ADDON_BASE_URL=https://addon.tu-dominio.com    # required
@@ -446,7 +437,7 @@ Outputs:
 
 | Artifact | Path |
 | --- | --- |
-| APK (sideload to TV/phone) | `app/build/outputs/apk/release/app-release.apk` |
+| APK (sideload to Android TV) | `app/build/outputs/apk/release/app-release.apk` |
 | AAB (Google Play) | `app/build/outputs/bundle/release/app-release.aab` |
 | R8 mapping (crash de-obfuscation) | `app/build/outputs/mapping/release/mapping.txt` |
 
@@ -490,7 +481,7 @@ values can also come from the environment (`RELEASE_STORE_FILE`,
 `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`), which is
 how `.github/workflows/android-release.yml` signs in CI (keystore base64 in a
 secret). Signing enables v1 + v2 + v3, so the same APK installs on old Android TV
-boxes and on current phones.
+boxes and on current Google TV devices.
 
 #### What the release build changes
 
@@ -507,8 +498,8 @@ boxes and on current phones.
 - **Smaller, faster**: `shrinkResources`, `resConfigs` not needed (single
   locale), packaging excludes, and `versionCode`/`versionName` overridable with
   `-PVERSION_CODE=…  -PVERSION_NAME=…` for store uploads. The current release
-  defaults to **0.9.9** (version code **2**); CI checks both values inside the
-  APK and names it `streamflix-0.9.9.apk`.
+  defaults to **0.9.9** (version code **3**); CI checks both values, verifies the
+  TV-only manifest, and names the APK `streamflix-0.9.9.apk`.
 
 #### Install and verify
 
@@ -517,10 +508,11 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 adb shell pm list packages | grep tanasi      # com.tanasi.streamflix
 ```
 
-On a TV: `adb connect <box-ip>:5555` first, then the same `install`. The leanback
-launcher entry and the TV banner come from the manifest, and `uses-feature
-leanback/touchscreen` are both `required="false"`, so a single APK is offered to
-phones and TVs alike. Smoke test: open the app, check the header shows the
+On a TV: `adb connect <box-ip>:5555` first, then the same `install`. The manifest
+requires `android.software.leanback`, marks `android.hardware.touchscreen` as not
+required, and registers only `LEANBACK_LAUNCHER`. Google Play therefore offers the
+app only to Android TV / Google TV devices; manual installs on phones show a
+TV-only exit screen. Smoke test: open the app, check the header shows the
 production host, play a live channel, then kill the backend and confirm the Home
 degrades to *Reintentar* / *Configurar servidor* instead of fake content.
 
@@ -528,7 +520,7 @@ degrades to *Reintentar* / *Configurar servidor* instead of fake content.
 
 `.github/workflows/android-release.yml` builds the same artifacts on a runner
 with JDK 17 + Android SDK, runs the unit tests and `lintRelease`, verifies the
-signature with `apksigner`, and uploads the APK, the AAB and the R8 mapping.
+TV-only manifest and signature with `apksigner`, and uploads the APK, the AAB and the R8 mapping.
 
 - **manual**: *Run workflow* with the backend URL (leave it empty to get an APK
   that asks for the server on first launch);

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# Build de producción del APK + AAB
+# Build de producción del APK + AAB exclusivo para Android TV / Google TV
 # ---------------------------------------------------------------------------
 # Uso:
 #   export ADDON_BASE_URL=https://addon.tu-dominio.com
