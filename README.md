@@ -84,7 +84,19 @@ The interface aggregates content from multiple sources and provides a convenient
 catalogue to any Stremio-compatible client (including the Android TV app)
 through the official Addon protocol:
 
-- `GET /manifest.json` — declares `movie`, `series`, `anime` and `tv`.
+- `GET /manifest.json` — declares `movie`, `series`, `anime`, `tv` and the
+  published catalogs (`catalog` + `meta` resources).
+- `GET /catalog/:type/:id.json` — Stremio catalog protocol, backed by
+  **[Cinemeta](https://github.com/Stremio/stremio-addon-sdk)** (the official
+  metadata addon) and merged with the local live TV/sports rows:
+  `top`, `year`, `imdbRating` for movies and series, `anime/top`
+  (Cinemeta `series` + `genre=Animation`), and `tv/live` from
+  `server/config/live-catalog.json`. Accepts the standard extras as path
+  segments — `/catalog/movie/top/search=matrix.json`,
+  `/catalog/tv/live/genre=Deportes/skip=20.json`.
+- `GET /meta/:type/:id.json` — rich metadata (synopsis, poster, year, rating)
+  and, for series, the episode list (`tt0944947:1:2`), so a Cinemeta poster
+  becomes a playable request.
 - `GET /stream/:type/:id.json` — returns `streams` ordered by provider
   priority so ExoPlayer can fail over (source 1 → 2 → 3).
 - In-memory TTL cache (2 h live / 6 h VOD) with single-flight and
@@ -139,6 +151,10 @@ cd server
 npm install
 npm start
 # manifest → http://localhost:7000/manifest.json
+# catalog rows → http://localhost:7000/catalog/tv/live.json
+#               http://localhost:7000/catalog/movie/top.json
+# search →      http://localhost:7000/catalog/movie/top/search=matrix.json
+# metadata →    http://localhost:7000/meta/series/tt0944947.json
 # live channel → http://localhost:7000/stream/tv/tv:futbolibre:espn-1.json
 # anime episode → http://localhost:7000/stream/anime/animeflv:one-piece:1180.json
 npm run channels:futbolibre   # list channels + matches with ready-to-use ids
@@ -339,18 +355,37 @@ editable at runtime from **Servidor** in the home header; the value is stored in
 Cleartext HTTP is allowed because a LAN address cannot be known in advance; the
 video CDNs themselves are HTTPS.
 
-### Home catalogue
+### Home catalogue (server-driven)
 
-The addon publishes no catalogs (`manifest.catalogs = []`), so the home screen
-is fed by `app/src/main/assets/catalog/seed.json` (schema `version: 2`): five
-curated rows — Continuar viendo, Películas populares, Series que enganchan, Anime
-en emisión and Deportes en directo — whose ids are **real** provider ids, so
-every card can be played against a running addon. Each entry carries what the
-hero and the details panel need (synopsis, genres, rating, quality, runtime,
-`art` fallback key, `trending`, `live`, `progressPercent`), which is why opening
-the details panel costs no extra request. Edit the JSON to change the shelf —
-nothing is hardcoded in Kotlin. Remote catalogs are supported but opt-in
-(`Settings.remoteCatalogs`, off by default).
+The home screen is built from the **backend catalog config**, not from Kotlin.
+On launch the app asks `GET /catalogs.json` which rows the addon publishes and
+then loads every row in parallel from `GET /catalog/{type}/{id}.json`:
+
+- **card shape comes from the server** — `posterShape: "poster"` renders 2:3
+  posters (movies, series, anime), `posterShape: "landscape"` renders 16:9
+  cards (live TV and sports);
+- rows are `movie/top`, `movie/imdbRating`, `series/top`, `anime/top`,
+  `anime/imdbRating` (Cinemeta, enriched with synopsis/poster/year/rating) and
+  `tv/live` (curated channels from `server/config/live-catalog.json`, whose ids
+  are exactly the stream ids — `tv:futbolibre:espn-1`);
+- adding, removing or reordering a row is editing
+  `server/config/catalogs.json` and restarting Node: no APK rebuild, no
+  reinstall on the TV;
+- each row fails on its own: if Cinemeta is down the movie rows disappear but
+  the live row (served from a local JSON) still plays. If the addon is not
+  reachable at all, the app falls back to the bundled
+  `app/src/main/assets/catalog/seed.json` plus the device-local
+  **Continuar viendo** row.
+
+Tapping a Cinemeta card keeps its **IMDb id** (`tt0944947`). For a series the
+details sheet asks `GET /meta/{type}/{id}.json` for the episode list, picks one
+(`tt0944947:1:2`) and only then requests
+`GET /stream/series/tt0944947:1:2.json`; the chosen source index still flows
+into `PlaybackRequest.startIndex`, so ExoPlayer starts on the server the user
+picked and fails over downward exactly like the seed rows do.
+
+`Settings.remoteCatalogs` (on by default) is the escape hatch: turn it off to
+pin the curated `seed.json` shelf even when the server publishes rows.
 
 ### Build, run, test
 

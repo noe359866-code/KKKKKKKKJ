@@ -98,6 +98,10 @@ class MainActivity : ComponentActivity() {
                         DetailsViewModel(
                             entry = target.entry,
                             repository = ServiceLocator.streamsRepository(applicationContext),
+                            /* Para series: pide /meta y convierte el póster de
+                             * Cinemeta (tt…) en un episodio jugable (tt…:S:E). */
+                            client = ServiceLocator.addonClient(),
+                            settings = ServiceLocator.settings(applicationContext),
                         )
                     }
                 }
@@ -114,7 +118,9 @@ class MainActivity : ComponentActivity() {
                 onDismiss = { details = null },
                 onPlay = { startIndex ->
                     details = null
-                    onPlay(target.entry.playbackRequest(startIndex))
+                    /* ids de episodio incluidos: el ViewModel es el que sabe si
+                     * se eligió un capítulo o se reproduce el título entero. */
+                    onPlay(detailsViewModel.playbackRequest(startIndex))
                 },
             )
         }

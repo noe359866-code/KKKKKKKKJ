@@ -1,0 +1,21 @@
+{
+  "metas": [
+    {
+      "id": "tt0944947",
+      "type": "series",
+      "name": "Game of Thrones",
+      "poster": "https://images.metahub.space/poster/medium/tt0944947/img",
+      "releaseInfo": "2011–2019",
+      "imdbRating": "N/A",
+      "genres": ["Drama"]
+    },
+    {
+      "id": "tt0409591",
+      "type": "series",
+      "name": "Naruto",
+      "poster": "https://images.metahub.space/poster/medium/tt0409591/img",
+      "releaseInfo": "2002–2007",
+      "imdbRating": "8.4"
+    }
+  ]
+}

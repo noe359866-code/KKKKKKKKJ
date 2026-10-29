@@ -63,15 +63,22 @@ class HomeViewModel(
     /**
      * El usuario enfocó una tarjeta: el hero pasa a mostrarla.
      *
-     * Se compara por `id` antes de emitir para que mantener la flecha pulsada
-     * sobre la misma tarjeta no regenere el `StateFlow` en cada frame.
+     * Se compara **(fila, id)** antes de emitir, por dos motivos:
+     *  - mantener la flecha pulsada sobre la misma tarjeta no debe regenerar el
+     *    `StateFlow` en cada frame (en una TV el foco llega decenas de veces por
+     *    segundo);
+     *  - con catálogos del servidor, el mismo título aparece en varias filas
+     *    (`movie/top` y `movie/imdbRating`), así que comparar sólo el id dejaría
+     *    el hero con la etiqueta de la fila equivocada.
      */
     fun onCardFocused(rowId: String, entry: MediaEntry) {
         val catalog = (mutableState.value as? HomeUiState.Ready)?.catalog ?: return
         val spotlight = catalog.spotlightFor(rowId, entry.id) ?: return
-        if (mutableHero.value?.entry?.id != spotlight.entry.id) {
-            mutableHero.value = spotlight
-        }
+        val current = mutableHero.value
+        val changed = current == null ||
+            current.rowId != spotlight.rowId ||
+            current.entry.id != spotlight.entry.id
+        if (changed) mutableHero.value = spotlight
     }
 
     /** Vuelve al destacado por defecto (p. ej. al abrir los ajustes). */

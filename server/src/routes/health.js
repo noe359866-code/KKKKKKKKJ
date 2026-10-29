@@ -13,6 +13,7 @@ import config from '../config.js';
 import { cache } from '../cache/TtlCache.js';
 import { getProvidersMeta, getProviders } from '../providers/index.js';
 import { ttlPolicy } from '../services/streamService.js';
+import { getCatalogs } from '../catalogs/registry.js';
 
 export const healthRouter = Router();
 
@@ -31,6 +32,16 @@ function healthPayload() {
       resources: config.addon.resources,
       liveTtlHours: Number((ttlPolicy().liveMs / 3_600_000).toFixed(2)),
       vodTtlHours: Number((ttlPolicy().vodMs / 3_600_000).toFixed(2)),
+    },
+    catalogs: {
+      published: getCatalogs().map((catalog) => ({
+        type: catalog.type,
+        id: catalog.id,
+        name: catalog.name,
+        posterShape: catalog.posterShape,
+        source: catalog.source.kind,
+      })),
+      cinemetaBase: config.catalogs.cinemetaBase,
     },
     cache: cache.stats(),
     providers: {

@@ -6,14 +6,17 @@
  * Reference: https://github.com/Stremio/stremio-addon-sdk/blob/master/docs/protocol.md
  *
  * Contract implemented here:
- *   GET /manifest.json        -> AddonManifest
- *   GET /stream/:type/:id.json -> { streams: Stream[] }
+ *   GET /manifest.json          -> AddonManifest
+ *   GET /stream/:type/:id.json   -> { streams: Stream[] }
+ *   GET /catalog/:type/:id.json  -> { metas: Meta[] }
+ *   GET /meta/:type/:id.json     -> { meta: Meta }
  *
  * Stream object shape requested by the product spec:
  *   { name, title, url, behaviorHints: { requestHeaders: { Referer, User-Agent } } }
  */
 
 import config from '../config.js';
+import { manifestCatalogs } from '../catalogs/registry.js';
 
 /**
  * Builds the addon manifest.
@@ -29,6 +32,20 @@ export function buildManifest(baseUrl = '') {
       /* idPrefixes intentionally omitted: it would reject custom live ids.
        * The server validates ids per route instead. */
     },
+    {
+      /* Catalog resource: this is what makes the addon show a browsable Home
+       * in Stremio (and what our Android client reads). No idPrefixes either,
+       * because live channels use ids like "tv:futbolibre:espn-1" that do not
+       * start with "tt"; declaring a prefix would hide those catalogs. */
+      name: 'catalog',
+      types,
+    },
+    {
+      /* Meta resource: enriches the detail screen with Cinemeta data
+       * (synopsis, year, poster, episodes) instead of Stremio's fallback. */
+      name: 'meta',
+      types,
+    },
   ];
 
   return {
@@ -39,7 +56,10 @@ export function buildManifest(baseUrl = '') {
     ...(config.addon.logo ? { logo: config.addon.logo } : {}),
     types,
     resources,
-    catalogs: [],
+    /* Catalogs declared in config/catalogs.json. Each one maps to
+     * GET /catalog/:type/:id.json; the client renders posterShape to decide
+     * between 2:3 posters and 16:9 live cards. */
+    catalogs: manifestCatalogs(),
     /* Needed by ExoPlayer/Android clients to play direct .m3u8 URLs. */
     behaviorHints: {
       adult: false,

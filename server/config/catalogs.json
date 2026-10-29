@@ -1,0 +1,54 @@
+{
+  "$comment": "Catálogos que publica este addon en /manifest.json. 'type' e 'id' son los del protocolo Stremio: GET /catalog/<type>/<id>.json. 'source' dice de dónde salen las metas: cinemeta (addon oficial de metadatos) o local (config/live-catalog.json). 'posterShape' controla si el cliente pinta tarjetas 2:3 (poster) o 16:9 (landscape).",
+  "catalogs": [
+    {
+      "type": "tv",
+      "id": "live",
+      "name": "TV en Vivo y Deportes",
+      "posterShape": "landscape",
+      "order": 1,
+      "genres": ["Deportes", "Canales", "Eventos"],
+      "source": { "kind": "local" }
+    },
+    {
+      "type": "movie",
+      "id": "top",
+      "name": "Películas populares",
+      "posterShape": "poster",
+      "order": 2,
+      "source": { "kind": "cinemeta", "type": "movie", "id": "top" }
+    },
+    {
+      "type": "movie",
+      "id": "imdbRating",
+      "name": "Mejor valoradas",
+      "posterShape": "poster",
+      "order": 3,
+      "source": { "kind": "cinemeta", "type": "movie", "id": "imdbRating" }
+    },
+    {
+      "type": "series",
+      "id": "top",
+      "name": "Series populares",
+      "posterShape": "poster",
+      "order": 4,
+      "source": { "kind": "cinemeta", "type": "series", "id": "top" }
+    },
+    {
+      "type": "anime",
+      "id": "top",
+      "name": "Anime en emisión",
+      "posterShape": "poster",
+      "order": 5,
+      "source": { "kind": "cinemeta", "type": "series", "id": "top", "genre": "Animation" }
+    },
+    {
+      "type": "anime",
+      "id": "imdbRating",
+      "name": "Anime mejor valorado",
+      "posterShape": "poster",
+      "order": 6,
+      "source": { "kind": "cinemeta", "type": "series", "id": "imdbRating", "genre": "Animation" }
+    }
+  ]
+}

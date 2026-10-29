@@ -104,6 +104,7 @@
         <div class="card">
           <h2>Tipos soportados</h2>
           <div class="row"><span>contenido</span><span id="types">—</span></div>
+          <div class="row"><span>catálogos</span><span id="catalogs">—</span></div>
           <div class="row"><span>proveedores</span><span id="providers">—</span></div>
           <div class="row"><span>uptime</span><span id="uptime">—</span></div>
         </div>
@@ -113,6 +114,7 @@
         <h2>Prueba rápida</h2>
         <div class="hint">Endpoint de streams (devuelve las fuentes ordenadas por prioridad para el failover de ExoPlayer):</div>
         <div class="snippet" id="snippet">curl -s "$BASE/stream/tv/demo-live.json" | jq</div>
+        <div class="snippet" id="snippet-catalog">curl -s "$BASE/catalog/tv/live.json" | jq '.metas[].name'</div>
         <div class="hint" id="last-result">—</div>
       </div>
 
@@ -129,6 +131,7 @@
       $('manifest-url').textContent = `${base}/manifest.json`;
       $('install-link').href = `stremio://${base.replace(/^https?:\/\//, '')}/manifest.json`;
       $('snippet').textContent = `curl -s "${base}/stream/tv/demo-live.json" | jq`;
+      $('snippet-catalog').textContent = `curl -s "${base}/catalog/tv/live.json" | jq '.metas[].name'`;
 
       async function load() {
         try {
@@ -148,6 +151,10 @@
           $('cache-counts').textContent = `${health.cache.hits} / ${health.cache.misses}`;
           $('cache-ttl').textContent = `${health.addon.liveTtlHours}h / ${health.addon.vodTtlHours}h`;
           $('types').textContent = manifest.types.join(', ');
+          /* Filas publicadas (config/catalogs.json → manifest.catalogs). */
+          $('catalogs').textContent = (manifest.catalogs || []).length
+            ? manifest.catalogs.map((catalog) => `${catalog.type}/${catalog.id}`).join(', ')
+            : '—';
           $('providers').textContent = health.providers.enabled.length;
           $('uptime').textContent = `${Math.floor(health.uptimeSeconds / 60)}m`;
         } catch (error) {

@@ -1,6 +1,7 @@
 package com.tanasi.streamflix.data.repo
 
 import android.content.Context
+import com.tanasi.streamflix.data.model.CatalogDescriptor
 import com.tanasi.streamflix.data.model.CatalogDocument
 import com.tanasi.streamflix.data.model.CatalogRow
 import com.tanasi.streamflix.data.model.HomeCatalog
@@ -9,23 +10,36 @@ import com.tanasi.streamflix.util.AddonSettings
 import com.tanasi.streamflix.util.AppLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 
 /**
  * De dónde salen las filas del Home.
  *
- * El addon de Node **no publica catálogos** (`manifest.catalogs = []`): sólo
- * resuelve `/stream/:type/:id.json`. Así que el Home se alimenta de:
+ * **El servidor manda.** Al abrir la app se pregunta `GET /catalogs.json` y cada
+ * fila se alimenta de `GET /catalog/{type}/{id}.json` (protocolo Stremio). Eso
+ * significa que la cartelera —incluida la TV en vivo y los deportes— se cambia
+ * editando `server/config/catalogs.json`, sin recompilar ni reinstalar el APK.
  *
- *  1. `assets/catalog/seed.json` — filas curadas (Continuar viendo, Películas
- *     populares, Series, Anime, Deportes) con ids **reales** de los proveedores,
- *     sinopsis, géneros y calidad. Al ser un asset, cambiar la portada es editar
- *     un JSON: no se recompila Kotlin.
- *  2. `/catalog/{type}/{id}.json` — el protocolo estándar de Stremio, que se
- *     consulta **sólo si** el addon empieza a declararlos y el usuario activa
- *     `AddonSettings.remoteCatalogs` (por defecto desactivado, para no lanzar
- *     cinco peticiones que hoy devolverían 404).
+ * Las filas se piden **en paralelo** y cada una falla por su cuenta: si Cinemeta
+ * se cae, las filas de películas desaparecen pero la de TV en vivo (que sale de
+ * un JSON local del servidor) se sigue viendo. El Home no se queda en blanco
+ * mientras haya algo que enseñar.
+ *
+ * Respaldo (`assets/catalog/seed.json`), usado sólo cuando el servidor no
+ * responde o no publica catálogos:
+ *
+ *  - las filas de **"Continuar viendo"**, que son progreso local del dispositivo
+ *    y por definición no viajan al servidor;
+ *  - la cartelera curada completa, para que un primer arranque sin backend
+ *    (o con la IP del portátil cambiada) no muestre una pantalla vacía.
+ *
+ * `AddonSettings.remoteCatalogs` sigue existiendo como escape: apagado, el Home
+ * se queda con la semilla curada aunque el servidor publique filas.
  */
 class CatalogRepository(
     private val context: Context,
@@ -41,7 +55,13 @@ class CatalogRepository(
         cached?.let { return@withContext it }
 
         val seed = readSeed().filter { it.items.isNotEmpty() }
-        val rows = if (settings.remoteCatalogs) seed.map { row -> mergeRemote(row) } else seed
+        val rows = if (settings.remoteCatalogs) {
+            val remote = loadRemoteRows()
+            if (remote.isEmpty()) seed else mergeLocalRows(seed, remote)
+        } else {
+            seed
+        }
+
         HomeCatalog(rows).also { cached = it }
     }
 
@@ -59,32 +79,104 @@ class CatalogRepository(
     }
 
     /**
-     * Sustituye los items de una fila por los del addon **si** responde. Si no,
-     * se queda la semilla: un Home vacío por un catálogo remoto que aún no
-     * existe sería peor que mostrar el catálogo curado.
+     * Pide al addon sus catálogos y los carga todos a la vez.
      *
-     * Las metas remotas no traen sinopsis ni arte local, así que heredan la
-     * clave `art` de la fila (el hero necesita un backdrop sí o sí).
+     * Nunca lanza: un fallo de red devuelve lista vacía y el Home cae a la
+     * semilla.
      */
-    private suspend fun mergeRemote(row: CatalogRow): CatalogRow {
-        val type = row.items.firstOrNull()?.type ?: return row
-        val artKey = row.items.firstOrNull()?.art ?: row.id
-        return try {
-            val remote = client.catalog(settings.baseUrl, type, row.id) ?: return row
-            if (remote.metas.isEmpty()) {
-                row
-            } else {
-                row.copy(items = remote.metas.map { meta -> meta.toEntry().copy(art = artKey) })
-            }
+    private suspend fun loadRemoteRows(): List<CatalogRow> {
+        val baseUrl = settings.baseUrl
+        if (baseUrl.isBlank()) return emptyList()
+
+        val descriptors = try {
+            /* Descubrimiento con tope propio: si el servidor no responde, el
+             * Home debe caer a la semilla en segundos, no colgarse los 20 s del
+             * `callTimeout` de OkHttp. */
+            withTimeoutOrNull(DISCOVERY_TIMEOUT_MS) { client.catalogs(baseUrl) }.orEmpty()
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            AppLog.w("catálogo remoto %s no disponible: %s", row.id, error.message)
-            row
+            AppLog.w("no se pudieron leer los catálogos del addon: %s", error.message)
+            return emptyList()
         }
+
+        if (descriptors.isEmpty()) {
+            AppLog.i("el addon no publica catálogos, se usa la semilla local")
+            return emptyList()
+        }
+
+        return coroutineScope {
+            descriptors
+                .map { descriptor ->
+                    async(Dispatchers.IO) {
+                        /* Una fila lenta no puede retrasar el resto del Home:
+                         * la que no llegue a tiempo simplemente no se pinta. */
+                        descriptor to withTimeoutOrNull(ROW_TIMEOUT_MS) { fetchRow(descriptor) }
+                    }
+                }
+                .awaitAll()
+                .mapNotNull { (descriptor, row) ->
+                    if (row == null) {
+                        AppLog.w("catálogo %s/%s sin datos", descriptor.type, descriptor.id)
+                    }
+                    row
+                }
+        }
+    }
+
+    /** Una fila remota, o `null` si el catálogo no devolvió nada útil. */
+    private suspend fun fetchRow(descriptor: CatalogDescriptor): CatalogRow? = try {
+        val response = client.catalog(settings.baseUrl, descriptor.type, descriptor.id)
+        val items = response?.metas.orEmpty()
+            .map { meta -> meta.toEntry(descriptor) }
+            .distinctBy { entry -> entry.id }
+
+        if (items.isEmpty()) {
+            if (response?.degraded == true) {
+                AppLog.w("catálogo %s/%s degradado (upstream caído)", descriptor.type, descriptor.id)
+            }
+            null
+        } else {
+            CatalogRow(
+                id = descriptor.rowId,
+                title = descriptor.name,
+                /* La forma la decide el SERVIDOR: 2:3 para películas/series,
+                 * 16:9 para TV en vivo y deportes. */
+                aspect = descriptor.posterShape,
+                items = items,
+            )
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        AppLog.w("catálogo %s/%s falló: %s", descriptor.type, descriptor.id, error.message)
+        null
+    }
+
+    /**
+     * Filas locales que sobreviven a la cartelera remota + filas remotas.
+     *
+     * Sólo las filas marcadas como locales (hoy: "Continuar viendo") se
+     * conservan; el resto (películas, series, anime, deportes) lo sirve el
+     * addon. Si una fila remota sale vacía, el hueco no se rellena con la
+     * semilla: mezclar "populares de Cinemeta" con "populares curadas" en la
+     * misma fila daría duplicados y etiquetas que mienten.
+     */
+    private fun mergeLocalRows(seed: List<CatalogRow>, remote: List<CatalogRow>): List<CatalogRow> {
+        val local = seed.filter { row -> row.id in LOCAL_ROW_IDS }
+        return local + remote
     }
 
     private companion object {
         const val SEED_ASSET = "catalog/seed.json"
+
+        /** Filas que sólo tienen sentido en el dispositivo. */
+        val LOCAL_ROW_IDS = setOf("continue")
+
+        /** Tope del descubrimiento de catálogos (ms). */
+        const val DISCOVERY_TIMEOUT_MS = 4_000L
+
+        /** Tope por fila (ms), holgado sobre el `CINEMETA_TIMEOUT_MS` del servidor. */
+        const val ROW_TIMEOUT_MS = 12_000L
     }
 }

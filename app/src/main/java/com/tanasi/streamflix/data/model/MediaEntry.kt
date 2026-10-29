@@ -112,32 +112,6 @@ data class CatalogDocument(
 )
 
 /**
- * Catálogo remoto al estilo Stremio (`/catalog/{type}/{id}.json`), por si el
- * addon empieza a exponer catalogs en el manifest.
- */
-@Serializable
-data class RemoteCatalogResponse(
-    @SerialName("metas") val metas: List<RemoteMeta> = emptyList(),
-)
-
-@Serializable
-data class RemoteMeta(
-    @SerialName("id") val id: String,
-    @SerialName("type") val type: String,
-    @SerialName("name") val name: String,
-    @SerialName("poster") val poster: String? = null,
-    @SerialName("releaseInfo") val releaseInfo: String? = null,
-) {
-    fun toEntry(): MediaEntry = MediaEntry(
-        id = id,
-        type = type,
-        title = name,
-        poster = poster,
-        year = releaseInfo?.take(4)?.toIntOrNull(),
-    )
-}
-
-/**
  * Traduce una tarjeta al intent del reproductor.
  *
  * @param startIndex fuente elegida en la hoja de detalles (0 = la de mayor

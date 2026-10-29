@@ -134,7 +134,10 @@ copiar la URL y ver el estado de la caché en vivo.
 
 | Método | Ruta | Descripción |
 | --- | --- | --- |
-| `GET` | `/manifest.json` | Manifiesto del addon (`movie`, `series`, `anime`, `tv`). |
+| `GET` | `/manifest.json` | Manifiesto del addon (`movie`, `series`, `anime`, `tv`) con sus catálogos. |
+| `GET` | `/catalog/:type/:id.json` | Catálogo Stremio (Cinemeta + TV en vivo local). Admite `search=`, `genre=`, `skip=`. |
+| `GET` | `/meta/:type/:id.json` | Ficha enriquecida; en series incluye los episodios. |
+| `GET` | `/catalogs.json` | Qué filas publica el addon (extensión propia para la app Android). |
 | `GET` | `/stream/:type/:id.json` | Fuentes de video ordenadas por prioridad. |
 | `GET` | `/health` · `/healthz` | Estado, métricas de caché y proveedores. |
 | `GET` | `/proxy?url=…` | Proxy HLS opcional con `Referer`/`UA` y reescritura de segmentos. |
@@ -155,10 +158,103 @@ curl -s http://localhost:7000/manifest.json | jq
   "version": "0.1.0",
   "name": "Streamflix Reborn",
   "types": ["movie", "series", "anime", "tv"],
-  "resources": [{ "name": "stream", "types": ["movie", "series", "anime", "tv"] }],
-  "catalogs": []
+  "resources": [
+    { "name": "stream", "types": ["movie", "series", "anime", "tv"] },
+    { "name": "catalog", "types": ["movie", "series", "anime", "tv"] },
+    { "name": "meta", "types": ["movie", "series", "anime", "tv"] }
+  ],
+  "catalogs": [
+    {
+      "type": "tv",
+      "id": "live",
+      "name": "TV en Vivo y Deportes",
+      "posterShape": "landscape",
+      "extra": [
+        { "name": "search", "isRequired": false },
+        { "name": "skip", "isRequired": false },
+        { "name": "genre", "options": ["Deportes", "Canales", "Eventos"], "isRequired": false }
+      ]
+    }
+  ]
 }
 ```
+
+> `idPrefixes` se omite a propósito en el recurso `catalog`: los canales en vivo
+> usan ids como `tv:futbolibre:espn-1`, que no empiezan por `tt`. Declarar el
+> prefijo escondería esas filas en Stremio.
+
+### Catálogos
+
+Las filas se declaran en `config/catalogs.json` (misma idea que
+`config/providers.json`: añadir una fila no toca código):
+
+```json
+{
+  "type": "anime",
+  "id": "top",
+  "name": "Anime en emisión",
+  "posterShape": "poster",
+  "order": 5,
+  "source": { "kind": "cinemeta", "type": "series", "id": "top", "genre": "Animation" }
+}
+```
+
+- `source.kind: "cinemeta"` → se pide a Cinemeta (`CINEMETA_BASE`) traduciendo
+  el tipo publicado al real: `anime` en realidad es `series` filtrado por
+  `Animation`. Las metas se normalizan (`releaseInfo` → `year`,
+  `imdbRating` → `rating`), se deduplican por id y conservan `sourceType`.
+- `source.kind: "local"` → sale de `config/live-catalog.json`. El `id` de cada
+  canal **es** el id de stream (`tv:futbolibre:espn-1`), así que tocar una
+  tarjeta va directo a `/stream/tv/…`. Se sirven con
+  `posterShape: "landscape"` (16:9).
+- `posterShape` decide cómo pinta las tarjetas el cliente: `poster` = 2:3
+  (películas/series/anime), `landscape` = 16:9 (TV en vivo y deportes).
+
+Extras del protocolo, como segmentos de path:
+
+```bash
+curl -s "http://localhost:7000/catalog/movie/top/search=matrix.json" | jq '.metas[0]'
+curl -s "http://localhost:7000/catalog/tv/live/genre=Deportes.json" | jq '.metas[].name'
+curl -s "http://localhost:7000/meta/series/tt0944947:1:2.json" | jq '.meta.selectedVideo'
+```
+
+Respuesta (contrato Stremio + dos campos propios que ignora cualquier otro
+cliente):
+
+```json
+{
+  "metas": [
+    {
+      "id": "tt0133093",
+      "type": "movie",
+      "name": "The Matrix",
+      "poster": "https://images.metahub.space/poster/medium/tt0133093/img",
+      "background": "https://images.metahub.space/background/medium/tt0133093/img",
+      "description": "Un hacker descubre la verdad…",
+      "releaseInfo": "1999",
+      "year": 1999,
+      "rating": 8.7,
+      "genres": ["Action", "Sci-Fi"]
+    }
+  ],
+  "cacheMaxAge": 1800,
+  "staleRevalidate": 1800,
+  "staleError": 60,
+  "catalog": { "type": "movie", "id": "top", "name": "Películas populares", "posterShape": "poster" }
+}
+```
+
+Política de fallos:
+
+- **Cinemeta caída** → se sirve la copia *stale* si existe; si no, `200` con
+  `metas: []`, `degraded: true` y `X-Catalog-Degraded: 1` (nunca un `502` que
+  deje el Home en blanco).
+- **Catálogo no publicado** → `404` con `available: ["top", "imdbRating"]`.
+- **`HEAD /catalog/…`** → `200` sin tocar el upstream (probes de los clientes).
+- TTLs: filas `CATALOG_TTL_MINUTES` (30), búsquedas
+  `CATALOG_SEARCH_TTL_MINUTES` (5), fichas `CATALOG_META_TTL_HOURS` (24) y
+  modo degradado `CATALOG_MISS_SECONDS` (60). Todo con *single flight* y
+  *stale-while-revalidate* sobre la misma `TtlCache` que los streams.
 
 ### Streams
 
@@ -462,7 +558,7 @@ Agregar un proveedor real:
 | `PORT` / `HOST` | `7000` / `0.0.0.0` | Bind HTTP. `0.0.0.0` es necesario en Docker/TV box. |
 | `PUBLIC_URL` | *(derivada)* | Origen público para el manifest detrás de proxy. |
 | `CORS_ORIGINS` | `*` | Orígenes permitidos (lista separada por comas). |
-| `RATE_LIMIT_MAX` | `120` | Peticiones/min/IP en `/stream` y `/proxy` (0 = off). |
+| `RATE_LIMIT_MAX` | `120` | Peticiones/min/IP en `/stream`, `/proxy`, `/catalog` y `/meta` (0 = off). |
 | `CACHE_TTL_LIVE_HOURS` | `2` | TTL live/deportes. Ventana válida **2–4 h** (fuera de rango no arranca). |
 | `CACHE_TTL_VOD_HOURS` | `6` | TTL VOD/anime/series (2–6). |
 | `CACHE_TTL_MISS_SECONDS` | `120` | Caché negativa. |
@@ -496,6 +592,15 @@ Agregar un proveedor real:
 | `*_MIRRORS` | vacío | Dominios alternativos separados por comas, probados si la base no responde. |
 | `PELICULASFLIX_API` / `PELICULASFLIX_ACCESS` | API y clave del sitio | Endpoint GraphQL y `x-access-platform`. |
 | `TMDB_API_KEY` | vacío | Opcional: traduce ids IMDb a título/año para acertar el slug. |
+| `CINEMETA_BASE` | `https://v3-cinemeta.strem.io` | Addon oficial de metadatos (los tests usan un mock local). |
+| `CINEMETA_TIMEOUT_MS` | `6000` | Timeout por petición a Cinemeta. |
+| `CATALOG_TTL_MINUTES` | `30` | TTL de las filas del Home. |
+| `CATALOG_SEARCH_TTL_MINUTES` | `5` | TTL de las búsquedas (`search=`). |
+| `CATALOG_META_TTL_HOURS` | `24` | TTL de `/meta` (sinopsis + episodios). |
+| `CATALOG_MISS_SECONDS` | `60` | Ventana del modo degradado cuando Cinemeta no responde. |
+| `CATALOG_PAGE_SIZE` | `100` | Tope de metas por catálogo. |
+| `CATALOGS_CONFIG` | `./config/catalogs.json` | Filas publicadas (tipo, id, nombre, `posterShape`, origen). |
+| `LIVE_CATALOG_PATH` | `./config/live-catalog.json` | Canales de TV en vivo y deportes curados. |
 
 Todas se pueden poner en `server/.env` (se carga automáticamente, sin
 dependencias) o inyectarlas desde el orquestador.

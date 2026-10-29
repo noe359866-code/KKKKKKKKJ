@@ -1,6 +1,10 @@
 package com.tanasi.streamflix.data.remote
 
+import com.tanasi.streamflix.data.model.CatalogDescriptor
+import com.tanasi.streamflix.data.model.CatalogsResponse
+import com.tanasi.streamflix.data.model.MetaResponse
 import com.tanasi.streamflix.data.model.RemoteCatalogResponse
+import com.tanasi.streamflix.data.model.RemoteMeta
 import com.tanasi.streamflix.data.model.StreamsResponse
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -17,9 +21,15 @@ class AddonException(message: String, cause: Throwable? = null) : IOException(me
 /**
  * Cliente HTTP del addon de Node.
  *
- * Sólo habla JSON: todo el scraping ocurre en el servidor, así que el APK no
- * necesita Jsoup ni Playwright. El cliente pide `/stream/{type}/{id}.json` y
- * recibe el array ya ordenado por prioridad.
+ * Sólo habla JSON: todo el scraping y toda la agregación de metadatos ocurre en
+ * el servidor, así que el APK no necesita Jsoup, Playwright ni una clave de
+ * TMDB. El cliente pide:
+ *
+ *  - `/catalogs.json` → qué filas publica el addon (extensión propia, pensada
+ *    para esta app: es más pequeña y estable que el manifest completo);
+ *  - `/catalog/{type}/{id}.json` → las metas de una fila, ya normalizadas;
+ *  - `/meta/{type}/{id}.json` → ficha completa, con episodios si es serie;
+ *  - `/stream/{type}/{id}.json` → fuentes ya ordenadas por prioridad.
  */
 class AddonClient(
     private val http: OkHttpClient = defaultHttpClient(),
@@ -41,17 +51,67 @@ class AddonClient(
         }
     }
 
-    /** Catálogo remoto opcional (`/catalog/{type}/{id}.json`), si el addon lo expone. */
-    suspend fun catalog(baseUrl: String, type: String, id: String): RemoteCatalogResponse? {
-        val url = Urls.catalog(baseUrl, type, id)
-        return try {
-            json.decodeFromString(RemoteCatalogResponse.serializer(), get(url))
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Exception) {
-            /* El addon actual no declara catálogos: no es un error, se ignora. */
+    /**
+     * Catálogos que publica el addon.
+     *
+     * Se pregunta primero por `/catalogs.json`; si el servidor es una versión
+     * anterior que no lo expone, se cae al `manifest.json` (donde el bloque
+     * `catalogs` es el estándar de Stremio). Devuelve una lista vacía —no una
+     * excepción— cuando el addon no publica ninguno: la app tiene semilla local
+     * para ese caso.
+     */
+    suspend fun catalogs(baseUrl: String): List<CatalogDescriptor> {
+        val fromFeed = runCatching {
+            json.decodeFromString(CatalogsResponse.serializer(), get(Urls.catalogs(baseUrl))).catalogs
+        }.getOrElse { error ->
+            if (error is CancellationException) throw error
             null
         }
+
+        if (!fromFeed.isNullOrEmpty()) return fromFeed
+
+        return runCatching {
+            json.decodeFromString(CatalogsResponse.serializer(), get(Urls.manifest(baseUrl))).catalogs
+        }.getOrElse { error ->
+            if (error is CancellationException) throw error
+            emptyList()
+        }
+    }
+
+    /**
+     * Metas de un catálogo.
+     *
+     * @return `null` si la fila falla (404, red, JSON inválido): el repositorio
+     *   simplemente no la pinta, en lugar de romper el Home entero.
+     */
+    suspend fun catalog(
+        baseUrl: String,
+        type: String,
+        id: String,
+        search: String? = null,
+        genre: String? = null,
+        skip: Int? = null,
+    ): RemoteCatalogResponse? = try {
+        val body = get(Urls.catalog(baseUrl, type, id, search = search, genre = genre, skip = skip))
+        json.decodeFromString(RemoteCatalogResponse.serializer(), body)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * Ficha de un título. `null` cuando el servidor no la tiene (404), que es un
+     * caso normal: un canal local puede no existir ya, o Cinemeta puede no
+     * conocer un id.
+     */
+    suspend fun meta(baseUrl: String, type: String, id: String): RemoteMeta? = try {
+        val body = get(Urls.meta(baseUrl, type, id))
+        json.decodeFromString(MetaResponse.serializer(), body).meta
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        null
     }
 
     /** Comprobación de conectividad que usa el diálogo de ajustes. */

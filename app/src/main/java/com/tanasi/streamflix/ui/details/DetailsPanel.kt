@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
@@ -49,6 +52,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.core.LocalDeviceProfile
+import com.tanasi.streamflix.data.model.EpisodeOption
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.StreamSource
 import com.tanasi.streamflix.ui.components.BackdropImage
@@ -87,6 +91,7 @@ fun DetailsDialog(
     val deviceProfile = LocalDeviceProfile.current
     val isTv = deviceProfile.requiresDpadFocus
     val sources by viewModel.state.collectAsStateWithLifecycle()
+    val episodes by viewModel.episodes.collectAsStateWithLifecycle()
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -147,6 +152,15 @@ fun DetailsDialog(
                             text = entry.synopsis ?: "Sin sinopsis disponible para este título.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = StreamflixColors.OnSurface.copy(alpha = 0.9f),
+                        )
+
+                        Spacer(Modifier.height(20.dp))
+
+                        EpisodesSection(
+                            state = episodes,
+                            isTv = isTv,
+                            onSelectSeason = viewModel::selectSeason,
+                            onSelectEpisode = viewModel::selectEpisode,
                         )
 
                         Spacer(Modifier.height(20.dp))
@@ -242,6 +256,184 @@ private fun DetailsHeader(entry: MediaEntry, isTv: Boolean) {
             Text(
                 text = entry.metaLine,
                 style = MaterialTheme.typography.labelMedium,
+                color = StreamflixColors.OnSurfaceMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
+ * Selector de temporada y episodio.
+ *
+ * Sólo aparece cuando el título es una serie y el id **no** trae capítulo. Es
+ * la pieza que permite que una tarjeta de Cinemeta (`tt0944947`, la serie) se
+ * convierta en una petición reproducible (`tt0944947:1:2`), porque los scrapers
+ * de series buscan por temporada/episodio.
+ *
+ * Se oculta entera cuando el estado es [EpisodesUiState.Hidden] (películas,
+ * canales en directo y entradas que ya llevan capítulo en el id): la hoja queda
+ * exactamente como estaba para el 80 % de los casos.
+ */
+@Composable
+private fun EpisodesSection(
+    state: EpisodesUiState,
+    isTv: Boolean,
+    onSelectSeason: (Int) -> Unit,
+    onSelectEpisode: (EpisodeOption) -> Unit,
+) {
+    if (state is EpisodesUiState.Hidden) return
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Episodios",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = StreamflixColors.OnSurfaceMuted,
+            )
+            (state as? EpisodesUiState.Ready)?.let { ready ->
+                Spacer(Modifier.width(8.dp))
+                GlassBadge(text = ready.selected.label)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+
+        when (state) {
+            is EpisodesUiState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    color = StreamflixColors.Primary,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.width(16.dp).height(16.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = "Cargando episodios…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = StreamflixColors.OnSurfaceMuted,
+                )
+            }
+
+            is EpisodesUiState.Unavailable -> Text(
+                text = state.message,
+                style = MaterialTheme.typography.labelMedium,
+                color = StreamflixColors.OnSurfaceMuted,
+            )
+
+            is EpisodesUiState.Ready -> Column {
+                if (state.seasons.size > 1) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        state.seasons.forEach { season ->
+                            SelectorChip(
+                                text = season.label,
+                                selected = season.season == state.selectedSeason,
+                                onClick = { onSelectSeason(season.season) },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(end = 8.dp),
+                ) {
+                    items(state.episodes, key = { episode -> "${episode.season}:${episode.episode}" }) { episode ->
+                        SelectorChip(
+                            text = episode.shortLabel,
+                            selected = episode == state.selected,
+                            caption = episode.name,
+                            onClick = { onSelectEpisode(episode) },
+                        )
+                    }
+                }
+
+                val chosen = state.selected
+                if (!chosen.name.isNullOrBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = chosen.name.orEmpty(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = StreamflixColors.OnSurface.copy(alpha = 0.85f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            EpisodesUiState.Hidden -> Unit
+        }
+    }
+}
+
+/**
+ * Chip de temporada/episodio.
+ *
+ * En una TV el foco tiene que verse sin ambigüedad y el D-Pad tiene que poder
+ * recorrer la fila entera; por eso no se usa `FilterChip` de Material (que en
+ * Android TV se queda sin anillo de foco) sino el mismo tratamiento que las
+ * tarjetas del Home: anillo neón + escala mínima.
+ */
+@Composable
+private fun SelectorChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    caption: String? = null,
+    isTv: Boolean = LocalDeviceProfile.current.requiresDpadFocus,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val focusProgress by animateFloatAsState(
+        targetValue = if (focused) 1f else 0f,
+        animationSpec = tween(durationMillis = 120),
+        label = "chipFocus",
+    )
+    val shape = RoundedCornerShape(8.dp)
+
+    Column(
+        modifier = Modifier
+            .tvFocusGlow(progress = focusProgress, cornerRadius = 8.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .clip(shape)
+            .background(
+                when {
+                    selected -> StreamflixColors.Neon.copy(alpha = 0.16f)
+                    focused -> Color.White.copy(alpha = 0.12f)
+                    else -> Color.White.copy(alpha = 0.05f)
+                },
+                shape,
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) {
+                    StreamflixColors.Neon.copy(alpha = 0.75f)
+                } else {
+                    Color.White.copy(alpha = 0.08f)
+                },
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .widthIn(min = 56.dp, max = if (caption.isNullOrBlank()) 92.dp else 152.dp)
+            .padding(horizontal = if (isTv) 14.dp else 12.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = if (selected) StreamflixColors.Neon else StreamflixColors.OnSurface,
+            maxLines = 1,
+        )
+        if (!caption.isNullOrBlank()) {
+            Text(
+                text = caption,
+                style = MaterialTheme.typography.labelSmall,
                 color = StreamflixColors.OnSurfaceMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

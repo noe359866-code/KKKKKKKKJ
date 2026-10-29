@@ -140,6 +140,31 @@ export const config = {
     staleFactor: Number.parseFloat(process.env.CACHE_STALE_FACTOR || '1.25'),
   },
 
+  catalogs: {
+    /* Cinemeta is the official Stremio metadata addon: it publishes the
+     * "top", "year" and "imdbRating" rows for movies/series plus every
+     * /meta/:type/:id.json lookup. We proxy it so the client only ever talks
+     * to this server (one origin, one cache, one failure mode). */
+    cinemetaBase: (process.env.CINEMETA_BASE || 'https://v3-cinemeta.strem.io').replace(/\/+$/, ''),
+    /* A slow Cinemeta must never hold the Home screen hostage. */
+    timeoutMs: envInt('CINEMETA_TIMEOUT_MS', 6_000, { min: 500, max: 30_000 }),
+    /* Catalog rows (top/imdbRating) move slowly: 30 min is plenty. */
+    ttlMs: envInt('CATALOG_TTL_MINUTES', 30, { min: 1, max: 1440 }) * 60_000,
+    /* Searches are user driven and change constantly: cache them briefly. */
+    searchTtlMs: envInt('CATALOG_SEARCH_TTL_MINUTES', 5, { min: 1, max: 1440 }) * 60_000,
+    /* Metadata for one title (title + year + episodes) is stable for a day,
+     * and it is what turns an IMDb id into a provider search. */
+    metaTtlMs: envInt('CATALOG_META_TTL_HOURS', 24, { min: 1, max: 720 }) * HOUR,
+    /* Empty/failed upstream responses are cached for a minute, not for 30. */
+    missTtlMs: envInt('CATALOG_MISS_SECONDS', 60, { min: 5, max: 3600 }) * 1000,
+    /* Metas returned per catalog page. Cinemeta itself caps at 100. */
+    pageSize: envInt('CATALOG_PAGE_SIZE', 100, { min: 10, max: 200 }),
+    /* Where the published catalogs are declared (type, id, name, source). */
+    configPath: process.env.CATALOGS_CONFIG || path.join(ROOT, 'config', 'catalogs.json'),
+    /* Curated live TV / sports channels: the "local" half of the home screen. */
+    liveCatalogPath: process.env.LIVE_CATALOG_PATH || path.join(ROOT, 'config', 'live-catalog.json'),
+  },
+
   scrapers: {
     /* Python interpreter: prefers a virtualenv if SCRAPER_PYTHON is set. */
     python: process.env.SCRAPER_PYTHON || 'python3',

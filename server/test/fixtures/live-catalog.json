@@ -1,0 +1,27 @@
+{
+  "items": [
+    {
+      "id": "tv:demo:espn-1",
+      "name": "ESPN 1",
+      "category": "deportes",
+      "genres": ["Deportes", "Canales"],
+      "description": "Señal deportiva de prueba.",
+      "releaseInfo": "En directo"
+    },
+    {
+      "id": "tv:demo:canal-13",
+      "name": "Canal 13",
+      "category": "canales",
+      "genres": ["Canales"],
+      "description": "Canal abierto de prueba."
+    },
+    {
+      "id": "tv:demo:evento-final",
+      "name": "Final de prueba",
+      "category": "deportes",
+      "genres": ["Fútbol", "Eventos"],
+      "description": "Evento en directo de prueba."
+    },
+    { "name": "Canal sin id (se descarta)" }
+  ]
+}

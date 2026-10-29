@@ -13,6 +13,8 @@
 import { Router } from 'express';
 import config from '../config.js';
 import { buildManifest } from '../lib/stremio.js';
+import { ensureCatalogs } from '../catalogs/registry.js';
+import { asyncHandler } from '../middleware/errors.js';
 
 export const manifestRouter = Router();
 
@@ -24,7 +26,10 @@ export function getBaseUrl(req) {
   return `${proto}://${host}`;
 }
 
-function sendManifest(req, res) {
+async function sendManifest(req, res) {
+  /* El manifest publica los catálogos: hay que tenerlos leídos de disco antes
+   * de responder, o el primer cliente vería una lista vacía. */
+  await ensureCatalogs();
   const manifest = buildManifest(getBaseUrl(req));
 
   /* Manifests are static: let Stremio cache them for an hour. */
@@ -32,10 +37,10 @@ function sendManifest(req, res) {
   res.json(manifest);
 }
 
-manifestRouter.get('/manifest.json', sendManifest);
+manifestRouter.get('/manifest.json', asyncHandler(sendManifest));
 
 /* Stremio sometimes appends a config segment: /<config>/manifest.json.
  * We don't use config yet, but accepting it avoids "addon invalid" errors. */
-manifestRouter.get('/:config/manifest.json', sendManifest);
+manifestRouter.get('/:config/manifest.json', asyncHandler(sendManifest));
 
 export default manifestRouter;

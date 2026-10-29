@@ -35,8 +35,36 @@ object Urls {
 
     fun manifest(baseUrl: String): String = "${normalizeBase(baseUrl)}/manifest.json"
 
-    fun catalog(baseUrl: String, type: String, id: String): String =
-        "${normalizeBase(baseUrl)}/catalog/${encodeSegment(type)}/${encodeSegment(id)}.json"
+    /** `{base}/catalogs.json` — qué filas publica el addon (extensión propia). */
+    fun catalogs(baseUrl: String): String = "${normalizeBase(baseUrl)}/catalogs.json"
+
+    /** `{base}/meta/{type}/{id}.json` — ficha con sinopsis y episodios. */
+    fun meta(baseUrl: String, type: String, id: String): String =
+        "${normalizeBase(baseUrl)}/meta/${encodeSegment(type)}/${encodeSegment(id)}.json"
+
+    /**
+     * `{base}/catalog/{type}/{id}.json` con los *extras* del protocolo Stremio.
+     *
+     * Ojo: Stremio los manda como **segmentos de path**, no como query string
+     * (`/catalog/movie/top/search=matrix/skip=100.json`). Se respeta ese orden
+     * porque es el que el servidor convierte en clave de caché.
+     */
+    fun catalog(
+        baseUrl: String,
+        type: String,
+        id: String,
+        search: String? = null,
+        genre: String? = null,
+        skip: Int? = null,
+    ): String {
+        val extras = buildList {
+            if (!genre.isNullOrBlank()) add("genre=${encodeSegment(genre)}")
+            if (skip != null && skip > 0) add("skip=$skip")
+            if (!search.isNullOrBlank()) add("search=${encodeSegment(search)}")
+        }
+        val suffix = if (extras.isEmpty()) "" else "/" + extras.joinToString("/")
+        return "${normalizeBase(baseUrl)}/catalog/${encodeSegment(type)}/${encodeSegment(id)}$suffix.json"
+    }
 
     fun health(baseUrl: String): String = "${normalizeBase(baseUrl)}/health"
 

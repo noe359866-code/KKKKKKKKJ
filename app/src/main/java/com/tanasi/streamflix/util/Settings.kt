@@ -37,12 +37,17 @@ class Settings(context: Context) : AddonSettings {
         set(value) = prefs.edit { putString(KEY_BASE_URL, value.trim()) }
 
     /**
-     * Catálogos remotos (`/catalog/:type/:id.json`). Apagado por defecto: el
-     * addon actual no declara catálogos, así que encenderlo sólo añadiría cuatro
-     * peticiones con 404 por apertura.
+     * Catálogos servidos por el addon (`/catalogs.json` +
+     * `/catalog/{type}/{id}.json`). **Encendido por defecto**: el servidor
+     * publica las filas (películas, series, anime, TV en vivo y deportes) y la
+     * app las pinta tal cual, así que añadir una fila es editar
+     * `server/config/catalogs.json` y no reinstalar el APK.
+     *
+     * Apagarlo deja el Home con la cartelera curada de `assets/catalog/seed.json`
+     * —útil si el servidor no responde o si se quiere una lista fija—.
      */
     override var remoteCatalogs: Boolean
-        get() = prefs.getBoolean(KEY_REMOTE_CATALOGS, false)
+        get() = prefs.getBoolean(KEY_REMOTE_CATALOGS, true)
         set(value) = prefs.edit { putBoolean(KEY_REMOTE_CATALOGS, value) }
 
     /** Vuelve al valor compilado (útil cuando el usuario se equivoca de IP). */
