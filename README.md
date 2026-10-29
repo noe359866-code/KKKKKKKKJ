@@ -91,7 +91,7 @@ through the official Addon protocol:
 - In-memory TTL cache (2 h live / 6 h VOD) with single-flight and
   stale-while-revalidate: a cached live `.m3u8` is served in a few milliseconds.
 - Python scraper bridge (`child_process.spawn`) invoked only on cache misses.
-- Six real providers ship in `server/scrapers/`, ordered by priority.
+- Thirteen real providers ship in `server/scrapers/`, ordered by priority.
 
   **Live** (`kind: "live"`, requested as `tv:<id>`):
 
@@ -113,9 +113,29 @@ through the official Addon protocol:
   - `monoschinos.py` — [monoschinos.st](https://monoschinos.st/) (8):
     `monoschinos:one-piece-sub-espanol:1`.
 
-  The anime providers return **one stream per resolved server** (Streamwish,
-  VOE, Filemoon, Streamtape…), in the site's order, so the ExoPlayer failover
-  also covers a dead file host.
+  **Movies & series** (`kind: "vod"`, requested as `movie:<id>` or
+  `series:<id>:<season>:<episode>`):
+
+  - `gnula.py` — [gnulahd.nu](https://ww3.gnulahd.nu/) (11):
+    `gnula:street-fighter` (decodes the site's `GNRD` player API);
+  - `cuevana.py` — [cuevana3.nu](https://cue.cuevana3.nu/) (12):
+    `cuevana:spider-man-de-regreso-a-casa` (`showEmbed` base64 payloads);
+  - `pelisplushd.py` — [pelisplushd.la](https://www.pelisplushd.la/) (13):
+    `pelisplushd:the-last-of-us:1:2`;
+  - `repelis.py` — Repelis (14): `repelis:<slug>`, domain set with
+    `REPELIS_BASE` / `REPELIS_MIRRORS`;
+  - `peliculasflix.py` — [peliculasflix.co](https://peliculasflix.co/) (15):
+    `peliculasflix:<slug>` (own GraphQL API);
+  - `pelisjuanita.py` — [pelisjuanita.org](https://pelisjuanita.org/) (16):
+    `pelisjuanita:spider-man-un-nuevo-dia-2026`;
+  - `comodin.py` — Comodín Libre (17): **needs `COMODIN_BASE`**, shipped with
+    `enabled: false` until the domain is confirmed.
+
+  The anime and movie providers return **one stream per resolved server**
+  (Streamwish, VOE, Filemoon, Streamtape…), in the site's order, so the
+  ExoPlayer failover also covers a dead file host. Movie ids accept a site slug,
+  `season:episode`, an IMDb id (`gnula:tt0145487`, with `TMDB_API_KEY`) or free
+  text that gets searched on the site.
 
 ```bash
 cd server
@@ -128,6 +148,7 @@ npm run channels:futbolibre   # list channels + matches with ready-to-use ids
 npm run channels:deportelibre
 npm run channels:tvenvivo
 npm run anime:animeflv        # list episodes + ids (also jkanime, monoschinos)
+npm run movies:gnula -- "street fighter"   # search + ids (also cuevana, pelisplushd…)
 ```
 
 These scrapers only read public pages: nothing is hosted or redistributed here.

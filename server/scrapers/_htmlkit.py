@@ -287,6 +287,26 @@ def http_get_json(url: str, headers: Dict[str, str], timeout: float) -> Any:
         return None
 
 
+def http_post_json(url: str, data: Any, headers: Dict[str, str], timeout: float) -> Any:
+    """POST JSON + respuesta JSON (APIs GraphQL de los sitios de cine)."""
+    import json
+
+    body = data if isinstance(data, (bytes, str)) else json.dumps(data)
+    if isinstance(body, str):
+        body = body.encode("utf-8")
+    request_headers = {"Content-Type": "application/json", **headers}
+    request = urllib.request.Request(url, data=body, headers=request_headers, method="POST")
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        raw = response.read(MAX_BODY_BYTES)
+        if "gzip" in (response.headers.get("Content-Encoding") or "").lower():
+            raw = gzip.decompress(raw)
+        charset = response.headers.get_content_charset() or "utf-8"
+    try:
+        return json.loads(raw.decode(charset, errors="replace"))
+    except ValueError:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # URLs
 # ---------------------------------------------------------------------------

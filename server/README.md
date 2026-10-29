@@ -78,7 +78,16 @@ server/
 │   ├── _animekit.py             # ids/literales JS/base64 comunes a los de anime
 │   ├── animeflv.py              # proveedor real: animeflv.net (vod)
 │   ├── jkanime.py               # proveedor real: jkanime.net (vod)
-│   └── monoschinos.py           # proveedor real: monoschinos.st (vod)
+│   ├── monoschinos.py           # proveedor real: monoschinos.st (vod)
+│   ├── _peliskit.py             # capa común de películas y series
+│   ├── _tmdb.py                 # resolución opcional de ids IMDb (TMDB)
+│   ├── gnula.py                 # proveedor real: gnulahd.nu (vod)
+│   ├── cuevana.py               # proveedor real: cuevana3.nu (vod)
+│   ├── pelisplushd.py           # proveedor real: pelisplushd.la (vod)
+│   ├── repelis.py               # proveedor real: repelis (vod, dominio por env)
+│   ├── peliculasflix.py         # proveedor real: peliculasflix.co (vod, GraphQL)
+│   ├── pelisjuanita.py          # proveedor real: pelisjuanita.org (vod)
+│   └── comodin.py               # Comodín Libre (vod, falta el dominio)
 ├── scripts/
 │   ├── cache-stats.js           # métricas de caché en vivo
 │   └── bridge-demo.js           # probar un scraper sin HTTP
@@ -370,6 +379,42 @@ hosting de archivos (Mega, Mediafire) no son reproducibles: se descartan y se
 anotan en `meta.unresolved`. Detalles y variables de entorno en
 [`scrapers/README.md`](scrapers/README.md#proveedores-de-anime-vod).
 
+### Proveedores reales de películas y series (VOD)
+
+Siete sitios `kind: "vod"`, del 11 al 17 en prioridad:
+
+| Prioridad | Proveedor (`id`) | Sitio | Id de ejemplo |
+| --- | --- | --- | --- |
+| 11 | `gnula` | [gnulahd.nu](https://ww3.gnulahd.nu/) | `gnula:street-fighter` |
+| 12 | `cuevana` | [cuevana3.nu](https://cue.cuevana3.nu/) | `cuevana:spider-man-de-regreso-a-casa` |
+| 13 | `pelisplushd` | [pelisplushd.la](https://www.pelisplushd.la/) | `pelisplushd:the-last-of-us:1:2` |
+| 14 | `repelis` | dominio por `REPELIS_BASE` | `repelis:spider-man-de-regreso-a-casa` |
+| 15 | `peliculasflix` | [peliculasflix.co](https://peliculasflix.co/) | `peliculasflix:spider-man-de-regreso-a-casa` |
+| 16 | `pelisjuanita` | [pelisjuanita.org](https://pelisjuanita.org/) | `pelisjuanita:spider-man-un-nuevo-dia-2026` |
+| 17 | `comodin` | **dominio pendiente** (`enabled: false`) | `comodin:<slug>` |
+
+```bash
+curl -s "http://localhost:7000/stream/movie/gnula:street-fighter.json" | jq
+curl -s "http://localhost:7000/stream/series/pelisplushd:the-last-of-us:1:2.json" | jq
+npm run movies:gnula -- "street fighter"    # buscar e imprimir ids
+npm run movies:pelisjuanita -- "reacher"
+```
+
+Cada película devuelve **un stream por servidor resuelto** (Streamwish, VOE,
+Filemoon, Streamtape, Mixdrop…), en el orden del sitio:
+
+```
+"Gnula · Street Fighter · Latino - Streamwish"   ← Señal 1
+"Gnula · Street Fighter · Latino - Filemoon"     ← Señal 2
+```
+
+Los ids aceptan el slug del sitio, `temporada:episodio`, un id IMDb
+(`gnula:tt0145487`, con `TMDB_API_KEY`) o texto libre, que se busca en el sitio.
+La plomería compartida vive en `scrapers/_peliskit.py` (ids, búsqueda, recogida
+de servidores) y `scrapers/_hosters.py` (resolución de cada servidor). Detalles,
+cadenas por sitio y variables en
+[`scrapers/README.md`](scrapers/README.md#proveedores-de-películas-y-series-vod).
+
 Agregar un proveedor real:
 
 1. Copia `scrapers/template_provider.py` a `scrapers/mi_sitio.py` y ajusta la
@@ -448,6 +493,11 @@ Agregar un proveedor real:
 | `FUTBOLIBRE_MAX_SIGNALS` / `FUTBOLIBRE_MAX_DEPTH` | `6` / `2` | Señales por contenido y saltos por reproductor. |
 | `ANIMEFLV_BASE` / `JKANIME_BASE` / `MONOSCHINOS_BASE` | dominios oficiales | Base de cada sitio de anime (los tests usan un fixture local). |
 | `ANIMEFLV_MAX_SERVERS` / `JKANIME_MAX_SERVERS` / `MONOSCHINOS_MAX_SERVERS` | `6` | Servidores que se intentan por episodio. |
+| `GNULA_BASE` / `CUEVANA_BASE` / `PELISPLUSHD_BASE` / `REPELIS_BASE` / `PELICULASFLIX_BASE` / `PELISJUANITA_BASE` | dominios oficiales | Base de cada sitio de cine (los tests usan un fixture local). |
+| `*_MIRRORS` | vacío | Dominios alternativos separados por comas, probados si la base no responde. |
+| `PELICULASFLIX_API` / `PELICULASFLIX_ACCESS` | API y clave del sitio | Endpoint GraphQL y `x-access-platform`. |
+| `TMDB_API_KEY` | vacío | Opcional: traduce ids IMDb a título/año para acertar el slug. |
+| `COMODIN_BASE` | vacío | Dominio de Comodín Libre; sin él el proveedor responde `not_configured`. |
 
 Todas se pueden poner en `server/.env` (se carga automáticamente, sin
 dependencias) o inyectarlas desde el orquestador.
@@ -460,7 +510,7 @@ dependencias) o inyectarlas desde el orquestador.
 npm test
 ```
 
-91 pruebas con `node:test`:
+155 pruebas con `node:test`:
 
 - caché: TTL, expiración, stale, LRU, *single-flight*, caché negativa;
 - protocolo: manifest, forma del stream, cabeceras, ids, calidades, HLS, SSRF;
@@ -481,6 +531,12 @@ npm test
   episodio → lista de servidores en base64 → embed → `.m3u8`/`.mp4`), incluidos
   el JS empaquetado, el redirect por JavaScript de VOE, los servidores de
   descarga o caídos, el respaldo por búsqueda y la degradación a `streams: []`.
+- `gnula.py` / `cuevana.py` / `pelisplushd.py` / `repelis.py` /
+  `peliculasflix.py` / `pelisjuanita.py` / `comodin.py`: fixtures por sitio
+  (ficha → servidores → `.m3u8`), incluidos el objeto `GNRD` y su cadena de
+  desofuscado, `showEmbed` en base64, el token legado `player.php?t=`, la API
+  GraphQL de PeliculasFlix, la caída a los espejos `*_MIRRORS`, el seguimiento
+  del enlace del capítulo y la degradación a `streams: []`.
 
 ---
 

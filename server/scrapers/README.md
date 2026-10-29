@@ -45,6 +45,15 @@ Reglas:
 | `animeflv.py` | **Proveedor real** de `animeflv.net` (VOD). |
 | `jkanime.py` | **Proveedor real** de `jkanime.net` (VOD). |
 | `monoschinos.py` | **Proveedor real** de `monoschinos.st` (VOD). |
+| `_peliskit.py` | Capa común de películas y series: ids `proveedor:slug[:temporada:episodio]`, búsqueda, recogida de servidores y formato de las señales. |
+| `_tmdb.py` | Traducción **opcional** de ids IMDb / títulos con TMDB (necesita `TMDB_API_KEY`). |
+| `gnula.py` | **Proveedor real** de `ww3.gnulahd.nu` (películas, series y anime). |
+| `cuevana.py` | **Proveedor real** de `cue.cuevana3.nu`. |
+| `pelisplushd.py` | **Proveedor real** de `pelisplushd.la` (PelisPlusHD). |
+| `repelis.py` | **Proveedor real** de Repelis (dominio configurable por entorno). |
+| `peliculasflix.py` | **Proveedor real** de `peliculasflix.co` (API GraphQL). |
+| `pelisjuanita.py` | **Proveedor real** de `pelisjuanita.org`. |
+| `comodin.py` | Proveedor de Comodín Libre — **falta el dominio**: se activa con `COMODIN_BASE`. |
 
 ## Añadir un proveedor
 
@@ -529,6 +538,194 @@ respaldo por búsqueda y la degradación a `{"streams": []}`.
 > tu país. Los dominios y los servidores de estos sitios cambian a menudo: si un
 > proveedor devuelve `no_servers`, lo primero es abrir el episodio en el
 > navegador y comprobar la ruta/variables de entorno.
+
+## Proveedores de películas y series (VOD)
+
+Siete sitios con el mismo esqueleto: ficha por título, buscador y una lista de
+"servidores" (Streamwish, VOE, Filemoon, Streamtape, Mixdrop, Mp4upload…) que
+esconden el `.m3u8`/`.mp4`. Lo compartido vive en dos módulos:
+
+| Módulo | Responsabilidad |
+| --- | --- |
+| `_peliskit.py` | id → ficha (directa o por búsqueda), recogida de servidores (iframes, `data-*`, literales JS, `og:video`, `showEmbed`), etiquetas y flujo completo (`scrape_site`). |
+| `_hosters.py` | convertir la URL de cada servidor en un medio reproducible, incluido el JS empaquetado. |
+| `_tmdb.py` | opcional: IMDb/título → título en español + año → slug. |
+
+### Formato de los ids
+
+```
+gnula:street-fighter                 slug del sitio
+gnula:visionquest:1:2                temporada:episodio (lo que manda Stremio)
+movie:gnula:street-fighter           con prefijo de tipo del addon
+gnula:tt0145487                      IMDb → TMDB (necesita TMDB_API_KEY)
+gnula:street fighter                 texto libre → buscador del sitio
+https://ww3.gnulahd.nu/ver/street-fighter/
+```
+
+La respuesta trae **un stream por servidor resuelto**, en el orden del sitio, así
+que ExoPlayer hace failover de servidor a servidor sin cambiar de película:
+
+```
+"Gnula · Street Fighter · Latino - Streamwish"     ← Señal 1
+"Gnula · Street Fighter · Latino - Filemoon"       ← Señal 2
+```
+
+Mega, Mediafire y 1fichier no son reproducibles: se descartan y se listan en
+`meta.download_only`. Si no queda nada, `{"streams": [], "meta": {"reason": …}}`
+y el addon sigue con el proveedor siguiente. Motivos posibles: `not_vod`,
+`no_id`, `not_found`, `page_unavailable`, `no_servers`, `no_streams`,
+`not_configured` (Comodín Libre sin dominio).
+
+### Prioridades
+
+| Prioridad | Proveedor | Sitio |
+| --- | --- | --- |
+| 11 | `gnula` | [ww3.gnulahd.nu](https://ww3.gnulahd.nu/) |
+| 12 | `cuevana` | [cue.cuevana3.nu](https://cue.cuevana3.nu/) |
+| 13 | `pelisplushd` | [pelisplushd.la](https://www.pelisplushd.la/) |
+| 14 | `repelis` | dominio configurable |
+| 15 | `peliculasflix` | [peliculasflix.co](https://peliculasflix.co/) |
+| 16 | `pelisjuanita` | [pelisjuanita.org](https://pelisjuanita.org/) |
+| 17 | `comodin` | sin dominio verificado (`enabled: false`) |
+
+```bash
+curl -s "http://localhost:7000/stream/movie/gnula:street-fighter.json" | jq
+curl -s "http://localhost:7000/stream/series/pelisplushd:the-last-of-us:1:2.json" | jq
+npm run movies:gnula -- "street fighter"      # buscar e imprimir ids
+npm run movies:cuevana -- "the last of us"
+```
+
+### Los siete sitios, uno por uno
+
+#### `gnula.py` — Gnula (prioridad 11)
+
+```
+/ver/street-fighter/                       ficha
+   │  window.GNRD={pid:1234, tok:"…", k:"…"}
+   ▼
+/wp-json/gnrd/v1/player?id=1234&t=tok      API del reproductor
+   │  {"p":"<carga ofuscada>"}
+   ▼
+ROT13 → "_" → base64 → −3 por carácter → invertir → base64 → JSON
+   │  [{"label":"Latino","servers":[{"src":"https://streamwish.to/e/…"}]}]
+   ▼
+_hosters.py                                .m3u8 / .mp4
+```
+
+Es el único que necesita criptografía: el desofuscado está en
+`gnula.decrypt_player()` y se prueban varias variantes (cadena completa, sin
+ROT13 y base64 plano) porque el sitio y sus clones no siempre coinciden. En las
+series, cada capítulo es un `<a class="gnrd-epc" data-s data-e data-id data-t>`
+y se llama a la API con **su** `id`/`t` sin abrir otra página. El buscador
+también es JSON (`/wp-json/gnrd/v1/search?q=`).
+
+#### `cuevana.py` — Cuevana (prioridad 12)
+
+```
+/peliculas/<slug>                          ficha
+   │  <iframe src="…/embed-page?showEmbed=<base64>">
+   ▼
+https://vimeos.net/embed-XXXXXXXX.html     base64 → URL directa del servidor
+```
+
+Variante antigua: `<iframe src="…/player.php?t=<token>">`, que responde con un
+`<iframe src="…">` al embed real (se sigue un salto). Un mismo título suele tener
+varias pestañas de idioma: cada una es un servidor más.
+
+#### `pelisplushd.py` — PelisPlus / PelisPlusHD (prioridad 13)
+
+```
+/pelicula/<slug>
+/serie/<slug>/temporada/<temporada>/capitulo/<episodio>
+   │  <li class="player-option" data-player="https://streamwish.to/e/…">
+   │  <a data-option="aHR0cHM6…">            (otras veces en base64)
+   ▼
+_hosters.py
+```
+
+#### `repelis.py` — Repelis (prioridad 14)
+
+Repelis es un nombre replicado: cambia de dominio cada pocos meses y conviven
+varios clones con el mismo motor. El proveedor **no lleva el dominio grabado**:
+
+```bash
+REPELIS_BASE=https://repelis.ejemplo
+REPELIS_MIRRORS=https://repelis2.ejemplo,https://repelis3.ejemplo
+```
+
+Prueba la base y luego los espejos hasta que una ficha responda, y lo anota en
+`meta.base`. Con `repelis.live` (el histórico) ya no responde: hay que poner el
+que esté vivo.
+
+#### `peliculasflix.py` — PeliculasFlix (prioridad 15)
+
+No publica reproductores en el HTML: todo pasa por su API GraphQL.
+
+```graphql
+query searchAll($input: String!) { searchMovie(input: $input, limit: 10) { _id slug name_es } }
+query getMovieLinks($id: MongoID!, $slug: String!) { getMovieLinks(id: $id, slug: $slug) { links_online } }
+```
+
+`links_online` trae `{server, lang, link}`; `lang` 37 = Español, 192 =
+Subtitulado, resto Latino, y `link` puede ser directamente un
+`<iframe src="…">` en texto (se extrae el `src`). La API se puede mover con
+`PELICULASFLIX_API` y la clave `x-access-platform` con `PELICULASFLIX_ACCESS`.
+
+#### `pelisjuanita.py` — PelisJuanita (prioridad 16)
+
+Fichas `/pelicula/<slug>` y `/serie/<slug>` (catálogo con datos de TMDB). El
+reproductor se inyecta en el cliente, así que se recogen iframes, `data-*`,
+literales JS y `og:video`; si la ficha de la serie no trae reproductores, se
+sigue el enlace del capítulo pedido (`1x05`, `temporada/1/capitulo/5`,
+`episodio-5`…).
+
+#### `comodin.py` — Comodín Libre (prioridad 17, desactivado)
+
+⚠️ **Falta el dominio.** `comodinlibre.com` y `comodinlibre.net` no resuelven y
+el nombre no aparece en los índices de sitios de cine, así que el proveedor no
+trae base por defecto: responde `meta.reason: "not_configured"` sin hacer una
+sola petición. Para activarlo:
+
+```bash
+COMODIN_BASE=https://comodin.ejemplo
+COMODIN_MIRRORS=https://comodin2.ejemplo
+```
+
+y pon `"enabled": true` en su entrada de `config/providers.json`. Con base
+configurada se comporta como el resto (recogida genérica + `_hosters`).
+
+### TMDB (opcional)
+
+Sin `TMDB_API_KEY` los ids IMDb (`gnula:tt0145487`) no se pueden traducir a un
+slug; los slugs y el texto libre funcionan igual. Con clave, `_tmdb.py` resuelve
+IMDb → título/año y prueba las variantes de slug (`titulo-año`, `titulo`,
+`titulo-original-año`). Todo es best-effort: si TMDB falla, el proveedor sigue
+por su cuenta.
+
+### Pruebas
+
+Cada uno de los siete tiene su fixture HTTP local (ficha → servidores → `.m3u8`)
+y su propio archivo:
+
+```bash
+node --test test/gnula.test.js
+node --test test/cuevana.test.js
+node --test test/pelisplushd.test.js
+node --test test/repelis.test.js
+node --test test/peliculasflix.test.js
+node --test test/pelisjuanita.test.js
+node --test test/comodin.test.js
+```
+
+Los fixtures (`testsupport/pelis.js`) cubren `showEmbed` en base64, el token
+legado `player.php?t=`, la API GNRD con su cadena de desofuscado, los literales
+JS, los servidores empaquetados, los hostings de descarga, la caída al espejo y
+la degradación a `{"streams": []}`.
+
+> ⚠️ Los siete leen páginas públicas y no alojan ni redistribuyen contenido.
+> Úsalos con autorización y respetando los términos de cada sitio y la ley de tu
+> país. Los dominios cambian a menudo: si un proveedor devuelve `not_found`,
+> abre la ficha en el navegador y ajusta `*_BASE` / `*_MIRRORS`.
 
 ## Dependencias Python
 

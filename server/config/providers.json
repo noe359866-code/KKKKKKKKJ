@@ -62,6 +62,76 @@
       "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
     },
     {
+      "id": "gnula",
+      "label": "Gnula",
+      "script": "gnula.py",
+      "priority": 11,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://ww3.gnulahd.nu/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "cuevana",
+      "label": "Cuevana",
+      "script": "cuevana.py",
+      "priority": 12,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://cue.cuevana3.nu/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "pelisplushd",
+      "label": "PelisPlus",
+      "script": "pelisplushd.py",
+      "priority": 13,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://www.pelisplushd.la/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "repelis",
+      "label": "Repelis",
+      "script": "repelis.py",
+      "priority": 14,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://repelis.live/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "peliculasflix",
+      "label": "PeliculasFlix",
+      "script": "peliculasflix.py",
+      "priority": 15,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://peliculasflix.co/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "pelisjuanita",
+      "label": "PelisJuanita",
+      "script": "pelisjuanita.py",
+      "priority": 16,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://pelisjuanita.org/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "comodin",
+      "label": "Comodín Libre",
+      "script": "comodin.py",
+      "priority": 17,
+      "kind": "vod",
+      "enabled": false,
+      "referer": "",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
       "id": "demo-live",
       "label": "Demo TV",
       "script": "example_provider.py",
