@@ -112,6 +112,36 @@ class AutonomousContentTest {
     }
 
     @Test
+    fun `los canales guardados se publican antes de esperar a los proveedores de Internet`() = runBlocking {
+        val firstShelf = CompletableDeferred<Unit>()
+        val allowNetwork = CompletableDeferred<Unit>()
+        val client = EmbeddedContentClient(EmbeddedRuntime { operation, payload ->
+            when (operation) {
+                "catalogs" -> """{"catalogs":[
+                    {"type":"tv","id":"bundled_live","name":"Canales"},
+                    {"type":"movie","id":"gnula","name":"Películas"}]}"""
+                "catalog" -> {
+                    if (Json.parseToJsonElement(payload).jsonObject["id"]?.jsonPrimitive?.content == "gnula") {
+                        allowNetwork.await()
+                        """{"metas":[{"id":"gnula:fixture","type":"movie","name":"Fixture"}]}"""
+                    } else cards
+                }
+                else -> error("Unexpected operation")
+            }
+        })
+        val job = async {
+            CatalogRepository(client, Options()).load(onPartial = { catalog ->
+                if (catalog.rows.size == 1 && !firstShelf.isCompleted) firstShelf.complete(Unit)
+            })
+        }
+        firstShelf.await()
+        assertFalse("La consulta remota todavía está pendiente", job.isCompleted)
+        allowNetwork.complete(Unit)
+        val result = job.await() as CatalogResult.Ready
+        assertEquals(2, result.catalog.rows.size)
+    }
+
+    @Test
     fun `se conservan el ID de episodio y los parametros de busqueda al cruzar el puente`() = runBlocking {
         val requests = mutableListOf<Pair<String, String>>()
         val client = EmbeddedContentClient(EmbeddedRuntime { operation, payload ->

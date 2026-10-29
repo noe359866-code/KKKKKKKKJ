@@ -277,14 +277,16 @@ fun HomeScreen(
                      * mostrando el primer título de "Continuar viendo" y el
                      * usuario ya puede moverse sin adivinar nada. */
                     if (deviceProfile.requiresDpadFocus) {
+                        var initialFocusRequested by remember { mutableStateOf(false) }
                         LaunchedEffect(current.catalog.rows.firstOrNull()?.id) {
+                            if (initialFocusRequested) return@LaunchedEffect
                             /* `LaunchedEffect` corre antes del layout: sin
                              * esperar un frame, `requestFocus()` lanza
                              * "FocusRequester is not initialized" y el mando
                              * se queda sin cursor. */
                             withFrameNanos { }
                             withFrameNanos { }
-                            runCatching { firstCardFocus.requestFocus() }
+                            runCatching { firstCardFocus.requestFocus() }.onSuccess { initialFocusRequested = true }
                         }
                     }
                 }

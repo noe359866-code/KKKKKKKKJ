@@ -90,7 +90,7 @@ al servidor ni envía consultas a un backend configurado anteriormente.
 - La caché JSON es atómica, acotada y vive en `cacheDir/embedded-engine`.
   Guarda catálogos una hora (directo: diez minutos), detalles seis horas y
   enlaces un máximo de cinco minutos (directo: un minuto), reducido por la
-  caducidad declarada del token `e=`.
+  caducidad declarada (`e`, `exp`, `expires`, `expire`, `expiry` o `exp` en `hdnea`).
 - Sólo los metadatos pueden usar un respaldo caducado de hasta siete días.
   Los enlaces de reproducción no usan ese respaldo. Los resultados vacíos no
   se guardan para no impedir un reintento.

@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   engine:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
         working-directory: server
 
   android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -45,15 +45,31 @@ jobs:
         with:
           python-version: '3.11'
       - uses: gradle/actions/setup-gradle@v4
-      - uses: android-actions/setup-android@v3
-      - name: Android SDK 36
-        run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Android SDK 36 (preinstalled runner tools)
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            echo "Runner Android SDK missing" | tee "$RUNNER_TEMP/android.log"
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          SDKMGR="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMGR" ]; then
+            SDKMGR="$(find "$SDK/cmdline-tools" -name sdkmanager -type f -print -quit)"
+          fi
+          yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+          "$SDKMGR" 'platforms;android-36' 'build-tools;35.0.0' 2>&1 | tee "$RUNNER_TEMP/android.log"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/emulator" >> "$GITHUB_PATH"
       - name: Kotlin tests, lint and build (no ADDON_BASE_URL)
         run: |
           set -o pipefail
-          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --stacktrace 2>&1 | tee "$RUNNER_TEMP/android.log"
+          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest --no-daemon --stacktrace 2>&1 | tee "$RUNNER_TEMP/android.log"
       - name: Verify Python runtime and all twelve scrapers are actually packaged
-        run: python3 scripts/verify-embedded-apk.py app/build/outputs/apk/debug/app-debug.apk
+        run: |
+          python3 scripts/verify-embedded-apk.py app/build/outputs/apk/debug/app-debug.apk
+          python3 scripts/verify-embedded-apk.py app/build/outputs/apk/release/app-release-unsigned.apk
       - name: Enable emulator acceleration
         run: |
           if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi

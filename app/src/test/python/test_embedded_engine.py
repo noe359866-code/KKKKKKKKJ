@@ -239,6 +239,12 @@ class EngineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.engine.dispatch("unknown", {"type": "movie", "id": "x"})
 
+    def test_common_signed_url_expiry_formats_are_respected(self):
+        self.assertEqual(1700000000, embedded.declared_expiry("https://fixture.invalid/a.m3u8?expires=1700000000"))
+        self.assertEqual(1700000000, embedded.declared_expiry("https://fixture.invalid/a.m3u8?exp=1700000000000"))
+        self.assertEqual(1700000000, embedded.declared_expiry("https://fixture.invalid/a.m3u8?hdnea=st%3D1~exp%3D1700000000~acl%3D*"))
+        self.assertIsNone(embedded.declared_expiry("https://fixture.invalid/a.m3u8?expires=3600"))
+
     def test_metadata_normalizes_dirty_values(self):
         meta = embedded.normalize_meta({"id": "tt1234567", "name": "Fixture", "imdbRating": "8.8", "releaseInfo": "2019–2023",
                                         "genres": None, "videos": [{"season": "1", "episode": "2"}, {"season": None}]}, "series")

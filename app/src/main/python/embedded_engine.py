@@ -70,12 +70,26 @@ def normalize_meta(raw: Dict[str, Any], media_type: str) -> Optional[Dict[str, A
     return result
 
 
+def declared_expiry(url: str) -> Optional[int]:
+    values = [token_expiry(url)]
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+    for key, entries in query.items():
+        for value in entries:
+            if key.lower() in ("e", "exp", "expires", "expire", "expiry") and re.fullmatch(r"\d{9,13}", value):
+                epoch = int(value)
+                values.append(epoch // 1000 if epoch > 10**11 else epoch)
+            for match in re.finditer(r"(?:^|[~&])exp=(\d{9,13})(?:$|[~&])", value):
+                epoch = int(match.group(1))
+                values.append(epoch // 1000 if epoch > 10**11 else epoch)
+    return min((value for value in values if value is not None), default=None)
+
+
 def normalize_stream(raw: Dict[str, Any], provider: Dict[str, Any], is_live: bool) -> Optional[Dict[str, Any]]:
     url = str(raw.get("url") or "").strip()
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("https", "http") or not parsed.netloc or not parsed.path.lower().endswith(PLAYABLE):
         return None
-    expiry = token_expiry(url)
+    expiry = declared_expiry(url)
     if expiry is not None and expiry <= time.time() + 5:
         return None
     hints = dict(raw.get("behaviorHints") or {})
@@ -292,7 +306,7 @@ class Engine:
                         self.inflight.pop(flight_key, None)
         ttl = 60 if is_live else 300
         for item in streams:
-            expiry = token_expiry(item["url"])
+            expiry = declared_expiry(item["url"])
             if expiry is not None:
                 ttl = min(ttl, max(0, int(expiry - time.time() - 15)))
         result = {"streams": streams, "cacheMaxAge": ttl if streams else 0}
