@@ -29,6 +29,8 @@ on:
 
 permissions:
   contents: read
+  # Sólo para publicar el diagnóstico del build como check-run (ver más abajo).
+  checks: write
 
 concurrency:
   group: android-release-${{ github.ref }}
@@ -199,6 +201,44 @@ jobs:
             clean=$(printf '%s' "$line" | tr -d '\r' | cut -c1-900)
             [ -n "$clean" ] && echo "::error title=gradle::$clean"
           done
+
+      # Un check-run aparte con las líneas relevantes: el endpoint de logs
+      # devuelve un zip en un host de almacenamiento, pero el texto de un
+      # check-run se lee por api.github.com.
+      - name: Publicar diagnóstico completo
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const file = `${process.env.RUNNER_TEMP}/ci.log`;
+            const raw = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '(sin ci.log)';
+            const lines = raw.split('\n');
+            const interesting = lines.filter((l) =>
+              /FAILED|AssertionError|expected:|Unresolved|^e: |Execution failed|error:/i.test(l));
+            const body = [
+              '### Líneas con error',
+              '```',
+              (interesting.slice(-140).join('\n') || '(ninguna)'),
+              '```',
+              '### Final del log',
+              '```',
+              lines.slice(-140).join('\n'),
+              '```',
+            ].join('\n').slice(-60000);
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'diagnostico-build',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: 'neutral',
+              output: {
+                title: 'Falló el build de release',
+                summary: 'Últimas líneas del log de Gradle.',
+                text: body || '(vacío)',
+              },
+            });
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

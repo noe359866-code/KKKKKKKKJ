@@ -120,7 +120,7 @@ class CatalogRepositoryTest {
         /* Dedup por id y el id de IMDb intacto: es lo que pide /stream. */
         assertEquals(listOf("tv:futbolibre:espn-1"), rows[0].items.map { it.id })
         assertEquals(listOf("tt0133093", "tt1375666"), rows[1].items.map { it.id })
-        assertEquals(listOf(1999, null), rows[1].items.map { it.year })
+        assertEquals(listOf(1999, 2010), rows[1].items.map { it.year })
         assertTrue("la TV en vivo se pinta en 16:9 y con badge", rows[0].items[0].live)
     }
 
