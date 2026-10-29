@@ -1,6 +1,10 @@
 package com.tanasi.streamflix.di
 
 import android.content.Context
+import com.tanasi.streamflix.data.ContentClient
+import com.tanasi.streamflix.data.RoutingContentClient
+import com.tanasi.streamflix.data.local.ChaquopyRuntime
+import com.tanasi.streamflix.data.local.EmbeddedContentClient
 import com.tanasi.streamflix.data.remote.AddonClient
 import com.tanasi.streamflix.data.repo.CatalogRepository
 import com.tanasi.streamflix.data.repo.StreamsRepository
@@ -25,6 +29,9 @@ object ServiceLocator {
     private var clientInstance: AddonClient? = null
 
     @Volatile
+    private var contentInstance: ContentClient? = null
+
+    @Volatile
     private var streamsInstance: StreamsRepository? = null
 
     @Volatile
@@ -47,20 +54,25 @@ object ServiceLocator {
             clientInstance ?: AddonClient(AddonClient.defaultHttpClient(), json).also { clientInstance = it }
         }
 
+    fun contentClient(context: Context): ContentClient =
+        contentInstance ?: synchronized(this) {
+            contentInstance ?: RoutingContentClient(
+                settings = settings(context),
+                embedded = EmbeddedContentClient(ChaquopyRuntime(context)) { settings(context).metadataCatalogs },
+                remote = addonClient(),
+            ).also { contentInstance = it }
+        }
+
     fun streamsRepository(context: Context): StreamsRepository =
         streamsInstance ?: synchronized(this) {
-            streamsInstance ?: StreamsRepository(addonClient(), settings(context))
+            streamsInstance ?: StreamsRepository(contentClient(context), settings(context))
                 .also { streamsInstance = it }
         }
 
-    /**
-     * El repositorio del Home ya no lee assets locales: sólo necesita el cliente
-     * HTTP y la URL del servidor. Se mantiene el `context` en la firma para no
-     * romper a quien lo llame desde una `Activity`.
-     */
+    /** El mismo repositorio trabaja con ambos motores. */
     fun catalogRepository(context: Context): CatalogRepository =
         catalogInstance ?: synchronized(this) {
-            catalogInstance ?: CatalogRepository(addonClient(), settings(context))
+            catalogInstance ?: CatalogRepository(contentClient(context), settings(context))
                 .also { catalogInstance = it }
         }
 
@@ -70,6 +82,7 @@ object ServiceLocator {
             streamsInstance = null
             catalogInstance = null
             clientInstance = null
+            contentInstance = null
             settingsInstance = null
         }
     }

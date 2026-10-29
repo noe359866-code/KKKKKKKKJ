@@ -1,5 +1,6 @@
 package com.tanasi.streamflix.data.remote
 
+import com.tanasi.streamflix.data.ContentClient
 import com.tanasi.streamflix.data.model.CatalogDescriptor
 import com.tanasi.streamflix.data.model.CatalogsResponse
 import com.tanasi.streamflix.data.model.MetaResponse
@@ -34,14 +35,14 @@ class AddonException(message: String, cause: Throwable? = null) : IOException(me
 class AddonClient(
     private val http: OkHttpClient = defaultHttpClient(),
     private val json: Json = defaultJson(),
-) {
+) : ContentClient {
 
     /**
      * Fuentes de un título, en el orden que devolvió el servidor (prioridad).
      *
      * @throws AddonException si el servidor no responde o devuelve algo inválido.
      */
-    suspend fun streams(baseUrl: String, type: String, id: String): StreamsResponse {
+    override suspend fun streams(baseUrl: String, type: String, id: String): StreamsResponse {
         val url = Urls.stream(baseUrl, type, id)
         val body = get(url)
         return try {
@@ -60,7 +61,7 @@ class AddonClient(
      * excepción— cuando el addon no publica ninguno: el Home lo reporta como
      * configuración del servidor, no como error de red.
      */
-    suspend fun catalogs(baseUrl: String): List<CatalogDescriptor> {
+    override suspend fun catalogs(baseUrl: String): List<CatalogDescriptor> {
         val fromFeed = runCatching { catalogsAt(Urls.catalogs(baseUrl)) }.getOrElse { error ->
             if (error is CancellationException) throw error
             null
@@ -91,13 +92,13 @@ class AddonClient(
      * @return `null` si la fila falla (404, red, JSON inválido): el repositorio
      *   simplemente no la pinta, en lugar de romper el Home entero.
      */
-    suspend fun catalog(
+    override suspend fun catalog(
         baseUrl: String,
         type: String,
         id: String,
-        search: String? = null,
-        genre: String? = null,
-        skip: Int? = null,
+        search: String?,
+        genre: String?,
+        skip: Int?,
     ): RemoteCatalogResponse? = try {
         val body = get(Urls.catalog(baseUrl, type, id, search = search, genre = genre, skip = skip))
         json.decodeFromString(RemoteCatalogResponse.serializer(), body)
@@ -112,7 +113,7 @@ class AddonClient(
      * caso normal: un canal local puede no existir ya, o Cinemeta puede no
      * conocer un id.
      */
-    suspend fun meta(baseUrl: String, type: String, id: String): RemoteMeta? = try {
+    override suspend fun meta(baseUrl: String, type: String, id: String): RemoteMeta? = try {
         val body = get(Urls.meta(baseUrl, type, id))
         json.decodeFromString(MetaResponse.serializer(), body).meta
     } catch (error: CancellationException) {

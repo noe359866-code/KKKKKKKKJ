@@ -3,26 +3,11 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.chaquopy)
 }
 
-/*
- * ---------------------------------------------------------------------------
- * Configuración de release
- * ---------------------------------------------------------------------------
- * La URL del addon es lo único que cambia entre un build de desarrollo y uno de
- * producción, y es lo que más fácil se olvida: un release que apunte a
- * `10.0.2.2` funciona en el emulador y no en el salón.
- *
- * Orden de resolución (el primero que exista gana):
- *   1. variable de entorno         ADDON_BASE_URL
- *   2. propiedad de Gradle         -PreleaseAddonBaseUrl=…
- *   3. keystore.properties         releaseAddonBaseUrl=…   (no se versiona)
- *
- * Si se pide empaquetar un release sin URL, el build **falla** con instrucciones
- * en lugar de publicar un APK que no conecta a ningún sitio. El valor se puede
- * corregir luego desde la app (Ajustes), pero el APK debe nacer apuntando al
- * backend real.
- */
+/* El motor Python y los proveedores se incluyen siempre. La URL del addon es
+ * opcional y sólo se utiliza si el usuario activa el modo servidor en Ajustes. */
 def buildProps = new Properties()
 def keystorePropsFile = rootProject.file('keystore.properties')
 if (keystorePropsFile.exists()) {
@@ -42,7 +27,7 @@ def resolve = { List<String> keys ->
 def stripTrailingSlashes = { String value -> (value ?: '').replaceAll('/+$', '') }
 
 def debugBaseUrl = stripTrailingSlashes(
-    resolve(['DEBUG_ADDON_BASE_URL', 'addonBaseUrl']) ?: 'http://10.0.2.2:7000'
+    resolve(['DEBUG_ADDON_BASE_URL', 'addonBaseUrl']) ?: ''
 )
 def releaseBaseUrl = stripTrailingSlashes(resolve(['ADDON_BASE_URL', 'releaseAddonBaseUrl']))
 
@@ -50,39 +35,8 @@ def validBaseUrl = { String value ->
     value ==~ '^https?://[^\\s/]+.*$' && !value.contains(' ')
 }
 
-/* `assembleRelease`, `bundleRelease`, `installRelease`, pero también `build`,
- * `bundle`, `lint` o `check`: todas acaban empaquetando el release. La
- * comprobación se hace sobre el nombre sin el prefijo del módulo. */
-def releaseTriggers = ['build', 'assemble', 'bundle', 'lint', 'check', 'install', 'package']
-def releaseRequested = gradle.startParameter.taskNames.any { String task ->
-    def name = task.toLowerCase().tokenize(':').last()
-    name.contains('release') || releaseTriggers.contains(name)
-}
-
-/* Escape hatch explícito para empaquetar sin dominio todavía: el APK queda con
- * la URL vacía y la app la pide en el primer arranque. Sirve para builds de
- * sideload y para CI mientras no haya dominio propio. Nunca es el
- * comportamiento por defecto, y nunca cae al loopback del emulador. */
-def allowEmptyBaseUrl = (resolve(['ALLOW_EMPTY_ADDON_BASE_URL', 'allowEmptyAddonBaseUrl']) ?: 'false')
-    .toBoolean()
-
-if (releaseRequested) {
-    if (releaseBaseUrl == null || releaseBaseUrl.isEmpty()) {
-        if (!allowEmptyBaseUrl) {
-            throw new GradleException(
-                "Falta la URL de producción del addon.\n" +
-                "Compila con:  ./gradlew assembleRelease -PreleaseAddonBaseUrl=https://addon.tu-dominio.com\n" +
-                "o exporta ADDON_BASE_URL=https://addon.tu-dominio.com (también vale releaseAddonBaseUrl= en keystore.properties).\n" +
-                "Para un build sin dominio (la app lo pregunta al arrancar): -PallowEmptyAddonBaseUrl=true\n" +
-                "Un release nunca se empaqueta apuntando al loopback del emulador."
-            )
-        }
-        logger.lifecycle(
-            "AVISO: release sin URL de backend; la app pedirá la dirección del servidor al arrancar."
-        )
-    } else if (!validBaseUrl(releaseBaseUrl)) {
-        throw new GradleException("releaseAddonBaseUrl no es una URL http(s) válida: '${releaseBaseUrl}'")
-    }
+if (releaseBaseUrl && !validBaseUrl(releaseBaseUrl)) {
+    throw new GradleException("releaseAddonBaseUrl no es una URL http(s) válida")
 }
 
 /*
@@ -104,8 +58,8 @@ if (storeFilePath != null && !hasReleaseKeystore) {
     )
 }
 
-def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '1').toInteger()
-def versionNameValue = resolve(['VERSION_NAME', 'versionName']) ?: '1.0.0'
+def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '2').toInteger()
+def versionNameValue = resolve(['VERSION_NAME', 'versionName']) ?: '1.1.0'
 
 android {
     namespace 'com.tanasi.streamflix'
@@ -113,13 +67,18 @@ android {
 
     defaultConfig {
         applicationId 'com.tanasi.streamflix'
-        minSdk 23
+        // Chaquopy 17 requiere API 24. Python 3.11 conserva soporte ARM de 32 bits.
+        minSdk 24
         targetSdk 35
         versionCode versionCodeValue
         versionName versionNameValue
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
 
-        /* Se sobreescribe por buildType: debug apunta al emulador, release a
-         * producción (ver arriba). */
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
+        }
+
+        /* URL opcional: ninguno de los dos builds necesita un backend. */
         buildConfigField 'String', 'DEFAULT_ADDON_BASE_URL', "\"\""
         buildConfigField 'boolean', 'DEBUG_BUILD', 'false'
     }
@@ -142,7 +101,7 @@ android {
         debug {
             applicationIdSuffix '.debug'
             versionNameSuffix '-debug'
-            /* Sólo en debug: el cliente habla con el addon local. */
+            /* Sólo se usa al seleccionar el modo servidor opcional. */
             buildConfigField 'String', 'DEFAULT_ADDON_BASE_URL', "\"${debugBaseUrl}\""
             buildConfigField 'boolean', 'DEBUG_BUILD', 'true'
         }
@@ -171,6 +130,14 @@ android {
     kotlinOptions {
         jvmTarget = '17'
         freeCompilerArgs += ['-opt-in=androidx.compose.material3.ExperimentalMaterial3Api']
+    }
+
+    sourceSets {
+        main {
+            // Mismo registro y canales que el servidor, sin copiar archivos a mano.
+            assets.srcDir rootProject.file('server/config')
+            assets.exclude 'catalogs.json' // No se incluyen addons de terceros preconfigurados.
+        }
     }
 
     buildFeatures {
@@ -211,6 +178,21 @@ android {
     }
 }
 
+/* Los .py se empaquetan y ejecutan en el proceso Android: no son sólo assets ni
+ * se invocan con spawn()/stdin. No se descarga código ni Python al arrancar. */
+chaquopy {
+    defaultConfig {
+        version = '3.11'
+    }
+    sourceSets {
+        getByName('main') {
+            srcDir rootProject.file('server/scrapers')
+            include '**/*.py'
+            exclude '**/__pycache__/**', 'example_provider.py', 'template_provider.py'
+        }
+    }
+}
+
 dependencies {
     implementation libs.androidx.core.ktx
     implementation libs.androidx.lifecycle.runtime.ktx
@@ -231,6 +213,7 @@ dependencies {
      * Referer/User-Agent headers coming from the addon. */
     implementation libs.androidx.media3.exoplayer
     implementation libs.androidx.media3.exoplayer.hls
+    implementation libs.androidx.media3.exoplayer.dash
     implementation libs.androidx.media3.datasource
     implementation libs.androidx.media3.ui
 
@@ -238,6 +221,9 @@ dependencies {
     implementation libs.kotlinx.serialization.json
     implementation libs.kotlinx.coroutines.android
     implementation libs.coil.compose
+
+    androidTestImplementation libs.androidx.test.runner
+    androidTestImplementation libs.androidx.test.junit
 
     testImplementation libs.junit
     testImplementation libs.kotlinx.coroutines.test

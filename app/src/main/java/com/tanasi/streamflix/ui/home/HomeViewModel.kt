@@ -8,6 +8,8 @@ import com.tanasi.streamflix.data.model.Spotlight
 import com.tanasi.streamflix.data.repo.CatalogRepository
 import com.tanasi.streamflix.data.repo.CatalogResult
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,24 +45,41 @@ class HomeViewModel(
     private val mutableHero = MutableStateFlow<Spotlight?>(null)
     val hero: StateFlow<Spotlight?> = mutableHero.asStateFlow()
 
+    private var loadJob: Job? = null
+    private val mutableQuery = MutableStateFlow("")
+    val query: StateFlow<String> = mutableQuery.asStateFlow()
+
     init {
         load()
     }
 
+    fun search(value: String) {
+        mutableQuery.value = value.trim().take(150)
+        load()
+    }
+
+    private fun showCatalog(catalog: HomeCatalog) {
+        val previous = mutableHero.value
+        mutableHero.value = previous?.let { catalog.spotlightFor(it.rowId, it.entry.id) } ?: catalog.featured
+        mutableState.value = HomeUiState.Ready(catalog)
+    }
+
     fun load() {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             mutableState.value = HomeUiState.Loading
             try {
-                when (val result = repository.load()) {
+                when (val result = repository.load(mutableQuery.value.takeIf { it.isNotBlank() }) { partial ->
+                    if (isActive) showCatalog(partial)
+                }) {
                     is CatalogResult.Ready -> {
                         if (result.catalog.isEmpty) {
                             mutableState.value = HomeUiState.Error(
-                                "El servidor no devolvió ningún título. Revisa los catálogos del backend.",
+                                "No hay títulos disponibles. Revisa Internet y los proveedores.",
                             )
                             return@launch
                         }
-                        mutableHero.value = result.catalog.featured
-                        mutableState.value = HomeUiState.Ready(result.catalog)
+                        showCatalog(result.catalog)
                     }
 
                     is CatalogResult.Failure -> {

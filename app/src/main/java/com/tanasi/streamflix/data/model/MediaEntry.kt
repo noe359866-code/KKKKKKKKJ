@@ -135,3 +135,8 @@ data class PlaybackRequest(
      */
     val startIndex: Int = 0,
 )
+
+/** Tanto :temporada:episodio como los ids de anime proveedor:slug:episodio. */
+fun hasEpisodeNumber(type: String, id: String): Boolean =
+    Regex(":\\d+:\\d+$").containsMatchIn(id) ||
+        (type == "anime" && Regex("^(animeflv|jkanime|monoschinos):[^:]+:\\d+$").matches(id))

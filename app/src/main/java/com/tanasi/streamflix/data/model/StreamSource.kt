@@ -27,6 +27,8 @@ data class StreamSource(
     val provider: String? = null,
     /** Posición original en la respuesta (0 = máxima prioridad). */
     val index: Int = 0,
+    /** Cabeceras completas del resolver local/remoto: también Cookie y Origin. */
+    val requestHeaders: Map<String, String> = emptyMap(),
 ) {
     /** Etiqueta corta para la UI: "Proveedor · Calidad". */
     val label: String
@@ -85,9 +87,10 @@ data class StreamDto(
             referer = headers.header("Referer"),
             userAgent = headers.header("User-Agent"),
             notWebReady = behaviorHints?.notWebReady == true,
-            isLive = isLive,
+            isLive = isLive || behaviorHints?.isLive == true,
             provider = provider,
             index = index,
+            requestHeaders = headers,
         )
     }
 }

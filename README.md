@@ -27,6 +27,7 @@
 - [Getting started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Setup](#setup)
+- [Autonomous Android mode](docs/autonomous-android.md)
 - [Stremio addon backend (Node.js)](#stremio-addon-backend-nodejs)
 - [Android client (Kotlin + Compose)](#android-client-kotlin--compose)
 - [Development](#development)
@@ -59,6 +60,9 @@ The interface aggregates content from multiple sources and provides a convenient
 
 ### Features
 
+- **Autonomous by default:** Python 3.11 and the twelve real provider scrapers run inside the APK; no Node.js server, IP address or backend deployment required
+- Direct provider catalogues, local episode discovery and on-device cache; optional Cinemeta catalogues
+- Optional external-server mode remains available in Settings
 - Open-source and ad-free interface
 - Aggregates content from multiple third-party providers
 - No account required for the app interface
@@ -80,7 +84,7 @@ The interface aggregates content from multiple sources and provides a convenient
 
 ## Stremio addon backend (Node.js)
 
-`server/` contains a lightweight Node.js + Express backend that exposes this
+`server/` is **optional for the Android app**. It contains a lightweight Node.js + Express backend that exposes this
 catalogue to any Stremio-compatible client (including the Android TV app)
 through the official Addon protocol:
 
@@ -178,8 +182,12 @@ tests and Docker).
 
 ## Android client (Kotlin + Compose)
 
-`app/` is the client. It contains **no scraping logic**: it asks the Node addon
-for `GET /stream/{type}/{id}.json` and plays whatever ordered list comes back.
+`app/` now includes the scrapers from `server/scrapers/` and an embedded Python
+runtime (Chaquopy). The default path is Compose → local engine → provider →
+Media3, all on the device. It does not start Node, a shell or an HTTP server.
+The existing addon remains available only when explicitly selected in Settings.
+See [Autonomous Android mode](docs/autonomous-android.md) for architecture,
+requirements, offline tests and limitations.
 
 | Concern | Choice |
 | --- | --- |
@@ -188,7 +196,8 @@ for `GET /stream/{type}/{id}.json` and plays whatever ordered list comes back.
 | HTTP | OkHttp `4.12.0` + kotlinx.serialization |
 | Posters | Coil |
 | DI | hand-written `ServiceLocator` (no annotation processor) |
-| SDK | `minSdk 23`, `targetSdk 35`, `compileSdk 36`, JVM 17 |
+| Embedded scraping | Chaquopy `17.1.0`, Python `3.11`, standard library only |
+| SDK | `minSdk 24`, `targetSdk 35`, `compileSdk 36`, JVM 17 |
 
 ### Visual design
 
@@ -343,87 +352,72 @@ into a `DefaultHttpDataSource.Factory` (adding a derived `Origin` and allowing
 cross-protocol redirects), and each source gets its own factory, since the
 `Referer` changes hop by hop.
 
-### Server URL
+### Autonomous mode and optional server
 
-The backend runs on your laptop or a TV box, so its address cannot be baked into
-the APK:
+**Ajustes → Autónomo · En este dispositivo** is the default, including after an
+upgrade from the old server-only build. First launch does not ask for a URL.
+Catalogues are queried directly from the bundled providers. Cinemeta rows are
+an explicit opt-in, not a requirement for browsing provider catalogues.
 
-```bash
-./gradlew :app:assembleDebug -PaddonBaseUrl=http://192.168.1.50:7000
-```
+An external server can still be selected in **Ajustes → Servidor externo**.
+Only that mode uses `DEFAULT_ADDON_BASE_URL` / the saved URL. Returning to local
+mode never silently contacts that backend as a fallback.
 
-`10.0.2.2:7000` (the emulator's view of the host) is the default **only for debug
-builds**. A release build takes its URL from the build environment (see
-[Release build](#release-build-apk--aab)) and refuses to be packaged without
-one, so a production APK never ships pointing at the emulator loopback.
+Internet and the original content hosts are still required. Autonomous does
+**not** mean offline video, bundled films or independence from the source sites.
+A changed domain, anti-bot challenge or dead video host can still break a source.
 
-The address stays editable at runtime from **Servidor** in the home header — a TV
-box in another subnet must be fixable without a laptop and a rebuild. The value
-is stored in `SharedPreferences` and normalised (`192.168.1.50:7000` →
-`http://…`). A release APK with no URL configured opens that dialog on first
-launch instead of showing an error.
+### Home catalogue
 
-Cleartext HTTP is allowed because a LAN address cannot be known in advance; the
-video CDNs themselves are HTTPS.
+- The twelve provider definitions and curated live-channel IDs are packaged
+  from `server/config/`; the demo Python providers and server-only third-party
+  addon configuration are excluded.
+- Native Python calls scrape the provider home/search pages for movies, series,
+  anime, live channels and sports. Posters and episode lists come from those
+  same pages where available. No private TMDB key is required.
+- The saved live-channel shelf is available immediately without a metadata
+  service. Other shelves appear incrementally as providers answer.
+- **Buscar** queries the providers; **Inicio** clears the search.
+- Catalogue metadata is cached on disk for one hour (live: ten minutes), with
+  a bounded stale fallback for titles/artwork. Signed stream URLs have a short
+  cache only and are never served stale after its expiry.
+- The details sheet discovers numbered episodes; if no list is published,
+  series/anime offer explicit manual season/episode selection rather than
+  inventing a list or playing episode one silently.
+- Per-source Referer, User-Agent, Origin and Cookie headers survive into Media3.
+  Both HLS and DASH modules are included.
 
-### Home catalogue (server-driven)
-
-The home screen is built from the **backend catalog config**, not from Kotlin and
-not from a bundled JSON. On launch the app asks `GET /catalogs.json` which rows
-the addon publishes and then loads every row in parallel from
-`GET /catalog/{type}/{id}.json`:
-
-- **card shape comes from the server** — `posterShape: "poster"` renders 2:3
-  posters (movies, series, anime), `posterShape: "landscape"` renders 16:9
-  cards (live TV and sports);
-- rows are `movie/top`, `movie/imdbRating`, `series/top`, `anime/top`,
-  `anime/imdbRating` (Cinemeta, enriched with synopsis/poster/year/rating),
-  `tv/live` (curated channels from `server/config/live-catalog.json`, whose ids
-  are exactly the stream ids — `tv:futbolibre:espn-1`) and the per-service
-  rows republished from the *Streaming Catalogs* addon
-  (`movie/streaming_nfx` Netflix, `movie/streaming_dnp` Disney+,
-  `series/streaming_amp` Prime Video…, chosen in the `addons` block of
-  `server/config/catalogs.json`; empty `only` publishes all 41);
-- adding, removing or reordering a row is editing
-  `server/config/catalogs.json` and restarting Node: no APK rebuild, no
-  reinstall on the TV;
-- each row fails on its own: if Cinemeta is down the movie rows disappear but
-  the live row (served from a local JSON) still plays. Rows have their own
-  timeout, so a slow catalog never blocks the Home.
-
-There is **no bundled catalogue**: the release APK contains no mock cards. If the
-server is not configured or unreachable, the screen states it and offers
-*Reintentar* / *Configurar servidor* instead of showing placeholder content.
-
-Tapping a Cinemeta card keeps its **IMDb id** (`tt0944947`). For a series the
-details sheet asks `GET /meta/{type}/{id}.json` for the episode list, picks one
-(`tt0944947:1:2`) and only then requests
-`GET /stream/series/tt0944947:1:2.json`; the chosen source index still flows
-into `PlaybackRequest.startIndex`, so ExoPlayer starts on the server the user
-picked and fails over downward exactly like any other row.
+In optional server mode, the original `/catalogs.json`, `/catalog`, `/meta` and
+`/stream` protocol and server configuration continue to work.
 
 ### Build, run, test
 
+Requirements: JDK 17, Android SDK 36, **Python 3.11 on the build machine**.
+The TV/phone needs **Android 7.0 / API 24+**. The universal APK supports
+`armeabi-v7a`, `arm64-v8a` and `x86_64`; there is no device-side Python install.
+
 ```bash
-cd server && npm start                 # addon on :7000
-./gradlew :app:assembleDebug           # → app/build/outputs/apk/debug/
-./gradlew :app:testDebugUnitTest       # JVM tests, no emulator needed
+# No npm start, ADDON_BASE_URL or server setup required:
+./gradlew :app:assembleDebug
+./gradlew :app:testDebugUnitTest :app:lintDebug
+python3 scripts/verify-embedded-apk.py app/build/outputs/apk/debug/app-debug.apk
+
+# Offline tests of the actual engine + existing Python scrapers:
+python3 -m unittest discover -s app/src/test/python -v
+
+# Device/emulator smoke test: native Python + all twelve imports, no backend:
+./gradlew :app:connectedDebugAndroidTest
+
+# Optional backend regressions (separate from the Android runtime):
+(cd server && npm ci && npm test)
 ```
 
-Unit tests live in `app/src/test/` and cover the parts where a bug costs a
-movie: `FailoverPlannerTest` (order, one attempt per source, no wrap-around),
-`FailoverRulesTest` (which error codes hop, which do not), `SeekPolicyTest`
-(seeking at the edges of the timeline), `PlayerKeyMapTest` (the remote-control
-mapping), `DurationsTest` (clock formatting), `StreamsRepositoryTest` (URL
-shape, header parsing, HTTP failures via `MockWebServer`) and
-`CatalogRepositoryTest` (the Home against a fake backend: no local catalogue,
-server-decided card shape, per-row isolation, unreachable host vs. server with
-no rows).
-
-Smoke test with the real backend: run `npm start`, point the app at it, move the
-D-Pad across a shelf (the hero must follow), open a card, pick the third server
-in the panel, press Reproducir, then stop that provider and watch the player hop
-to the next source without losing your position.
+`AutonomousContentTest` covers URL-free repository calls, mode selection, no
+implicit remote fallback, complete playback headers, search/episode IDs and
+cancellation. Existing player, repository and addon tests remain in place.
+`EmbeddedEngineSmokeTest` executes the bundled Python runtime on Android.
+`verify-embedded-apk.py` checks the actual APK's script archive and native
+libraries; a small file size is never used as proof of completeness.
 
 ### Release build (APK + AAB)
 
@@ -431,15 +425,13 @@ One signed artifact installs on both a phone and an Android TV box (see
 [One APK, two form factors](#one-apk-two-form-factors)).
 
 ```bash
-export ADDON_BASE_URL=https://addon.tu-dominio.com    # required
-./scripts/release-android.sh                          # APK + AAB + summary
+./scripts/release-android.sh       # autonomous APK + AAB + package verification
 ```
 
 The script is a thin wrapper; the same build by hand is:
 
 ```bash
-./gradlew :app:assembleRelease :app:bundleRelease \
-    -PreleaseAddonBaseUrl=https://addon.tu-dominio.com
+./gradlew :app:assembleRelease :app:bundleRelease
 ```
 
 Outputs:
@@ -454,28 +446,13 @@ Without a keystore the APK is written as `app-release-unsigned.apk`: **it will
 not install** until it is signed. That is deliberate — silently signing with the
 debug key produces an app that cannot be updated later.
 
-#### Where the production URL comes from
+#### Optional backend URL
 
-First match wins; the build **fails with instructions** if none is set:
-
-1. environment variable `ADDON_BASE_URL` (what CI uses);
-2. Gradle property `-PreleaseAddonBaseUrl=…`;
-3. `releaseAddonBaseUrl=…` in `keystore.properties` (not versioned).
-
-Validation rejects anything that is not `http(s)://…`, and both debug and
-release strip trailing slashes before `BuildConfig.DEFAULT_ADDON_BASE_URL` is
-written, so `https://host/` and `https://host` produce identical requests.
-
-There is one explicit escape hatch for packaging before you have a domain:
-
-```bash
-./gradlew :app:assembleRelease -PallowEmptyAddonBaseUrl=true
-```
-
-The APK then carries **no** default URL and the app asks for the server on first
-launch (the same dialog you get when the address is wrong). It never falls back
-to `10.0.2.2` and never ships placeholder content; CI uses this mode when it is
-dispatched without a URL.
+No URL is required to build debug or release. If supplied, the default for the
+optional server mode is resolved from `ADDON_BASE_URL`,
+`-PreleaseAddonBaseUrl=…`, or `releaseAddonBaseUrl` in `keystore.properties`.
+It does not change the default autonomous mode. The old
+`allowEmptyAddonBaseUrl` escape hatch is no longer necessary.
 
 #### Signing
 
@@ -500,8 +477,9 @@ boxes and on current phones.
   `$$serializer`s) plus `-assumenosideeffects` on `Log.v/d/i`, so debug logging
   and signed URLs do not survive into the APK. No blanket
   `-keep class androidx.**`.
-- **No demo data**: `app/src/main/assets/` is gone; the catalogue is whatever
-  the backend publishes.
+- **Embedded runtime and real scrapers**: the Python code and native libraries
+  are packaged with the application. Demo/template providers are excluded.
+  Chaquopy supplies its own JNI/reflection R8 consumer rules.
 - **No tooling**: Compose preview/tooling is `debugImplementation`; `DEBUG_BUILD`
   is `false` and `AppLog.d/i` are stripped.
 - **Smaller, faster**: `shrinkResources`, `resConfigs` not needed (single
@@ -518,18 +496,22 @@ adb shell pm list packages | grep tanasi      # com.tanasi.streamflix
 On a TV: `adb connect <box-ip>:5555` first, then the same `install`. The leanback
 launcher entry and the TV banner come from the manifest, and `uses-feature
 leanback/touchscreen` are both `required="false"`, so a single APK is offered to
-phones and TVs alike. Smoke test: open the app, check the header shows the
-production host, play a live channel, then kill the backend and confirm the Home
-degrades to *Reintentar* / *Configurar servidor* instead of fake content.
+phones and TVs alike (API 24+). Smoke test: leave every Node backend stopped,
+install the APK, open the Home without entering a URL, browse/search a provider,
+choose an episode and play an authorized source. Disconnecting Internet must
+still report unavailable playback; the saved cards are not offline videos.
 
 #### CI
 
 `.github/workflows/android-release.yml` builds the same artifacts on a runner
-with JDK 17 + Android SDK, runs the unit tests and `lintRelease`, verifies the
-signature with `apksigner`, and uploads the APK, the AAB and the R8 mapping.
+with JDK 17 + Python 3.11 + Android SDK, runs the offline engine tests,
+Kotlin tests and `lintRelease`, verifies the signature with `apksigner` and
+checks the embedded Python payload before uploading APK, AAB and R8 mapping.
+`autonomous-checks.yml` additionally builds the debug APK, runs the Android TV
+emulator smoke test and checks the existing backend for regressions.
 
-- **manual**: *Run workflow* with the backend URL (leave it empty to get an APK
-  that asks for the server on first launch);
+- **manual**: *Run workflow* with the backend URL empty for a fully local engine;
+  a supplied URL is only a default for the optional server mode;
 - **tag**: pushing `v1.0.0` uses the `PRODUCTION_ADDON_BASE_URL` repository
   variable.
 

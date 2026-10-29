@@ -58,6 +58,7 @@ import urllib.request
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from _base import DEFAULT_USER_AGENT, default_headers, log, run, stream
+from _htmlkit import open_url
 
 # ---------------------------------------------------------------------------
 # Configuración (todo sobreescribible por env para pruebas)
@@ -235,7 +236,7 @@ def http_get(url: str, headers: Dict[str, str], timeout: float) -> Tuple[str, st
     se ocultan los errores, sólo se normaliza la descompresión.
     """
     request = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with open_url(request, timeout=timeout) as response:
         raw = response.read(1_500_000)
         encoding = (response.headers.get("Content-Encoding") or "").lower()
         if "gzip" in encoding:

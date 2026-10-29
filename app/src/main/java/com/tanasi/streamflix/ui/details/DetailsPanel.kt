@@ -161,6 +161,7 @@ fun DetailsDialog(
                             isTv = isTv,
                             onSelectSeason = viewModel::selectSeason,
                             onSelectEpisode = viewModel::selectEpisode,
+                            onManualEpisode = viewModel::selectManualEpisode,
                         )
 
                         Spacer(Modifier.height(20.dp))
@@ -282,6 +283,7 @@ private fun EpisodesSection(
     isTv: Boolean,
     onSelectSeason: (Int) -> Unit,
     onSelectEpisode: (EpisodeOption) -> Unit,
+    onManualEpisode: (EpisodeOption) -> Unit,
 ) {
     if (state is EpisodesUiState.Hidden) return
 
@@ -315,11 +317,15 @@ private fun EpisodesSection(
                 )
             }
 
-            is EpisodesUiState.Unavailable -> Text(
-                text = state.message,
-                style = MaterialTheme.typography.labelMedium,
-                color = StreamflixColors.OnSurfaceMuted,
-            )
+            is EpisodesUiState.Unavailable -> Column {
+                Text(
+                    text = state.message,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = StreamflixColors.OnSurfaceMuted,
+                )
+                Spacer(Modifier.height(8.dp))
+                ManualEpisodePicker(selected = state.selected, onSelect = onManualEpisode)
+            }
 
             is EpisodesUiState.Ready -> Column {
                 if (state.seasons.size > 1) {

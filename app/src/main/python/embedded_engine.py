@@ -1,0 +1,348 @@
+"""In-process Android content engine (also testable with desktop Python 3.11).
+
+configure() receives bundled JSON assets, then dispatch() accepts/returns JSON.
+No HTTP listener, Node.js, subprocess, stdin, executable downloads or TMDB key.
+Only an allowlist of the twelve bundled providers can be imported.
+"""
+from __future__ import annotations
+
+import concurrent.futures
+from collections import OrderedDict
+import json
+import math
+import os
+import re
+import tempfile
+import threading
+import time
+import urllib.parse
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import _embedded_catalogs as providers
+from _base import DEFAULT_USER_AGENT, log
+from _embedded_cache import JsonCache
+from _htmlkit import http_get_json, install_url_opener, normalize, token_expiry
+
+TYPES = frozenset(("movie", "series", "anime", "tv"))
+PLAYABLE = (".m3u8", ".mpd", ".mp4", ".m4v", ".webm", ".mkv", ".ts")
+CINEMETA = "https://v3-cinemeta.strem.io"
+
+
+def normalize_meta(raw: Dict[str, Any], media_type: str) -> Optional[Dict[str, Any]]:
+    content_id = str(raw.get("id") or raw.get("imdb_id") or "").strip()
+    if not content_id:
+        return None
+    result = {"id": content_id, "type": raw.get("type") or media_type,
+              "name": str(raw.get("name") or raw.get("title") or content_id)}
+    for key in ("poster", "background", "logo", "description", "runtime", "sourceName", "_page", "_detail"):
+        if raw.get(key):
+            result[key] = raw[key]
+    release = str(raw.get("releaseInfo") or raw.get("year") or "")
+    if release:
+        result["releaseInfo"] = release
+        match = re.search(r"\d{4}", release)
+        if match:
+            result["year"] = int(match.group())
+    try:
+        rating = float(raw.get("imdbRating") or raw.get("rating") or 0)
+        if math.isfinite(rating) and 0 < rating <= 10:
+            result["rating"] = rating
+    except (ValueError, TypeError):
+        pass
+    genres = raw.get("genres") or raw.get("genre") or []
+    result["genres"] = [str(g) for g in genres if g] if isinstance(genres, list) else []
+    videos = []
+    for video in raw.get("videos") or []:
+        if not isinstance(video, dict):
+            continue
+        try:
+            season, episode = int(video["season"]), int(video["episode"])
+        except (ValueError, TypeError, KeyError):
+            continue
+        if not (0 <= season <= 100 and 0 <= episode <= 10000):
+            continue
+        videos.append({"id": str(video.get("id") or f"{content_id}:{season}:{episode}"),
+                       "season": season, "episode": episode,
+                       **{key: str(video[key]) for key in ("name", "overview", "thumbnail") if video.get(key)}})
+    if videos:
+        result["videos"] = sorted(videos, key=lambda v: (v["season"], v["episode"]))
+    return result
+
+
+def normalize_stream(raw: Dict[str, Any], provider: Dict[str, Any], is_live: bool) -> Optional[Dict[str, Any]]:
+    url = str(raw.get("url") or "").strip()
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("https", "http") or not parsed.netloc or not parsed.path.lower().endswith(PLAYABLE):
+        return None
+    expiry = token_expiry(url)
+    if expiry is not None and expiry <= time.time() + 5:
+        return None
+    hints = dict(raw.get("behaviorHints") or {})
+    headers = {"Referer": raw.get("referer") or provider.get("referer") or "",
+               "User-Agent": raw.get("userAgent") or provider.get("userAgent") or DEFAULT_USER_AGENT,
+               **(hints.get("requestHeaders") or {})}
+    # Reject malformed header values; retain Cookie/Origin and any other required headers.
+    canonical = {"referer": "Referer", "user-agent": "User-Agent", "origin": "Origin", "cookie": "Cookie"}
+    headers = {canonical.get(str(key).lower(), str(key)): str(value)
+               for key, value in headers.items() if value and re.fullmatch(r"[\w-]+", str(key))
+               and "\n" not in str(value) and "\r" not in str(value)}
+    hints.update(requestHeaders=headers, isLive=is_live)
+    return {"url": url, "name": str(raw.get("name") or provider["label"]),
+            "title": str(raw.get("title") or raw.get("name") or provider["label"]),
+            "provider": provider["label"], "isLive": is_live, "behaviorHints": hints,
+            **({"quality": str(raw["quality"])} if raw.get("quality") else {})}
+
+
+class Engine:
+    def __init__(self, cache_dir: str, registry: Dict[str, Any], live: Dict[str, Any], cinemeta_base: str = CINEMETA):
+        self.cache = JsonCache(str(Path(cache_dir) / "responses"))
+        self.cinemeta_base = cinemeta_base.rstrip("/")
+        self.providers: Dict[str, Dict[str, Any]] = {}
+        for item in sorted(registry.get("providers") or [], key=lambda p: p.get("priority", 100)):
+            name = item.get("id")
+            if name in providers.MODULES and item.get("script") == f"{name}.py" and item.get("enabled", True):
+                self.providers[name] = item
+        self.live = []
+        for item in live.get("items") or []:
+            meta = normalize_meta({**item, "type": "tv"}, "tv")
+            if meta:
+                self.live.append(meta)
+        self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=3, thread_name_prefix="provider")
+        self.lock = threading.RLock()
+        self.known: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+        self.inflight: Dict[str, concurrent.futures.Future] = {}
+
+    def close(self):
+        self.pool.shutdown(wait=True, cancel_futures=True)
+
+    def catalogs(self, metadata_catalogs: bool = False) -> Dict[str, Any]:
+        rows = [{"id": "bundled_live", "type": "tv", "name": "TV en vivo · Canales guardados",
+                 "posterShape": "landscape", "order": 0, "source": "embedded"}]
+        for order, (name, provider) in enumerate(self.providers.items(), 1):
+            media_type = "tv" if name in providers.LIVE else "anime" if name in providers.ANIME else "movie"
+            category = {"tv": "TV y deportes", "anime": "Anime", "movie": "Películas y series"}[media_type]
+            rows.append({"id": name, "type": media_type, "name": f"{category} · {provider['label']}",
+                         "posterShape": "landscape" if media_type == "tv" else "poster", "order": order,
+                         "source": "embedded", "provider": provider["label"]})
+        if metadata_catalogs:
+            for order, (media_type, catalog_id, title) in enumerate((
+                ("movie", "top", "Películas populares"), ("movie", "imdbRating", "Mejor valoradas"),
+                ("series", "top", "Series populares"), ("anime", "top", "Anime popular")), 100):
+                rows.append({"id": "cinemeta_" + catalog_id, "type": media_type, "name": title,
+                             "posterShape": "poster", "order": order, "source": "cinemeta", "provider": "Cinemeta"})
+        return {"catalogs": rows}
+
+    def _remember(self, metas: List[Dict[str, Any]]) -> None:
+        with self.lock:
+            for meta in metas:
+                key = f"meta:{meta['type']}:{meta['id']}"
+                self.known[key] = meta
+                self.known.move_to_end(key)
+            while len(self.known) > 700:
+                self.known.popitem(last=False)
+
+    def catalogue(self, media_type: str, catalog_id: str, query: str = "", genre: str = "", skip: int = 0) -> Dict[str, Any]:
+        key = "catalog:" + json.dumps([media_type, catalog_id, query, genre, skip], ensure_ascii=False)
+        cached = self.cache.get(key)
+        if cached is not None:
+            self._remember(cached["metas"])
+            return cached
+        if catalog_id == "bundled_live" and media_type == "tv":
+            metas = self.live
+        else:
+            try:
+                if catalog_id.startswith("cinemeta_"):
+                    upstream_type = "series" if media_type == "anime" else media_type
+                    extras = {"search": query, "genre": "Animation" if media_type == "anime" else genre, "skip": skip or ""}
+                    extra_path = "/" + "&".join(f"{k}={urllib.parse.quote(str(v), safe='')}" for k, v in extras.items() if v != "")
+                    path = f"/catalog/{upstream_type}/{urllib.parse.quote(catalog_id[9:], safe='')}"
+                    data = http_get_json(self.cinemeta_base + path + (extra_path if extra_path != "/" else "") + ".json",
+                                         {"Accept": "application/json", "User-Agent": "Streamflix/embedded"}, 6) or {}
+                    metas = [{**item, "type": media_type, "sourceName": "Cinemeta"} for item in data.get("metas") or []]
+                elif catalog_id in self.providers:
+                    metas = providers.catalogue(self.providers[catalog_id], media_type, query)
+                else:
+                    return {"metas": [], "degraded": True}
+                metas = [normalized for item in metas if (normalized := normalize_meta(item, media_type))]
+            except Exception as exc:
+                log("embedded catalogue unavailable:", catalog_id, type(exc).__name__)
+                metas = []
+            if not metas:
+                # Stale titles/artwork are safe. Signed streams have NO stale fallback.
+                stale = self.cache.get(key, stale_seconds=7 * 86400)
+                if stale:
+                    self._remember(stale["metas"])
+                return stale or {"metas": [], "degraded": True}
+        if catalog_id.startswith("cinemeta_"):
+            # Cinemeta already applied server-side search/skip; do not paginate twice.
+            result = {"metas": metas[:50]}
+        else:
+            # Provider search results may include translated titles: only filter live rows locally.
+            if media_type == "tv" and query:
+                metas = [m for m in metas if normalize(query) in normalize(m.get("name", ""))]
+            if genre:
+                metas = [m for m in metas if genre in m.get("genres", [])]
+            result = {"metas": metas[max(0, skip):max(0, skip) + 50]}
+        if result["metas"]:
+            self._remember(result["metas"])
+            self.cache.put(key, result, 600 if media_type == "tv" else 3600)
+        return result
+
+    def meta(self, media_type: str, content_id: str) -> Dict[str, Any]:
+        base_id, _, _ = providers.split_id(content_id, media_type)
+        key = f"meta:{media_type}:{base_id}"
+        with self.lock:
+            known = self.cache.get(key, stale_seconds=7 * 86400) or self.known.get(key) or {}
+        if known.get("_detail") and self.cache.get(key):
+            return {"meta": known}
+        if media_type == "tv":
+            found = next((item for item in self.live if item["id"] == base_id), None)
+            return {"meta": found or known or None}
+        try:
+            if re.fullmatch(r"tt\d+", base_id):
+                upstream_type = "series" if media_type == "anime" else media_type
+                data = http_get_json(f"{self.cinemeta_base}/meta/{upstream_type}/{base_id}.json",
+                                     {"Accept": "application/json", "User-Agent": "Streamflix/embedded"}, 6) or {}
+                raw = data.get("meta")
+                result = normalize_meta({**raw, "type": media_type, "sourceName": "Cinemeta"}, media_type) if raw else None
+            else:
+                provider = self.providers.get(base_id.split(":", 1)[0])
+                result = providers.detail(provider, media_type, base_id, known) if provider else None
+            if result:
+                result["_detail"] = True
+                self.cache.put(key, result, 6 * 3600)
+                return {"meta": result}
+        except Exception as exc:
+            log("embedded metadata unavailable:", type(exc).__name__)
+        return {"meta": known or None}
+
+    def _forget_flight(self, key: str, task: concurrent.futures.Future) -> None:
+        with self.lock:
+            if self.inflight.get(key) is task:
+                self.inflight.pop(key, None)
+
+    def _scrape(self, provider: Dict[str, Any], payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+        try:
+            result = providers.module_for(provider["id"]).scrape(payload)
+            streams = result[0] if isinstance(result, tuple) else result.get("streams", []) if isinstance(result, dict) else []
+            return [item for raw in streams if isinstance(raw, dict)
+                    and (item := normalize_stream(raw, provider, payload["isLive"]))]
+        except Exception as exc:
+            log("embedded provider failed:", provider["id"], type(exc).__name__)
+            return []
+
+    def streams(self, media_type: str, content_id: str) -> Dict[str, Any]:
+        key = f"streams:{media_type}:{content_id}"
+        cached = self.cache.get(key)
+        if cached is not None:
+            return cached
+        base_id, season, episode = providers.split_id(content_id, media_type)
+        is_live = media_type == "tv"
+        parts = base_id.split(":")
+        explicit = parts[1] if is_live and len(parts) > 1 and parts[0] == "tv" else parts[0]
+        selected = [self.providers[explicit]] if explicit in self.providers else [
+            p for name, p in self.providers.items()
+            if name in (providers.LIVE if is_live else providers.ANIME if media_type == "anime" else providers.MOVIES)]
+        # Never feed an IMDb number to a site's slug parser or require a secret TMDB key.
+        title = None
+        if re.fullmatch(r"tt\d+", base_id):
+            with self.lock:
+                title = (self.known.get(f"meta:{media_type}:{base_id}") or {}).get("name")
+            title = title or (self.meta(media_type, base_id).get("meta") or {}).get("name")
+            if not title:
+                return {"streams": [], "cacheMaxAge": 0}
+        futures = []
+        for provider in selected:
+            provider_id = provider["id"]
+            if is_live != (provider_id in providers.LIVE):
+                continue
+            request_id = f"{provider_id}:{title}" if title else content_id
+            payload = {"type": media_type, "id": request_id, "season": season, "episode": episode,
+                       "isLive": is_live, "timeoutMs": 8000, "referer": provider.get("referer"),
+                       "userAgent": provider.get("userAgent") or DEFAULT_USER_AGENT, "provider": provider_id}
+            flight_key = provider_id + ":" + key
+            with self.lock:
+                future = self.inflight.get(flight_key)
+                if future is None or future.done():
+                    future = self.pool.submit(self._scrape, provider, payload)
+                    self.inflight[flight_key] = future
+                    future.add_done_callback(lambda task, key=flight_key: self._forget_flight(key, task))
+            futures.append((flight_key, future))
+        if not futures:
+            return {"streams": [], "cacheMaxAge": 0}
+        done, pending = concurrent.futures.wait([future for _, future in futures], timeout=9)
+        for future in pending:
+            future.cancel()  # Cancels queued work; running calls retain their own socket/deadline bounds.
+        streams, seen = [], set()
+        # Iteration order is the immutable priority order, not completion order.
+        for flight_key, future in futures:
+            if future in done and not future.cancelled():
+                try:
+                    for item in future.result():
+                        url_key = item["url"].split("#", 1)[0]
+                        if url_key not in seen:
+                            streams.append(item)
+                            seen.add(url_key)
+                except Exception:
+                    pass
+            if future.done():
+                with self.lock:
+                    if self.inflight.get(flight_key) is future:
+                        self.inflight.pop(flight_key, None)
+        ttl = 60 if is_live else 300
+        for item in streams:
+            expiry = token_expiry(item["url"])
+            if expiry is not None:
+                ttl = min(ttl, max(0, int(expiry - time.time() - 15)))
+        result = {"streams": streams, "cacheMaxAge": ttl if streams else 0}
+        if streams:
+            self.cache.put(key, result, ttl)
+        return result
+
+    def dispatch(self, operation: str, request: Dict[str, Any]) -> Dict[str, Any]:
+        if operation == "catalogs":
+            return self.catalogs(bool(request.get("metadataCatalogs", False)))
+        if operation == "health":
+            # Import every bundled script to catch packaging/stdlib problems in device smoke tests.
+            imported = [name for name in self.providers if providers.module_for(name)]
+            return {"mode": "embedded", "providers": imported, "python": os.sys.version.split()[0]}
+        if operation == "clear_cache":
+            self.cache.clear()
+            return {"ok": True}
+        media_type, content_id = request.get("type"), str(request.get("id") or "")
+        if media_type not in TYPES or not content_id or len(content_id) > 1500:
+            raise ValueError("Invalid content request")
+        if operation == "catalog":
+            return self.catalogue(media_type, content_id, str(request.get("search") or "")[:150],
+                                  str(request.get("genre") or ""), max(0, int(request.get("skip") or 0)))
+        if operation == "meta":
+            return self.meta(media_type, content_id)
+        if operation == "streams":
+            return self.streams(media_type, content_id)
+        raise ValueError("Unknown engine operation")
+
+
+_engine: Optional[Engine] = None
+
+
+def configure(cache_dir: str, registry_json: str, live_json: str, http_transport=None) -> None:
+    global _engine
+    # Must happen before importing provider modules which compute cache paths at import time.
+    Path(cache_dir).mkdir(parents=True, exist_ok=True)
+    tempfile.tempdir = cache_dir
+    if http_transport is not None:
+        from _android_http import AndroidUrlOpener
+        install_url_opener(AndroidUrlOpener(http_transport))
+    else:
+        install_url_opener(None)
+    _engine = Engine(cache_dir, json.loads(registry_json), json.loads(live_json))
+
+
+def dispatch(operation: str, request_json: str) -> str:
+    if _engine is None:
+        raise RuntimeError("Embedded engine not configured")
+    request = json.loads(request_json)
+    if not isinstance(request, dict):
+        raise ValueError("Expected a JSON object")
+    return json.dumps(_engine.dispatch(operation, request), ensure_ascii=False, allow_nan=False)
