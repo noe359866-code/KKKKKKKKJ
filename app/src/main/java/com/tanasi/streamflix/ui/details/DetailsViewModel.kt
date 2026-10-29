@@ -6,6 +6,7 @@ import com.tanasi.streamflix.data.model.EpisodeOption
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.MediaType
 import com.tanasi.streamflix.data.model.PlaybackRequest
+import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.data.model.SeasonGroup
 import com.tanasi.streamflix.data.model.StreamSource
 import com.tanasi.streamflix.data.model.toSeasonGroups
