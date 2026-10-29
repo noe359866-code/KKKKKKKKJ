@@ -57,26 +57,33 @@ class AddonClient(
      * Se pregunta primero por `/catalogs.json`; si el servidor es una versión
      * anterior que no lo expone, se cae al `manifest.json` (donde el bloque
      * `catalogs` es el estándar de Stremio). Devuelve una lista vacía —no una
-     * excepción— cuando el addon no publica ninguno: la app tiene semilla local
-     * para ese caso.
+     * excepción— cuando el addon no publica ninguno: el Home lo reporta como
+     * configuración del servidor, no como error de red.
      */
     suspend fun catalogs(baseUrl: String): List<CatalogDescriptor> {
-        val fromFeed = runCatching {
-            json.decodeFromString(CatalogsResponse.serializer(), get(Urls.catalogs(baseUrl))).catalogs
-        }.getOrElse { error ->
+        val fromFeed = runCatching { catalogsAt(Urls.catalogs(baseUrl)) }.getOrElse { error ->
             if (error is CancellationException) throw error
             null
         }
 
-        if (!fromFeed.isNullOrEmpty()) return fromFeed
-
-        return runCatching {
-            json.decodeFromString(CatalogsResponse.serializer(), get(Urls.manifest(baseUrl))).catalogs
-        }.getOrElse { error ->
-            if (error is CancellationException) throw error
-            emptyList()
+        /* El servidor contestó `/catalogs.json` (aunque sea con una lista vacía):
+         * damos una segunda oportunidad al manifest por si es una versión que
+         * sólo publica ahí, pero un fallo del manifest ya no cambia la respuesta. */
+        if (fromFeed != null) {
+            if (fromFeed.isNotEmpty()) return fromFeed
+            return runCatching { catalogsAt(Urls.manifest(baseUrl)) }.getOrElse { error ->
+                if (error is CancellationException) throw error
+                emptyList()
+            }
         }
+
+        /* Ni siquiera hubo respuesta: propagamos el error para que el Home diga
+         * "no se pudo conectar" en lugar de culpar a la configuración de filas. */
+        return catalogsAt(Urls.manifest(baseUrl))
     }
+
+    private suspend fun catalogsAt(url: String): List<CatalogDescriptor> =
+        json.decodeFromString(CatalogsResponse.serializer(), get(url)).catalogs
 
     /**
      * Metas de un catálogo.

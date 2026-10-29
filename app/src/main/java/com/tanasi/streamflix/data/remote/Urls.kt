@@ -22,11 +22,41 @@ object Urls {
         }
     }
 
+    /**
+     * Acepta lo que de verdad se escribe en un TV box: una IP
+     * (`192.168.1.50:7000`), un dominio (`addon.midominio.com`), un hostname de
+     * la LAN (`nas:7000`) o `localhost`. Se rechaza cualquier otro esquema.
+     */
     fun isValidBase(input: String): Boolean {
-        val normalized = normalizeBase(input)
-        if (!normalized.startsWith("http://") && !normalized.startsWith("https://")) return false
-        val host = normalized.removePrefix("http://").removePrefix("https://").substringBefore('/')
-        return host.isNotBlank() && (host.contains('.') || host.startsWith("localhost"))
+        val raw = input.trim()
+        if (raw.isEmpty()) return false
+        /* Otro esquema no se "arregla" añadiendo http:// delante: `ftp://x`
+         * acabaría en `http://ftp://x`, que no conecta a ningún sitio. */
+        if (raw.contains("://") && !raw.startsWith("http://") && !raw.startsWith("https://")) {
+            return false
+        }
+        val normalized = normalizeBase(raw)
+        val authority = normalized.removePrefix("http://").removePrefix("https://")
+            .substringBefore('/')
+        return HOST_PORT.matches(authority)
+    }
+
+    /**
+     * `host` o `host:puerto`, donde host es IPv4, un dominio o el nombre del
+     * NAS en la LAN. Rechaza espacios, frases pegadas y puertos no numéricos:
+     * lo que escriba el usuario en una TV tiene que convertirse en una URL que
+     * OkHttp acepte.
+     */
+    private val HOST_PORT = Regex("^\\[?[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]{1,5})?\\]?$")
+
+    /** `http://192.168.1.50:7000` → `192.168.1.50:7000`, para los mensajes. */
+    fun hostLabel(baseUrl: String): String {
+        val normalized = normalizeBase(baseUrl)
+        return normalized
+            .removePrefix("http://")
+            .removePrefix("https://")
+            .substringBefore('/')
+            .ifBlank { normalized }
     }
 
     /** `{base}/stream/{type}/{id}.json` — el endpoint que usa Stremio. */

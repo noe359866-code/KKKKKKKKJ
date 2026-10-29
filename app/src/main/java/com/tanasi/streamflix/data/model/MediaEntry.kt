@@ -91,8 +91,13 @@ data class MediaEntry(
     val ratingText: String? get() = rating?.let { String.format(java.util.Locale.ROOT, "%.1f", it) }
 }
 
-/** Una fila del Home: Continuar viendo, Películas populares, Anime… */
-@Serializable
+/**
+ * Una fila del Home, ya resuelta: Películas populares, Netflix, Anime…
+ *
+ * No se serializa: las filas las construye `CatalogRepository` a partir de las
+ * metas que publica el servidor (`/catalogs.json` + `/catalog/...`), no de un
+ * JSON embebido en el APK.
+ */
 data class CatalogRow(
     val id: String,
     val title: String,
@@ -103,13 +108,6 @@ data class CatalogRow(
     val rowAspect: RowAspect
         get() = if (aspect.equals("landscape", ignoreCase = true)) RowAspect.Landscape else RowAspect.Poster
 }
-
-/** Documento completo del catálogo semilla / remoto. */
-@Serializable
-data class CatalogDocument(
-    val version: Int = 1,
-    val rows: List<CatalogRow> = emptyList(),
-)
 
 /**
  * Traduce una tarjeta al intent del reproductor.

@@ -4,11 +4,12 @@ import android.util.Log
 import com.tanasi.streamflix.BuildConfig
 
 /**
- * Log con etiqueta corta y silenciado en release.
+ * Log con etiqueta corta y **silenciado en release**.
  *
  * Media3 y ExoPlayer son muy habladores con `Log` directo; centralizarlo evita
  * filtrar URLs firmadas en builds de producción (el servidor hace lo mismo con
- * su propio logger).
+ * su propio logger). En release sólo sobreviven avisos y errores, y R8 elimina
+ * las llamadas a `d()`/`i()` (ver `proguard-rules.pro`).
  */
 object AppLog {
     private const val TAG = "Streamflix"
@@ -18,7 +19,7 @@ object AppLog {
     }
 
     fun i(message: String, vararg args: Any?) {
-        Log.i(TAG, format(message, args))
+        if (BuildConfig.DEBUG) Log.i(TAG, format(message, args))
     }
 
     fun w(message: String, vararg args: Any?) {

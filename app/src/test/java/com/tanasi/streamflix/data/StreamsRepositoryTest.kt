@@ -29,9 +29,7 @@ class StreamsRepositoryTest {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     /** Implementación de tres líneas: los repositorios no dependen de Android. */
-    private class FakeSettings(override var baseUrl: String) : AddonSettings {
-        override var remoteCatalogs: Boolean = false
-    }
+    private class FakeSettings(override var baseUrl: String) : AddonSettings
 
     @Before
     fun setUp() {
@@ -147,6 +145,21 @@ class StreamsRepositoryTest {
 
         assertTrue(Urls.isValidBase("10.0.2.2:7000"))
         assertTrue(Urls.isValidBase("http://localhost:7000"))
+        assertTrue(Urls.isValidBase("nas:7000"))
+        assertTrue(Urls.isValidBase("https://addon.midominio.com"))
+        assertTrue(Urls.isValidBase("  https://addon.midominio.com/  "))
+
         assertFalse(Urls.isValidBase("no es una url"))
+        assertFalse(Urls.isValidBase(""))
+        assertFalse(Urls.isValidBase("ftp://192.168.1.50:7000"))
+        assertFalse(Urls.isValidBase("http://192.168.1.50:abc"))
+    }
+
+    @Test
+    fun `normalize quita la barra final y anade el esquema una sola vez`() {
+        assertEquals("http://192.168.1.50:7000", Urls.normalizeBase("192.168.1.50:7000/"))
+        assertEquals("https://addon.midominio.com", Urls.normalizeBase("https://addon.midominio.com//"))
+        assertEquals("http://localhost:7000", Urls.normalizeBase("http://localhost:7000"))
+        assertEquals("192.168.1.50:7000", Urls.hostLabel("http://192.168.1.50:7000/"))
     }
 }

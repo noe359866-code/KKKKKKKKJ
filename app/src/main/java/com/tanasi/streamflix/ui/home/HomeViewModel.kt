@@ -6,6 +6,7 @@ import com.tanasi.streamflix.data.model.HomeCatalog
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.Spotlight
 import com.tanasi.streamflix.data.repo.CatalogRepository
+import com.tanasi.streamflix.data.repo.CatalogResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,7 +16,12 @@ import kotlinx.coroutines.launch
 sealed interface HomeUiState {
     data object Loading : HomeUiState
     data class Ready(val catalog: HomeCatalog) : HomeUiState
-    data class Error(val message: String) : HomeUiState
+
+    /**
+     * @param needsSetup el problema se resuelve configurando la URL del addon;
+     *   la UI ofrece el botón de ajustes además de reintentar.
+     */
+    data class Error(val message: String, val needsSetup: Boolean = false) : HomeUiState
 }
 
 /**
@@ -45,13 +51,22 @@ class HomeViewModel(
         viewModelScope.launch {
             mutableState.value = HomeUiState.Loading
             try {
-                val catalog = repository.load()
-                if (catalog.isEmpty) {
-                    mutableState.value = HomeUiState.Error("El catálogo está vacío")
-                    return@launch
+                when (val result = repository.load()) {
+                    is CatalogResult.Ready -> {
+                        if (result.catalog.isEmpty) {
+                            mutableState.value = HomeUiState.Error(
+                                "El servidor no devolvió ningún título. Revisa los catálogos del backend.",
+                            )
+                            return@launch
+                        }
+                        mutableHero.value = result.catalog.featured
+                        mutableState.value = HomeUiState.Ready(result.catalog)
+                    }
+
+                    is CatalogResult.Failure -> {
+                        mutableState.value = HomeUiState.Error(result.message, result.needsSetup)
+                    }
                 }
-                mutableHero.value = catalog.featured
-                mutableState.value = HomeUiState.Ready(catalog)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
      */
     @Composable
     private fun Catalogue(onPlay: (PlaybackRequest) -> Unit) {
+        val settings = remember { ServiceLocator.settings(applicationContext) }
         val homeFactory = remember {
             viewModelFactory {
                 initializer {
@@ -77,7 +78,9 @@ class MainActivity : ComponentActivity() {
         val homeViewModel: HomeViewModel = viewModel(factory = homeFactory)
 
         var details by remember { mutableStateOf<DetailsTarget?>(null) }
-        var showSettings by remember { mutableStateOf(false) }
+        /* Build de release sin URL configurada: se pide el servidor en el primer
+         * arranque en lugar de dejar al usuario mirando un error. */
+        var showSettings by remember { mutableStateOf(settings.baseUrl.isBlank()) }
 
         HomeScreen(
             viewModel = homeViewModel,
@@ -127,7 +130,7 @@ class MainActivity : ComponentActivity() {
 
         if (showSettings) {
             ServerSettingsDialog(
-                settings = ServiceLocator.settings(applicationContext),
+                settings = settings,
                 onDismiss = { showSettings = false },
                 onSaved = {
                     showSettings = false

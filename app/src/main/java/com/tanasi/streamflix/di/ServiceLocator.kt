@@ -53,9 +53,14 @@ object ServiceLocator {
                 .also { streamsInstance = it }
         }
 
+    /**
+     * El repositorio del Home ya no lee assets locales: sólo necesita el cliente
+     * HTTP y la URL del servidor. Se mantiene el `context` en la firma para no
+     * romper a quien lo llame desde una `Activity`.
+     */
     fun catalogRepository(context: Context): CatalogRepository =
         catalogInstance ?: synchronized(this) {
-            catalogInstance ?: CatalogRepository(context.applicationContext, addonClient(), settings(context), json)
+            catalogInstance ?: CatalogRepository(addonClient(), settings(context))
                 .also { catalogInstance = it }
         }
 

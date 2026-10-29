@@ -6,13 +6,94 @@ plugins {
 }
 
 /*
- * The server base URL is a build-time default that can be overridden:
- *   - gradle.properties / local.properties -> addonBaseUrl=http://192.168.1.50:7000
- *   - command line                          -> -PaddonBaseUrl=http://10.0.2.2:7000
- * It is also editable at runtime from the app's settings sheet, because a TV
- * box and a phone rarely live on the same subnet as the laptop running Node.
+ * ---------------------------------------------------------------------------
+ * Configuración de release
+ * ---------------------------------------------------------------------------
+ * La URL del addon es lo único que cambia entre un build de desarrollo y uno de
+ * producción, y es lo que más fácil se olvida: un release que apunte a
+ * `10.0.2.2` funciona en el emulador y no en el salón.
+ *
+ * Orden de resolución (el primero que exista gana):
+ *   1. variable de entorno         ADDON_BASE_URL
+ *   2. propiedad de Gradle         -PreleaseAddonBaseUrl=…
+ *   3. keystore.properties         releaseAddonBaseUrl=…   (no se versiona)
+ *
+ * Si se pide empaquetar un release sin URL, el build **falla** con instrucciones
+ * en lugar de publicar un APK que no conecta a ningún sitio. El valor se puede
+ * corregir luego desde la app (Ajustes), pero el APK debe nacer apuntando al
+ * backend real.
  */
-def addonBaseUrl = (project.findProperty('addonBaseUrl') ?: 'http://10.0.2.2:7000').toString()
+def buildProps = new Properties()
+def keystorePropsFile = rootProject.file('keystore.properties')
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { buildProps.load(it) }
+}
+
+def resolve = { List<String> keys ->
+    for (String key : keys) {
+        def value = System.getenv(key)
+        if (value == null || value.trim().isEmpty()) value = project.findProperty(key)
+        if (value == null || value.trim().isEmpty()) value = buildProps.getProperty(key)
+        if (value != null && !value.toString().trim().isEmpty()) return value.toString().trim()
+    }
+    return null
+}
+
+def stripTrailingSlashes = { String value -> (value ?: '').replaceAll('/+$', '') }
+
+def debugBaseUrl = stripTrailingSlashes(
+    resolve(['DEBUG_ADDON_BASE_URL', 'addonBaseUrl']) ?: 'http://10.0.2.2:7000'
+)
+def releaseBaseUrl = stripTrailingSlashes(resolve(['ADDON_BASE_URL', 'releaseAddonBaseUrl']))
+
+def validBaseUrl = { String value ->
+    value ==~ '^https?://[^\\s/]+.*$' && !value.contains(' ')
+}
+
+/* `assembleRelease`, `bundleRelease`, `installRelease`, pero también `build`,
+ * `bundle`, `lint` o `check`: todas acaban empaquetando el release. La
+ * comprobación se hace sobre el nombre sin el prefijo del módulo. */
+def releaseTriggers = ['build', 'assemble', 'bundle', 'lint', 'check', 'install', 'package']
+def releaseRequested = gradle.startParameter.taskNames.any { String task ->
+    def name = task.toLowerCase().tokenize(':').last()
+    name.contains('release') || releaseTriggers.contains(name)
+}
+
+if (releaseRequested) {
+    if (releaseBaseUrl == null || releaseBaseUrl.isEmpty()) {
+        throw new GradleException(
+            "Falta la URL de producción del addon.\n" +
+            "Compila con:  ./gradlew assembleRelease -PreleaseAddonBaseUrl=https://addon.tu-dominio.com\n" +
+            "o exporta ADDON_BASE_URL=https://addon.tu-dominio.com (también vale releaseAddonBaseUrl= en keystore.properties).\n" +
+            "Un release nunca se empaqueta apuntando al loopback del emulador."
+        )
+    }
+    if (!validBaseUrl(releaseBaseUrl)) {
+        throw new GradleException("releaseAddonBaseUrl no es una URL http(s) válida: '${releaseBaseUrl}'")
+    }
+}
+
+/*
+ * Keystore de liberación: sólo se firma si existe de verdad. Sin keystore el
+ * build produce `app-release-unsigned.apk` (instalable sólo tras firmarlo) en
+ * vez de firmar en silencio con la clave de debug, que es peor que no firmar.
+ */
+def storeFilePath = resolve(['RELEASE_STORE_FILE'])
+def storePasswordValue = resolve(['RELEASE_STORE_PASSWORD'])
+def keyAliasValue = resolve(['RELEASE_KEY_ALIAS'])
+def keyPasswordValue = resolve(['RELEASE_KEY_PASSWORD'])
+def hasReleaseKeystore = storeFilePath != null &&
+    rootProject.file(storeFilePath).exists() &&
+    storePasswordValue != null && keyAliasValue != null && keyPasswordValue != null
+if (storeFilePath != null && !hasReleaseKeystore) {
+    logger.warn(
+        "Keystore de release incompleto (archivo/claves). Se generará un APK SIN FIRMAR: " +
+        "define RELEASE_STORE_FILE, RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS y RELEASE_KEY_PASSWORD."
+    )
+}
+
+def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '1').toInteger()
+def versionNameValue = resolve(['VERSION_NAME', 'versionName']) ?: '1.0.0'
 
 android {
     namespace 'com.tanasi.streamflix'
@@ -22,21 +103,51 @@ android {
         applicationId 'com.tanasi.streamflix'
         minSdk 23
         targetSdk 35
-        versionCode 1
-        versionName '1.0.0'
+        versionCode versionCodeValue
+        versionName versionNameValue
 
-        buildConfigField 'String', 'DEFAULT_ADDON_BASE_URL', "\"${addonBaseUrl}\""
+        /* Se sobreescribe por buildType: debug apunta al emulador, release a
+         * producción (ver arriba). */
+        buildConfigField 'String', 'DEFAULT_ADDON_BASE_URL', "\"\""
+        buildConfigField 'boolean', 'DEBUG_BUILD', 'false'
+    }
+
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            release {
+                storeFile rootProject.file(storeFilePath)
+                storePassword storePasswordValue
+                keyAlias keyAliasValue
+                keyPassword keyPasswordValue
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+            }
+        }
     }
 
     buildTypes {
         debug {
             applicationIdSuffix '.debug'
             versionNameSuffix '-debug'
+            /* Sólo en debug: el cliente habla con el addon local. */
+            buildConfigField 'String', 'DEFAULT_ADDON_BASE_URL', "\"${debugBaseUrl}\""
+            buildConfigField 'boolean', 'DEBUG_BUILD', 'true'
         }
         release {
+            /* R8: ofusca, elimina código muerto y compacta recursos. El APK de
+             * release no lleva el catálogo de desarrollo ni las utilidades de
+             * depuración (ver proguard-rules.pro). */
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+
+            buildConfigField 'String', 'DEFAULT_ADDON_BASE_URL', "\"${releaseBaseUrl ?: ''}\""
+            buildConfigField 'boolean', 'DEBUG_BUILD', 'false'
+
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
@@ -57,7 +168,17 @@ android {
 
     packaging {
         resources {
-            excludes += ['/META-INF/{AL2.0,LGPL2.1}', 'META-INF/DEPENDENCIES']
+            /* Firmas/avisos de librerías y metadatos del compilador de Kotlin:
+             * no aportan nada al APK final. `DebugProbesKt.bin` es el volcado de
+             * corrutinas de depuración. */
+            excludes += [
+                '/META-INF/{AL2.0,LGPL2.1}',
+                'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE*',
+                'META-INF/NOTICE*',
+                'DebugProbesKt.bin',
+                'kotlin-tooling-metadata.json',
+            ]
         }
     }
 
@@ -74,6 +195,7 @@ android {
         disable 'UnsafeOptInUsageError'
         warningsAsErrors false
         abortOnError true
+        checkReleaseBuilds true
     }
 }
 
@@ -89,8 +211,9 @@ dependencies {
     implementation libs.androidx.compose.ui
     implementation libs.androidx.compose.foundation
     implementation libs.androidx.compose.material3
+    /* Preview/tooling sólo existen en debug: no viajan en el APK de release. */
     debugImplementation libs.androidx.compose.ui.tooling
-    implementation libs.androidx.compose.ui.tooling.preview
+    debugImplementation libs.androidx.compose.ui.tooling.preview
 
     /* Media3: ExoPlayer + HLS (.m3u8) + the data source that carries the
      * Referer/User-Agent headers coming from the addon. */

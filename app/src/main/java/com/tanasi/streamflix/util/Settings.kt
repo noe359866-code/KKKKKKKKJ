@@ -14,16 +14,19 @@ import com.tanasi.streamflix.BuildConfig
  */
 interface AddonSettings {
     var baseUrl: String
-    var remoteCatalogs: Boolean
 }
 
 /**
  * Ajustes del cliente.
  *
- * Hoy sólo hay dos que importen: **la URL del servidor** —el backend vive en el
- * portátil del usuario o en un cajón Android TV, así que no se puede fijar en el
- * APK— y si se consultan catálogos remotos. Se guardan en `SharedPreferences`
- * con el valor de `BuildConfig` como semilla (`-PaddonBaseUrl=…`).
+ * Sólo hay uno que importe: **la URL del servidor**. El backend es autoalojado
+ * (portátil, NAS o cajón Android TV), así que la dirección se puede fijar en
+ * tiempo de compilación para el despliegue real (`-PaddonBaseUrl=…`, ver
+ * `app/build.gradle`) y corregir después desde la app sin reinstalar el APK.
+ *
+ * Se guarda en `SharedPreferences` con el valor de `BuildConfig` como semilla;
+ * un build de release sin URL configurada arranca vacío y la app pide la
+ * dirección en el primer arranque.
  */
 class Settings(context: Context) : AddonSettings {
 
@@ -36,20 +39,6 @@ class Settings(context: Context) : AddonSettings {
             ?: BuildConfig.DEFAULT_ADDON_BASE_URL
         set(value) = prefs.edit { putString(KEY_BASE_URL, value.trim()) }
 
-    /**
-     * Catálogos servidos por el addon (`/catalogs.json` +
-     * `/catalog/{type}/{id}.json`). **Encendido por defecto**: el servidor
-     * publica las filas (películas, series, anime, TV en vivo y deportes) y la
-     * app las pinta tal cual, así que añadir una fila es editar
-     * `server/config/catalogs.json` y no reinstalar el APK.
-     *
-     * Apagarlo deja el Home con la cartelera curada de `assets/catalog/seed.json`
-     * —útil si el servidor no responde o si se quiere una lista fija—.
-     */
-    override var remoteCatalogs: Boolean
-        get() = prefs.getBoolean(KEY_REMOTE_CATALOGS, true)
-        set(value) = prefs.edit { putBoolean(KEY_REMOTE_CATALOGS, value) }
-
     /** Vuelve al valor compilado (útil cuando el usuario se equivoca de IP). */
     fun resetBaseUrl() {
         prefs.edit { remove(KEY_BASE_URL) }
@@ -58,6 +47,5 @@ class Settings(context: Context) : AddonSettings {
     private companion object {
         const val PREFS_NAME = "streamflix.settings"
         const val KEY_BASE_URL = "addon.baseUrl"
-        const val KEY_REMOTE_CATALOGS = "addon.remoteCatalogs"
     }
 }

@@ -352,18 +352,26 @@ the APK:
 ./gradlew :app:assembleDebug -PaddonBaseUrl=http://192.168.1.50:7000
 ```
 
-`10.0.2.2:7000` (the emulator's view of the host) is the default. It is also
-editable at runtime from **Servidor** in the home header; the value is stored in
-`SharedPreferences` and normalised (`192.168.1.50:7000` → `http://…`).
+`10.0.2.2:7000` (the emulator's view of the host) is the default **only for debug
+builds**. A release build takes its URL from the build environment (see
+[Release build](#release-build-apk--aab)) and refuses to be packaged without
+one, so a production APK never ships pointing at the emulator loopback.
+
+The address stays editable at runtime from **Servidor** in the home header — a TV
+box in another subnet must be fixable without a laptop and a rebuild. The value
+is stored in `SharedPreferences` and normalised (`192.168.1.50:7000` →
+`http://…`). A release APK with no URL configured opens that dialog on first
+launch instead of showing an error.
 
 Cleartext HTTP is allowed because a LAN address cannot be known in advance; the
 video CDNs themselves are HTTPS.
 
 ### Home catalogue (server-driven)
 
-The home screen is built from the **backend catalog config**, not from Kotlin.
-On launch the app asks `GET /catalogs.json` which rows the addon publishes and
-then loads every row in parallel from `GET /catalog/{type}/{id}.json`:
+The home screen is built from the **backend catalog config**, not from Kotlin and
+not from a bundled JSON. On launch the app asks `GET /catalogs.json` which rows
+the addon publishes and then loads every row in parallel from
+`GET /catalog/{type}/{id}.json`:
 
 - **card shape comes from the server** — `posterShape: "poster"` renders 2:3
   posters (movies, series, anime), `posterShape: "landscape"` renders 16:9
@@ -380,20 +388,19 @@ then loads every row in parallel from `GET /catalog/{type}/{id}.json`:
   `server/config/catalogs.json` and restarting Node: no APK rebuild, no
   reinstall on the TV;
 - each row fails on its own: if Cinemeta is down the movie rows disappear but
-  the live row (served from a local JSON) still plays. If the addon is not
-  reachable at all, the app falls back to the bundled
-  `app/src/main/assets/catalog/seed.json` plus the device-local
-  **Continuar viendo** row.
+  the live row (served from a local JSON) still plays. Rows have their own
+  timeout, so a slow catalog never blocks the Home.
+
+There is **no bundled catalogue**: the release APK contains no mock cards. If the
+server is not configured or unreachable, the screen states it and offers
+*Reintentar* / *Configurar servidor* instead of showing placeholder content.
 
 Tapping a Cinemeta card keeps its **IMDb id** (`tt0944947`). For a series the
 details sheet asks `GET /meta/{type}/{id}.json` for the episode list, picks one
 (`tt0944947:1:2`) and only then requests
 `GET /stream/series/tt0944947:1:2.json`; the chosen source index still flows
 into `PlaybackRequest.startIndex`, so ExoPlayer starts on the server the user
-picked and fails over downward exactly like the seed rows do.
-
-`Settings.remoteCatalogs` (on by default) is the escape hatch: turn it off to
-pin the curated `seed.json` shelf even when the server publishes rows.
+picked and fails over downward exactly like any other row.
 
 ### Build, run, test
 
@@ -407,13 +414,109 @@ Unit tests live in `app/src/test/` and cover the parts where a bug costs a
 movie: `FailoverPlannerTest` (order, one attempt per source, no wrap-around),
 `FailoverRulesTest` (which error codes hop, which do not), `SeekPolicyTest`
 (seeking at the edges of the timeline), `PlayerKeyMapTest` (the remote-control
-mapping), `DurationsTest` (clock formatting) and `StreamsRepositoryTest` (URL
-shape, header parsing, HTTP failures via `MockWebServer`).
+mapping), `DurationsTest` (clock formatting), `StreamsRepositoryTest` (URL
+shape, header parsing, HTTP failures via `MockWebServer`) and
+`CatalogRepositoryTest` (the Home against a fake backend: no local catalogue,
+server-decided card shape, per-row isolation, unreachable host vs. server with
+no rows).
 
 Smoke test with the real backend: run `npm start`, point the app at it, move the
 D-Pad across a shelf (the hero must follow), open a card, pick the third server
 in the panel, press Reproducir, then stop that provider and watch the player hop
 to the next source without losing your position.
+
+### Release build (APK + AAB)
+
+One signed artifact installs on both a phone and an Android TV box (see
+[One APK, two form factors](#one-apk-two-form-factors)).
+
+```bash
+export ADDON_BASE_URL=https://addon.tu-dominio.com    # required
+./scripts/release-android.sh                          # APK + AAB + summary
+```
+
+The script is a thin wrapper; the same build by hand is:
+
+```bash
+./gradlew :app:assembleRelease :app:bundleRelease \
+    -PreleaseAddonBaseUrl=https://addon.tu-dominio.com
+```
+
+Outputs:
+
+| Artifact | Path |
+| --- | --- |
+| APK (sideload to TV/phone) | `app/build/outputs/apk/release/app-release.apk` |
+| AAB (Google Play) | `app/build/outputs/bundle/release/app-release.aab` |
+| R8 mapping (crash de-obfuscation) | `app/build/outputs/mapping/release/mapping.txt` |
+
+Without a keystore the APK is written as `app-release-unsigned.apk`: **it will
+not install** until it is signed. That is deliberate — silently signing with the
+debug key produces an app that cannot be updated later.
+
+#### Where the production URL comes from
+
+First match wins; the build **fails with instructions** if none is set:
+
+1. environment variable `ADDON_BASE_URL` (what CI uses);
+2. Gradle property `-PreleaseAddonBaseUrl=…`;
+3. `releaseAddonBaseUrl=…` in `keystore.properties` (not versioned).
+
+Validation rejects anything that is not `http(s)://…`, and both debug and
+release strip trailing slashes before `BuildConfig.DEFAULT_ADDON_BASE_URL` is
+written, so `https://host/` and `https://host` produce identical requests.
+
+#### Signing
+
+```bash
+keytool -genkeypair -v -keystore release.keystore -alias streamflix \
+    -keyalg RSA -keysize 4096 -validity 10000
+cp keystore.properties.example keystore.properties   # then fill it in
+```
+
+`keystore.properties` and every `*.keystore` / `*.jks` are git-ignored. The four
+values can also come from the environment (`RELEASE_STORE_FILE`,
+`RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`), which is
+how `.github/workflows/android-release.yml` signs in CI (keystore base64 in a
+secret). Signing enables v1 + v2 + v3, so the same APK installs on old Android TV
+boxes and on current phones.
+
+#### What the release build changes
+
+- **R8 full mode**: obfuscation + tree shaking + resource shrinking
+  (`android.enableR8.fullMode=true`). `proguard-rules.pro` keeps only what is
+  resolved by name (manifest components, `kotlinx.serialization` metadata and
+  `$$serializer`s) plus `-assumenosideeffects` on `Log.v/d/i`, so debug logging
+  and signed URLs do not survive into the APK. No blanket
+  `-keep class androidx.**`.
+- **No demo data**: `app/src/main/assets/` is gone; the catalogue is whatever
+  the backend publishes.
+- **No tooling**: Compose preview/tooling is `debugImplementation`; `DEBUG_BUILD`
+  is `false` and `AppLog.d/i` are stripped.
+- **Smaller, faster**: `shrinkResources`, `resConfigs` not needed (single
+  locale), packaging excludes, and `versionCode`/`versionName` overridable with
+  `-PVERSION_CODE=…  -PVERSION_NAME=…` for store uploads.
+
+#### Install and verify
+
+```bash
+adb install -r app/build/outputs/apk/release/app-release.apk
+adb shell pm list packages | grep tanasi      # com.tanasi.streamflix
+```
+
+On a TV: `adb connect <box-ip>:5555` first, then the same `install`. The leanback
+launcher entry and the TV banner come from the manifest, and `uses-feature
+leanback/touchscreen` are both `required="false"`, so a single APK is offered to
+phones and TVs alike. Smoke test: open the app, check the header shows the
+production host, play a live channel, then kill the backend and confirm the Home
+degrades to *Reintentar* / *Configurar servidor* instead of fake content.
+
+#### CI
+
+`.github/workflows/android-release.yml` builds the same artifacts on a runner
+with JDK 17 + Android SDK, runs the unit tests and `lintRelease`, and uploads the
+APK, the AAB and the R8 mapping. Trigger it manually with the backend URL, or
+push a `v*` tag to use the `PRODUCTION_ADDON_BASE_URL` repository variable.
 
 ## Getting started
 

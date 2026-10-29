@@ -57,7 +57,7 @@ data class CatalogDescriptor(
     val mediaType: MediaType get() = MediaType.fromWire(type) ?: MediaType.Movie
 
     /**
-     * Id de fila estable y sin colisiones con la semilla local.
+     * Id de fila estable y sin colisiones entre catálogos.
      * El hero indexa por `fila/título`, así que dos filas con el mismo id
      * romperían la etiqueta ("TV en Vivo · 3 de 9").
      */

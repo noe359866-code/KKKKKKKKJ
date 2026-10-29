@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,6 +38,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -102,15 +104,45 @@ fun HomeScreen(
             }
 
             is HomeUiState.Error -> CenteredMessage {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .widthIn(max = 520.dp)
+                        .padding(horizontal = 24.dp),
+                ) {
+                    Text(
+                        text = "Sin catálogo",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = StreamflixColors.OnSurface,
+                    )
+                    Spacer(Modifier.height(8.dp))
                     Text(
                         text = current.message,
                         style = MaterialTheme.typography.bodyLarge,
                         color = StreamflixColors.OnSurfaceMuted,
+                        textAlign = TextAlign.Center,
                     )
-                    Spacer(Modifier.height(16.dp))
-                    OutlinedButton(onClick = { viewModel.load() }) {
-                        Text("Reintentar")
+                    Spacer(Modifier.height(20.dp))
+                    /* Ambos botones siempre presentes: esta pantalla sustituye al
+                     * Home entero, así que si aquí no se puede abrir el diálogo
+                     * del servidor el usuario se queda sin salida (una TV no
+                     * tiene otra forma de corregir la IP). El orden cambia según
+                     * lo que probablemente arregle el problema. */
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (current.needsSetup) {
+                            OutlinedButton(onClick = onOpenSettings) {
+                                Text("Configurar servidor")
+                            }
+                        }
+                        OutlinedButton(onClick = { viewModel.load() }) {
+                            Text("Reintentar")
+                        }
+                        if (!current.needsSetup) {
+                            OutlinedButton(onClick = onOpenSettings) {
+                                Text("Configurar servidor")
+                            }
+                        }
                     }
                 }
             }

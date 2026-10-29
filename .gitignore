@@ -1,4 +1,6 @@
 # --- Gradle / Android -------------------------------------------------------
+# Firma de release: llaves y sus contraseñas nunca entran al repositorio.
+keystore.properties
 .gradle/
 build/
 local.properties
@@ -9,6 +11,7 @@ captures/
 .cxx/
 *.apk
 *.aab
+# Keystores de firma: llaves privadas, nunca al repositorio.
 *.keystore
 *.jks
 

@@ -1,0 +1,115 @@
+name: Android release
+
+# Compila el APK/AAB de producción en un runner con JDK 17 + Android SDK.
+#
+# Disparadores:
+#   - manual (workflow_dispatch) indicando la URL del backend;
+#   - tag v* (usa la variable de repositorio PRODUCTION_ADDON_BASE_URL).
+#
+# Firma:
+#   - opcional; si RELEASE_KEYSTORE_BASE64 está definido, el workflow decodifica
+#     el keystore y firma el APK/AAB;
+#   - si no, genera un APK SIN FIRMAR (útil para verificar el build).
+
+on:
+  workflow_dispatch:
+    inputs:
+      addon_base_url:
+        description: "URL pública del backend Node (https://addon.tu-dominio.com)"
+        required: true
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      # La URL del backend: input del workflow manual o variable del repo.
+      ADDON_BASE_URL: ${{ inputs.addon_base_url || vars.PRODUCTION_ADDON_BASE_URL }}
+      # Firma opcional. Los secretos se leen como env (no en `if:`): así el
+      # workflow funciona igual sin keystore configurado.
+      KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+      RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+      RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+      RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      # El SDK de Android no viene en el runner de Ubuntu; la action oficial lo
+      # instala y acepta las licencias.
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Lint (release)
+        run: ./gradlew :app:lintRelease --no-daemon --stacktrace
+
+      - name: Decode release keystore
+        if: env.KEYSTORE_BASE64 != ''
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "${RUNNER_TEMP}/release.keystore"
+          echo "RELEASE_STORE_FILE=${RUNNER_TEMP}/release.keystore" >> "$GITHUB_ENV"
+
+      - name: Build release APK + AAB
+        run: |
+          if [ -z "$ADDON_BASE_URL" ]; then
+            echo "::error::Falta ADDON_BASE_URL (input del workflow o variable PRODUCTION_ADDON_BASE_URL)."
+            exit 1
+          fi
+          echo "Backend: $ADDON_BASE_URL"
+          ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace
+
+      - name: Resumen
+        run: |
+          echo "## Artefactos" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          find app/build/outputs/apk/release app/build/outputs/bundle/release \
+            -maxdepth 1 -type f \( -name '*.apk' -o -name '*.aab' \) -printf '- `%p` (%s bytes)\n' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload AAB (Google Play)
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload R8 mapping
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-mapping
+          path: app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: warn
+          retention-days: 90
