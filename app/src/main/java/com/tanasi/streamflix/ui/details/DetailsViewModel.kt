@@ -10,7 +10,7 @@ import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.data.model.SeasonGroup
 import com.tanasi.streamflix.data.model.StreamSource
 import com.tanasi.streamflix.data.model.toSeasonGroups
-import com.tanasi.streamflix.data.remote.AddonClient
+import com.tanasi.streamflix.data.remote.ContentClient
 import com.tanasi.streamflix.data.repo.StreamsRepository
 import com.tanasi.streamflix.data.repo.StreamsResult
 import com.tanasi.streamflix.util.AddonSettings
@@ -84,7 +84,7 @@ sealed interface EpisodesUiState {
 class DetailsViewModel(
     val entry: MediaEntry,
     private val repository: StreamsRepository,
-    private val client: AddonClient? = null,
+    private val client: ContentClient? = null,
     private val settings: AddonSettings? = null,
 ) : ViewModel() {
 

@@ -86,6 +86,14 @@
 -dontwarn org.openjsse.**
 
 # ---------------------------------------------------------------------------
+# Chaquopy / Python embebido
+# ---------------------------------------------------------------------------
+# El runtime se usa desde JNI y carga módulos por nombre. Se conserva completo
+# para que R8 no elimine el puente que ejecuta los scrapers dentro de la APK.
+-keep class com.chaquo.python.** { *; }
+-dontwarn com.chaquo.python.**
+
+# ---------------------------------------------------------------------------
 # Componentes del manifest
 # ---------------------------------------------------------------------------
 # El framework instancia estas clases **por nombre** y llama al constructor sin

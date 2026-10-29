@@ -3,7 +3,7 @@ package com.tanasi.streamflix.data.repo
 import com.tanasi.streamflix.data.model.CatalogDescriptor
 import com.tanasi.streamflix.data.model.CatalogRow
 import com.tanasi.streamflix.data.model.HomeCatalog
-import com.tanasi.streamflix.data.remote.AddonClient
+import com.tanasi.streamflix.data.remote.ContentClient
 import com.tanasi.streamflix.data.remote.Urls
 import com.tanasi.streamflix.util.AddonSettings
 import com.tanasi.streamflix.util.AppLog
@@ -52,7 +52,7 @@ sealed interface CatalogResult {
  * de prueba que el usuario confunda con contenido real.
  */
 class CatalogRepository(
-    private val client: AddonClient,
+    private val client: ContentClient,
     private val settings: AddonSettings,
 ) {
 
@@ -62,31 +62,42 @@ class CatalogRepository(
     suspend fun load(): CatalogResult = withContext(Dispatchers.IO) {
         cached?.let { return@withContext CatalogResult.Ready(it) }
 
+        val embedded = settings.useEmbedded
         val baseUrl = settings.baseUrl.trim()
-        if (baseUrl.isEmpty()) {
+        if (!embedded && baseUrl.isEmpty()) {
             return@withContext CatalogResult.Failure(
-                "Falta configurar la dirección del servidor.",
+                "Falta configurar la dirección del servidor externo.",
                 needsSetup = true,
             )
         }
 
         val descriptors = try {
-            /* El descubrimiento tiene su propio tope: si el servidor no responde,
-             * el Home debe decir algo en segundos, no colgarse el `callTimeout`. */
-            withTimeoutOrNull(DISCOVERY_TIMEOUT_MS) { client.catalogs(baseUrl) }.orEmpty()
+            /* El descubrimiento tiene su propio tope: si el origen no responde,
+             * el Home debe decir algo en segundos, no colgarse indefinidamente. */
+            withTimeoutOrNull(if (embedded) EMBEDDED_DISCOVERY_TIMEOUT_MS else DISCOVERY_TIMEOUT_MS) {
+                client.catalogs(baseUrl)
+            }.orEmpty()
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            AppLog.w("no se pudieron leer los catálogos del addon: %s", error.message)
+            AppLog.w("no se pudieron leer los catálogos: %s", error.message)
             return@withContext CatalogResult.Failure(
-                "No se pudo conectar con ${Urls.hostLabel(baseUrl)}. Revisa que el servidor esté encendido y la dirección sea correcta.",
-                needsSetup = true,
+                if (embedded) {
+                    "No se pudo cargar el catálogo integrado. Revisa la conexión a internet y reintenta."
+                } else {
+                    "No se pudo conectar con ${Urls.hostLabel(baseUrl)}. Revisa que el servidor esté encendido y la dirección sea correcta."
+                },
+                needsSetup = !embedded,
             )
         }
 
         if (descriptors.isEmpty()) {
             return@withContext CatalogResult.Failure(
-                "El servidor respondió pero no publica catálogos. Revisa config/catalogs.json en el backend.",
+                if (embedded) {
+                    "No hay catálogos integrados disponibles. Reintenta con conexión a internet."
+                } else {
+                    "El servidor respondió pero no publica catálogos. Revisa config/catalogs.json en el backend."
+                },
                 needsSetup = false,
             )
         }
@@ -155,8 +166,9 @@ class CatalogRepository(
     private companion object {
         /** Tope del descubrimiento de catálogos (ms). */
         const val DISCOVERY_TIMEOUT_MS = 4_000L
+        const val EMBEDDED_DISCOVERY_TIMEOUT_MS = 12_000L
 
         /** Tope por fila (ms), holgado sobre el `CINEMETA_TIMEOUT_MS` del servidor. */
-        const val ROW_TIMEOUT_MS = 12_000L
+        const val ROW_TIMEOUT_MS = 15_000L
     }
 }

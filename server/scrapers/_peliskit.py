@@ -175,7 +175,12 @@ def parse_ref(content_id: str, provider: str) -> Dict[str, Any]:
 
 
 def apply_payload(ref: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Completa el id con la temporada/episodio y el IMDb que manda el addon."""
+    """Completa el id con temporada/episodio, IMDb y título/año del cliente.
+
+    El modo autónomo de la APK manda `title`/`year` desde Cinemeta. Así los
+    sitios pueden buscar por nombre aunque el id original sea sólo IMDb y no
+    haya clave de TMDB configurada.
+    """
     payload = payload or {}
     if not ref.get("explicit_episode"):
         season, episode = payload.get("season"), payload.get("episode")
@@ -186,6 +191,20 @@ def apply_payload(ref: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any
         imdb = str(payload.get("imdbId") or "").strip()
         if IMDB_RE.match(imdb):
             ref["imdb"] = imdb.lower()
+    title = str(payload.get("title") or "").strip()
+    year = str(payload.get("year") or "").strip()
+    if title:
+        if not ref.get("title"):
+            ref["title"] = title
+        if not ref.get("title_hint"):
+            ref["title_hint"] = title
+        if year and not ref.get("year"):
+            ref["year"] = year
+        if not ref.get("slug"):
+            candidates = slug_variants(title, year or ref.get("year"))
+            if candidates:
+                ref["slug_candidates"] = candidates
+                ref["slug"] = candidates[0]
     return ref
 
 

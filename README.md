@@ -5,7 +5,7 @@
   <br />
   <strong>🔄 Reborn Version</strong> - Community continuation of the original Streamflix project
   <br />
-  An open-source Android TV / Google TV app for educational streaming interface, made with Android Studio, in Kotlin
+  A self-contained Android TV / Google TV app for educational streaming interface, made with Android Studio, Kotlin and embedded Python scrapers
   <br />
   <a href="https://github.com/streamflix-reborn/streamflix/releases/latest">
     <strong>Download app »</strong>
@@ -51,7 +51,7 @@
 - **Enhanced Support**: Continued development and bug fixes by an independent developer
 - **Respectful Fork**: Built with full respect for the original creator's work
 
-Streamflix Reborn is an open-source Android TV / Google TV app that provides a user interface for accessing publicly available streaming content from various third-party providers.
+Streamflix Reborn is a self-contained Android TV / Google TV app that provides a user interface for accessing publicly available streaming content from various third-party providers.
 
 This app is designed for educational purposes and personal use only. Users are responsible for ensuring they have proper authorization to access any content they view through this application.
 
@@ -63,7 +63,7 @@ The interface aggregates content from multiple sources and provides a convenient
 - Aggregates content from multiple third-party providers
 - No account required for the app interface
 - Educational and personal use only
-- Android TV-only APK: Leanback launcher, D-Pad navigation and TV-sized UI
+- Self-contained Android TV APK: embedded scrapers, catalogue, details, player and D-Pad UI
 - Multiple providers, with automatic silent failover between their streams
 - Home with horizontal carousels for Películas, Series, Anime and TV en Vivo
 
@@ -75,7 +75,7 @@ The interface aggregates content from multiple sources and provides a convenient
 - [Media3 ExoPlayer](https://developer.android.com/media/media3/exoplayer)
 - [OkHttp](https://square.github.io/okhttp) + kotlinx.serialization
 - MVVM architecture (`ViewModel` + `StateFlow`)
-- Android TV / Google TV only (Leanback required)
+- Android TV / Google TV only (Leanback required), no external server needed
 
 
 ## Stremio addon backend (Node.js)
@@ -178,7 +178,7 @@ tests and Docker).
 
 ## Android client (Kotlin + Compose)
 
-`app/` is the client. It contains **no scraping logic**: it asks the Node addon
+`app/` is a self-contained Android TV client. By default it runs the scraping logic inside the APK (Chaquopy) and asks the Node addon only in advanced external mode
 for `GET /stream/{type}/{id}.json` and plays whatever ordered list comes back.
 
 | Concern | Choice |
@@ -422,15 +422,17 @@ One signed artifact targets Android TV / Google TV only (see
 [Android TV only](#android-tv-only)).
 
 ```bash
-export ADDON_BASE_URL=https://addon.tu-dominio.com    # required
-./scripts/release-android.sh                          # APK + AAB + summary
+./scripts/release-android.sh                          # autonomous APK + AAB
+# optional external server preset:
+# ADDON_BASE_URL=https://addon.tu-dominio.com ./scripts/release-android.sh
 ```
 
 The script is a thin wrapper; the same build by hand is:
 
 ```bash
-./gradlew :app:assembleRelease :app:bundleRelease \
-    -PreleaseAddonBaseUrl=https://addon.tu-dominio.com
+./gradlew :app:assembleRelease :app:bundleRelease
+# optional external server preset:
+# ./gradlew :app:assembleRelease :app:bundleRelease -PreleaseAddonBaseUrl=https://addon.tu-dominio.com
 ```
 
 Outputs:
@@ -445,9 +447,9 @@ Without a keystore the APK is written as `app-release-unsigned.apk`: **it will
 not install** until it is signed. That is deliberate — silently signing with the
 debug key produces an app that cannot be updated later.
 
-#### Where the production URL comes from
+#### Optional external server URL
 
-First match wins; the build **fails with instructions** if none is set:
+The autonomous build does not need a URL. If you want to preset an external Node addon, first match wins:
 
 1. environment variable `ADDON_BASE_URL` (what CI uses);
 2. Gradle property `-PreleaseAddonBaseUrl=…`;
@@ -457,16 +459,9 @@ Validation rejects anything that is not `http(s)://…`, and both debug and
 release strip trailing slashes before `BuildConfig.DEFAULT_ADDON_BASE_URL` is
 written, so `https://host/` and `https://host` produce identical requests.
 
-There is one explicit escape hatch for packaging before you have a domain:
-
-```bash
-./gradlew :app:assembleRelease -PallowEmptyAddonBaseUrl=true
-```
-
-The APK then carries **no** default URL and the app asks for the server on first
-launch (the same dialog you get when the address is wrong). It never falls back
-to `10.0.2.2` and never ships placeholder content; CI uses this mode when it is
-dispatched without a URL.
+Without `ADDON_BASE_URL`, the APK starts in **embedded mode**: Python scrapers,
+catalogue config, Cinemeta metadata and the player are packaged together. The
+external Node server remains available from Settings for advanced setups.
 
 #### Signing
 
@@ -491,15 +486,15 @@ boxes and on current Google TV devices.
   `$$serializer`s) plus `-assumenosideeffects` on `Log.v/d/i`, so debug logging
   and signed URLs do not survive into the APK. No blanket
   `-keep class androidx.**`.
-- **No demo data**: `app/src/main/assets/` is gone; the catalogue is whatever
-  the backend publishes.
+- **No demo data**: embedded demo providers are disabled; the catalogue comes
+  from the embedded config, Cinemeta and the enabled scrapers.
 - **No tooling**: Compose preview/tooling is `debugImplementation`; `DEBUG_BUILD`
   is `false` and `AppLog.d/i` are stripped.
 - **Smaller, faster**: `shrinkResources`, `resConfigs` not needed (single
   locale), packaging excludes, and `versionCode`/`versionName` overridable with
   `-PVERSION_CODE=…  -PVERSION_NAME=…` for store uploads. The current release
-  defaults to **0.9.9** (version code **3**); CI checks both values, verifies the
-  TV-only manifest, and names the APK `streamflix-0.9.9.apk`.
+  defaults to **0.9.9** (version code **4**); CI checks both values, verifies the
+  TV-only manifest and the embedded Python package, and names the APK `streamflix-0.9.9.apk`.
 
 #### Install and verify
 
@@ -519,11 +514,11 @@ degrades to *Reintentar* / *Configurar servidor* instead of fake content.
 #### CI
 
 `.github/workflows/android-release.yml` builds the same artifacts on a runner
-with JDK 17 + Android SDK, runs the unit tests and `lintRelease`, verifies the
-TV-only manifest and signature with `apksigner`, and uploads the APK, the AAB and the R8 mapping.
+with JDK 17 + Android SDK + Python 3, runs the unit tests and `lintRelease`,
+verifies the TV-only manifest, embedded scrapers and signature with `apksigner`,
+and uploads the APK, the AAB and the R8 mapping.
 
-- **manual**: *Run workflow* with the backend URL (leave it empty to get an APK
-  that asks for the server on first launch);
+- **manual**: *Run workflow* (leave the backend URL empty for the autonomous APK);
 - **tag**: pushing `v0.9.9` uses the `PRODUCTION_ADDON_BASE_URL` repository
   variable and attaches the APK, AAB and SHA-256 digests to a GitHub Release
   for direct downloads (artifacts are also retained for 30 days).

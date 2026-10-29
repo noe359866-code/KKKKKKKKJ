@@ -55,7 +55,7 @@ class HomeViewModel(
                     is CatalogResult.Ready -> {
                         if (result.catalog.isEmpty) {
                             mutableState.value = HomeUiState.Error(
-                                "El servidor no devolvió ningún título. Revisa los catálogos del backend.",
+                                "No se encontró ningún título. Revisa la conexión o cambia el origen en Ajustes.",
                             )
                             return@launch
                         }

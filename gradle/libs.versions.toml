@@ -11,6 +11,7 @@ kotlinxSerialization = "1.8.1"
 kotlinxCoroutines = "1.10.2"
 coil = "2.7.0"
 junit = "4.13.2"
+chaquopy = "17.2.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -45,3 +46,4 @@ android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+chaquopy = { id = "com.chaquo.python", version.ref = "chaquopy" }

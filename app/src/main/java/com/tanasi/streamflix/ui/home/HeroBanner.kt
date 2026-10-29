@@ -240,7 +240,7 @@ fun HeroBanner(
                     onClick = onDetails,
                 )
                 HeroButton(
-                    text = if (isTv) "Cambiar servidor" else "Servidor",
+                    text = "Cambiar fuente",
                     deviceProfile = deviceProfile,
                     focusRequester = sourcesFocusRequester,
                     upFocus = upFocus,

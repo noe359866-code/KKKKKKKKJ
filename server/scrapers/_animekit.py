@@ -140,7 +140,16 @@ def parse_id(content_id: str, provider: str) -> Dict[str, Any]:
 
 
 def apply_payload_episode(ref: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Si el id no traía episodio, se usan `season`/`episode` del payload."""
+    """Completa episodio y, si hace falta, el slug desde el título del cliente.
+
+    La APK autónoma puede mandar un id IMDb de Cinemeta más `title`; en ese
+    caso el slug útil para buscar en el sitio sale del título, no del `tt…`.
+    """
+    payload = payload or {}
+    title = str(payload.get("title") or "").strip()
+    slug = str(ref.get("slug") or "")
+    if title and (not slug or re.fullmatch(r"tt\d+", slug, flags=re.IGNORECASE)):
+        ref["slug"] = slugify(title)
     if ref.get("explicit_episode"):
         return ref
     episode = payload.get("episode")

@@ -1,7 +1,10 @@
 package com.tanasi.streamflix.di
 
 import android.content.Context
+import com.tanasi.streamflix.data.embedded.EmbeddedContentClient
 import com.tanasi.streamflix.data.remote.AddonClient
+import com.tanasi.streamflix.data.remote.ContentClient
+import com.tanasi.streamflix.data.remote.RoutingContentClient
 import com.tanasi.streamflix.data.repo.CatalogRepository
 import com.tanasi.streamflix.data.repo.StreamsRepository
 import com.tanasi.streamflix.util.Settings
@@ -10,11 +13,9 @@ import kotlinx.serialization.json.Json
 /**
  * Inyección de dependencias manual.
  *
- * El árbol de objetos es diminuto (un cliente HTTP, dos repositorios, un
- * `SharedPreferences`), así que Hilt/Koin sólo añadirían un procesador de
- * anotaciones y tiempo de build. Es un `object` con `@Volatile` y `synchronized`
- * para que dos actividades que arrancan a la vez no creen dos `OkHttpClient`
- * (cada uno con su pool de conexiones y su caché de DNS).
+ * La APK es autónoma por defecto: el cliente de contenido enruta a los scrapers
+ * Python embebidos. El addon Node externo sigue disponible como opción avanzada
+ * y comparte el mismo contrato [ContentClient].
  */
 object ServiceLocator {
 
@@ -22,7 +23,10 @@ object ServiceLocator {
     private var settingsInstance: Settings? = null
 
     @Volatile
-    private var clientInstance: AddonClient? = null
+    private var remoteClientInstance: AddonClient? = null
+
+    @Volatile
+    private var contentClientInstance: ContentClient? = null
 
     @Volatile
     private var streamsInstance: StreamsRepository? = null
@@ -43,24 +47,28 @@ object ServiceLocator {
         }
 
     fun addonClient(): AddonClient =
-        clientInstance ?: synchronized(this) {
-            clientInstance ?: AddonClient(AddonClient.defaultHttpClient(), json).also { clientInstance = it }
+        remoteClientInstance ?: synchronized(this) {
+            remoteClientInstance ?: AddonClient(AddonClient.defaultHttpClient(), json).also { remoteClientInstance = it }
+        }
+
+    fun contentClient(context: Context): ContentClient =
+        contentClientInstance ?: synchronized(this) {
+            contentClientInstance ?: RoutingContentClient(
+                settings = settings(context),
+                remote = addonClient(),
+                embedded = lazy { EmbeddedContentClient(context.applicationContext, json) },
+            ).also { contentClientInstance = it }
         }
 
     fun streamsRepository(context: Context): StreamsRepository =
         streamsInstance ?: synchronized(this) {
-            streamsInstance ?: StreamsRepository(addonClient(), settings(context))
+            streamsInstance ?: StreamsRepository(contentClient(context), settings(context))
                 .also { streamsInstance = it }
         }
 
-    /**
-     * El repositorio del Home ya no lee assets locales: sólo necesita el cliente
-     * HTTP y la URL del servidor. Se mantiene el `context` en la firma para no
-     * romper a quien lo llame desde una `Activity`.
-     */
     fun catalogRepository(context: Context): CatalogRepository =
         catalogInstance ?: synchronized(this) {
-            catalogInstance ?: CatalogRepository(addonClient(), settings(context))
+            catalogInstance ?: CatalogRepository(contentClient(context), settings(context))
                 .also { catalogInstance = it }
         }
 
@@ -69,7 +77,8 @@ object ServiceLocator {
         synchronized(this) {
             streamsInstance = null
             catalogInstance = null
-            clientInstance = null
+            contentClientInstance = null
+            remoteClientInstance = null
             settingsInstance = null
         }
     }

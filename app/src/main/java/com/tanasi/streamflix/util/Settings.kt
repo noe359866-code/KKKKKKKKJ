@@ -14,19 +14,17 @@ import com.tanasi.streamflix.BuildConfig
  */
 interface AddonSettings {
     var baseUrl: String
+
+    /** `true` = scrapers embebidos en la APK; `false` = addon Node externo. */
+    val useEmbedded: Boolean get() = false
 }
 
 /**
  * Ajustes del cliente.
  *
- * Sólo hay uno que importe: **la URL del servidor**. El backend es autoalojado
- * (portátil, NAS o cajón Android TV), así que la dirección se puede fijar en
- * tiempo de compilación para el despliegue real (`-PaddonBaseUrl=…`, ver
- * `app/build.gradle`) y corregir después desde la app sin reinstalar el APK.
- *
- * Se guarda en `SharedPreferences` con el valor de `BuildConfig` como semilla;
- * un build de release sin URL configurada arranca vacío y la app pide la
- * dirección en el primer arranque.
+ * La APK arranca en modo autónomo: catálogo, scrapers y reproductor viven
+ * dentro de la app. El servidor Node externo queda como opción avanzada para
+ * quien ya tenga uno en su LAN o VPS.
  */
 class Settings(context: Context) : AddonSettings {
 
@@ -39,6 +37,10 @@ class Settings(context: Context) : AddonSettings {
             ?: BuildConfig.DEFAULT_ADDON_BASE_URL
         set(value) = prefs.edit { putString(KEY_BASE_URL, value.trim()) }
 
+    override var useEmbedded: Boolean
+        get() = prefs.getBoolean(KEY_USE_EMBEDDED, BuildConfig.EMBEDDED_SCRAPERS)
+        set(value) = prefs.edit { putBoolean(KEY_USE_EMBEDDED, value) }
+
     /** Vuelve al valor compilado (útil cuando el usuario se equivoca de IP). */
     fun resetBaseUrl() {
         prefs.edit { remove(KEY_BASE_URL) }
@@ -47,5 +49,6 @@ class Settings(context: Context) : AddonSettings {
     private companion object {
         const val PREFS_NAME = "streamflix.settings"
         const val KEY_BASE_URL = "addon.baseUrl"
+        const val KEY_USE_EMBEDDED = "addon.useEmbedded"
     }
 }

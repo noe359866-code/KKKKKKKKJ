@@ -1,0 +1,78 @@
+{
+  "$comment": "Canales de TV en vivo y deportes que este addon publica como catálogo 'local'. El campo id es EXACTAMENTE el id de stream (GET /stream/tv/<id>.json), de modo que pulsar una tarjeta en el cliente va directo al failover de proveedores. Para añadir canales: copia el id que imprime `npm run channels:tvenvivo` (o channels:deportelibre / channels:futbolibre) y pégalo aquí. Los ids llevan el prefijo del proveedor para que el scraping sepa a quién preguntar.",
+  "updatedAt": "2026-10-28",
+  "items": [
+    {
+      "id": "tv:futbolibre:espn-1",
+      "name": "ESPN 1",
+      "category": "deportes",
+      "genres": ["Deportes", "Canales"],
+      "description": "La señal deportiva de referencia: partidos, análisis y transmisiones especiales en directo.",
+      "releaseInfo": "En directo"
+    },
+    {
+      "id": "tv:futbolibre:espn-2",
+      "name": "ESPN 2",
+      "category": "deportes",
+      "genres": ["Deportes", "Canales"],
+      "description": "Segunda señal deportiva: eventos en paralelo y coberturas alternativas.",
+      "releaseInfo": "En directo"
+    },
+    {
+      "id": "tv:futbolibre:espn-3",
+      "name": "ESPN 3",
+      "category": "deportes",
+      "genres": ["Deportes", "Canales"],
+      "description": "Eventos secundarios y deportes minoritarios, las 24 horas.",
+      "releaseInfo": "En directo"
+    },
+    {
+      "id": "tv:tvenvivo:espn-2",
+      "name": "ESPN 2 (TV en Vivo)",
+      "category": "deportes",
+      "genres": ["Deportes", "Canales"],
+      "description": "Señal alternativa de ESPN 2 servida por otro proveedor: si una cae, la otra sigue.",
+      "releaseInfo": "En directo"
+    },
+    {
+      "id": "tv:tvenvivo:fox-sports",
+      "name": "Fox Sports",
+      "category": "deportes",
+      "genres": ["Deportes", "Canales"],
+      "description": "Fútbol internacional y programas de análisis deportivo.",
+      "releaseInfo": "En directo"
+    },
+    {
+      "id": "tv:deportelibre:stream-01",
+      "name": "Deporte Libre",
+      "category": "deportes",
+      "genres": ["Deportes", "Abierto"],
+      "description": "Canales deportivos abiertos, sin suscripción ni registro.",
+      "releaseInfo": "En directo"
+    },
+    {
+      "id": "tv:deportelibre:stream-02",
+      "name": "Deporte Libre 2",
+      "category": "deportes",
+      "genres": ["Deportes", "Abierto"],
+      "description": "Segunda señal del agregador de canales deportivos abiertos.",
+      "releaseInfo": "En directo"
+    },
+    {
+      "id": "tv:futbolibre:evento:final-liga-mx",
+      "name": "Final Liga MX",
+      "category": "eventos",
+      "genres": ["Fútbol", "Eventos"],
+      "description": "El último partido del torneo, con varias señales por si una se cae a mitad del segundo tiempo.",
+      "releaseInfo": "Evento en directo"
+    },
+    {
+      "id": "tv:futbolibre:evento:clasico-nacional",
+      "name": "Clásico Nacional",
+      "category": "eventos",
+      "genres": ["Fútbol", "Eventos"],
+      "description": "El partido más visto de la liga, con señales de respaldo automáticas.",
+      "releaseInfo": "Evento en directo"
+    }
+  ]
+}

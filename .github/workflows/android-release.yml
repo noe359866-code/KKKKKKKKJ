@@ -1,15 +1,15 @@
 name: Android release
 
 # Compila el APK/AAB de producción exclusivo para Android TV / Google TV
-# en un runner con JDK 17 + Android SDK.
+# en un runner con JDK 17 + Android SDK + Python 3.
 #
 # Disparadores:
-#   - manual (workflow_dispatch): URL del backend opcional;
+#   - manual (workflow_dispatch): URL del backend externo opcional;
 #   - tag v*: usa la variable de repositorio PRODUCTION_ADDON_BASE_URL.
 #
-# Si no hay URL, el APK se compila con la URL vacía a propósito: la app abre el
-# diálogo "Servidor del addon" en el primer arranque (nunca una IP de emulador ni
-# contenido de prueba). Con URL, esa URL queda como valor por defecto.
+# La APK es autónoma por defecto: scrapers Python embebidos con Chaquopy,
+# catálogo, fichas y reproductor en el mismo paquete. Si se define una URL,
+# queda como servidor externo opcional en Ajustes.
 #
 # Firma:
 #   - si existe el secreto RELEASE_KEYSTORE_BASE64 se usa esa clave (la buena
@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       addon_base_url:
-        description: "URL pública del backend Node (vacío = pedirla en la app)"
+        description: "URL del backend Node externo (vacío = modo autónomo integrado)"
         required: false
         type: string
   push:
@@ -61,6 +61,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Python 3 (Chaquopy)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
       - name: Gradle cache
         uses: gradle/actions/setup-gradle@v4
 
@@ -90,15 +95,14 @@ jobs:
           fi
           ls "$SDK/platforms"
 
-      - name: Resolver URL del backend
+      - name: Resolver origen del contenido
         id: url
         run: |
           if [ -z "${ADDON_BASE_URL:-}" ]; then
-            echo "Sin URL: el APK se compilará con la URL vacía y la pedirá al arrancar."
-            echo "ALLOW_EMPTY_ADDON_BASE_URL=true" >> "$GITHUB_ENV"
-            echo "value=(preguntar en la app)" >> "$GITHUB_OUTPUT"
+            echo "Modo autónomo: scrapers embebidos, sin servidor externo."
+            echo "value=(integrado en la APK)" >> "$GITHUB_OUTPUT"
           else
-            echo "Backend: $ADDON_BASE_URL"
+            echo "Servidor externo opcional: $ADDON_BASE_URL"
             echo "value=$ADDON_BASE_URL" >> "$GITHUB_OUTPUT"
           fi
 
@@ -153,7 +157,7 @@ jobs:
           set -o pipefail
           ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
 
-      - name: Verificar versión, distribución TV, firma y digests de la APK
+      - name: Verificar versión, distribución TV, modo autónomo, firma y digests
         run: |
           set -euo pipefail
           APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
@@ -161,8 +165,9 @@ jobs:
           AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -1)
           BADGING=$("$AAPT" dump badging "$APK")
           printf '%s\n' "$BADGING" | grep '^package:'
-          printf '%s\n' "$BADGING" | grep -F "versionName='0.9.9'" | grep -F "versionCode='3'"
+          printf '%s\n' "$BADGING" | grep -F "versionName='0.9.9'" | grep -F "versionCode='4'"
           python3 scripts/verify-tv-apk.py "$APK" --aapt "$AAPT"
+          python3 scripts/verify-embedded-apk.py "$APK"
           VERSIONED_APK="$(dirname "$APK")/streamflix-0.9.9.apk"
           mv "$APK" "$VERSIONED_APK"
           APK="$VERSIONED_APK"
@@ -179,9 +184,10 @@ jobs:
             echo ""
             echo "| | |"
             echo "| --- | --- |"
-            echo "| Versión | \`0.9.9 (código interno 3)\` |"
+            echo "| Versión | \`0.9.9 (código interno 4)\` |"
             echo "| Distribución | \`Solo Android TV / Google TV\` |"
-            echo "| Backend por defecto | \`${{ steps.url.outputs.value }}\` |"
+            echo "| Contenido | \`Autónomo (scrapers embebidos)\` |"
+            echo "| Servidor externo opcional | \`${{ steps.url.outputs.value }}\` |"
             echo "| Firma | \`${{ steps.signing.outputs.kind }}\` |"
             echo "| APK | \`$(basename "$APK")\` ($(du -h "$APK" | cut -f1)) |"
             echo "| AAB | \`$(basename "$AAB")\` ($(du -h "$AAB" | cut -f1)) |"
@@ -279,13 +285,14 @@ jobs:
           {
             echo "## Streamflix $VERSION"
             echo
-            echo "APK firmada **solo para Android TV / Google TV** (Android 6.0 o posterior)."
+            echo "APK firmada **solo para Android TV / Google TV** (Android 7.0 o posterior)."
             echo "Descarga \`streamflix-$VERSION.apk\` e instálala en el televisor o TV box."
             echo
-            echo "- Versión visible: $VERSION; código interno: 3."
+            echo "- Versión visible: $VERSION; código interno: 4."
+            echo "- **Autónoma**: scrapers Python, catálogo, fichas y reproductor integrados en la APK."
             echo "- Leanback obligatorio, sin launcher móvil y con navegación por mando (D-Pad)."
-            echo "- Pruebas unitarias, lint, manifiesto TV y firma comprobados por GitHub Actions."
-            echo "- Si no hay un backend configurado, la app pide su dirección al abrir."
+            echo "- Pruebas unitarias, lint, manifiesto TV, paquete embebido y firma comprobados por GitHub Actions."
+            echo "- No necesita servidor Node externo; opcionalmente se puede configurar uno en Ajustes."
             echo "- Si Android informa de un conflicto de firma, hace falta desinstalar la versión anterior antes de instalar esta."
             echo "- Conserva el keystore de firma para futuras actualizaciones."
             echo

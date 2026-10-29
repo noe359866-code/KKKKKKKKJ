@@ -77,7 +77,7 @@ import com.tanasi.streamflix.ui.theme.tvFocusGlow
  * así el D-Pad no se escapa a las tarjetas de detrás; y en un TV de 1080p una
  * bottom-sheet deja media pantalla desaprovechada.
  *
- * @param openOnSources `true` cuando el usuario llega desde "Cambiar servidor"
+ * @param openOnSources `true` cuando el usuario llega desde "Cambiar fuente"
  *   del hero: el foco y el scroll van directos a la lista de fuentes.
  */
 @Composable
@@ -460,7 +460,7 @@ private fun SourcesSection(
     val firstSourceFocus = remember { FocusRequester() }
     val bringIntoView = remember { BringIntoViewRequester() }
 
-    /* "Cambiar servidor" del hero: foco y scroll directamente aquí. */
+    /* "Cambiar fuente" del hero: foco y scroll directamente aquí. */
     LaunchedEffect(openOnSources, state is SourcesUiState.Ready) {
         if (!openOnSources) return@LaunchedEffect
         withFrameNanos { }
@@ -476,7 +476,7 @@ private fun SourcesSection(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "Servidores",
+                text = "Fuentes",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = StreamflixColors.OnSurfaceMuted,

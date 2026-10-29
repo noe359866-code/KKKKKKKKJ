@@ -3,36 +3,40 @@
 # Build de producción del APK + AAB exclusivo para Android TV / Google TV
 # ---------------------------------------------------------------------------
 # Uso:
-#   export ADDON_BASE_URL=https://addon.tu-dominio.com
 #   ./scripts/release-android.sh
+#
+# La APK es autónoma: scrapers Python embebidos, catálogo y reproductor.
+# ADDON_BASE_URL es opcional y sólo preselecciona un servidor externo avanzado.
 #
 # Requisitos:
 #   - JDK 17 (JAVA_HOME apuntando a él)
+#   - Python 3 (buildPython de Chaquopy)
 #   - Android SDK con la plataforma 36 (ANDROID_HOME o local.properties)
 #   - keystore.properties (o variables RELEASE_*) para firmar
-#
-# Sin ADDON_BASE_URL el script se detiene aquí: el build de Gradle también
-# fallaría, pero mejor decirlo antes de arrancar el daemon.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-
-if [[ -z "${ADDON_BASE_URL:-}" ]]; then
-    echo "ERROR: falta ADDON_BASE_URL." >&2
-    echo "       export ADDON_BASE_URL=https://addon.tu-dominio.com" >&2
-    exit 1
-fi
 
 if ! command -v java >/dev/null 2>&1; then
     echo "ERROR: no hay 'java' en el PATH. Instala un JDK 17." >&2
     exit 1
 fi
 
-echo "→ Compilando release contra ${ADDON_BASE_URL}"
-./gradlew :app:assembleRelease :app:bundleRelease \
-    -PreleaseAddonBaseUrl="${ADDON_BASE_URL}" \
-    "$@"
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "ERROR: no hay 'python3' en el PATH. Chaquopy lo necesita para empaquetar los scrapers." >&2
+    exit 1
+fi
+
+GRADLE_ARGS=()
+if [[ -n "${ADDON_BASE_URL:-}" ]]; then
+    echo "→ Release con servidor externo opcional: ${ADDON_BASE_URL}"
+    GRADLE_ARGS+=("-PreleaseAddonBaseUrl=${ADDON_BASE_URL}")
+else
+    echo "→ Release autónomo: scrapers embebidos, sin servidor externo."
+fi
+
+./gradlew :app:assembleRelease :app:bundleRelease "${GRADLE_ARGS[@]}" "$@"
 
 echo
 echo "Artefactos:"

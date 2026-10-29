@@ -2,8 +2,8 @@ package com.tanasi.streamflix.data.repo
 
 import com.tanasi.streamflix.data.model.StreamSource
 import com.tanasi.streamflix.data.model.StreamsResponse
-import com.tanasi.streamflix.data.remote.AddonClient
 import com.tanasi.streamflix.data.remote.AddonException
+import com.tanasi.streamflix.data.remote.ContentClient
 import com.tanasi.streamflix.util.AddonSettings
 import kotlinx.coroutines.CancellationException
 
@@ -26,14 +26,14 @@ sealed interface StreamsResult {
  * failover del reproductor depende exactamente de ese orden.
  */
 class StreamsRepository(
-    private val client: AddonClient,
+    private val client: ContentClient,
     private val settings: AddonSettings,
 ) {
 
     suspend fun streamsFor(type: String, id: String): StreamsResult {
         val baseUrl = settings.baseUrl
-        if (baseUrl.isBlank()) {
-            return StreamsResult.Failure("Configura la URL del servidor en Ajustes")
+        if (!settings.useEmbedded && baseUrl.isBlank()) {
+            return StreamsResult.Failure("Configura la URL del servidor externo en Ajustes")
         }
 
         return try {

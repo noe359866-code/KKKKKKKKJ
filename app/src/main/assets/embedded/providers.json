@@ -1,0 +1,154 @@
+{
+  "$comment": "Priority list of scrapers. Lower 'priority' wins and appears first in the streams array. 'kind' is vod | live | any. 'script' is a file inside SCRAPER_DIR (server/scrapers).",
+  "providers": [
+    {
+      "id": "futbolibre",
+      "label": "Fútbol Libre",
+      "script": "futbolibre.py",
+      "priority": 3,
+      "kind": "live",
+      "enabled": true,
+      "referer": "https://futbolibre.live/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "deportelibre",
+      "label": "DeporteLibre",
+      "script": "deportelibre.py",
+      "priority": 4,
+      "kind": "live",
+      "enabled": true,
+      "referer": "https://deportelibre.top/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "tvenvivo",
+      "label": "TV en Vivo",
+      "script": "tvenvivo.py",
+      "priority": 5,
+      "kind": "live",
+      "enabled": true,
+      "referer": "https://www.tvenvivo.org/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "animeflv",
+      "label": "AnimeFLV",
+      "script": "animeflv.py",
+      "priority": 6,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://www3.animeflv.net/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "jkanime",
+      "label": "JkAnime",
+      "script": "jkanime.py",
+      "priority": 7,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://jkanime.net/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "monoschinos",
+      "label": "MonosChinos",
+      "script": "monoschinos.py",
+      "priority": 8,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://monoschinos.st/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "gnula",
+      "label": "Gnula",
+      "script": "gnula.py",
+      "priority": 11,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://ww3.gnulahd.nu/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "cuevana",
+      "label": "Cuevana",
+      "script": "cuevana.py",
+      "priority": 12,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://cue.cuevana3.nu/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "pelisplushd",
+      "label": "PelisPlus",
+      "script": "pelisplushd.py",
+      "priority": 13,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://www.pelisplushd.la/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "repelis",
+      "label": "Repelis",
+      "script": "repelis.py",
+      "priority": 14,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://repelis.live/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "peliculasflix",
+      "label": "PeliculasFlix",
+      "script": "peliculasflix.py",
+      "priority": 15,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://peliculasflix.co/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "pelisjuanita",
+      "label": "PelisJuanita",
+      "script": "pelisjuanita.py",
+      "priority": 16,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://pelisjuanita.org/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "demo-live",
+      "label": "Demo TV",
+      "script": "example_provider.py",
+      "priority": 10,
+      "kind": "live",
+      "enabled": false,
+      "referer": "https://demo.local/",
+      "userAgent": "Mozilla/5.0 (Linux; Android 12; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "demo-vod",
+      "label": "Demo VOD",
+      "script": "example_provider.py",
+      "priority": 20,
+      "kind": "vod",
+      "enabled": false,
+      "referer": "https://demo.local/",
+      "userAgent": "Mozilla/5.0 (Linux; Android 12; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "demo-fallback",
+      "label": "Demo Backup",
+      "script": "example_provider.py",
+      "priority": 30,
+      "kind": "any",
+      "enabled": false,
+      "referer": "https://backup.demo.local/"
+    }
+  ]
+}

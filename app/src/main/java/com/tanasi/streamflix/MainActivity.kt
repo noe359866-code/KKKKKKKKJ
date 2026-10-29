@@ -86,7 +86,7 @@ class MainActivity : ComponentActivity() {
         var details by remember { mutableStateOf<DetailsTarget?>(null) }
         /* Build de release sin URL configurada: se pide el servidor en el primer
          * arranque en lugar de dejar al usuario mirando un error. */
-        var showSettings by remember { mutableStateOf(settings.baseUrl.isBlank()) }
+        var showSettings by remember { mutableStateOf(!settings.useEmbedded && settings.baseUrl.isBlank()) }
 
         HomeScreen(
             viewModel = homeViewModel,
@@ -109,7 +109,7 @@ class MainActivity : ComponentActivity() {
                             repository = ServiceLocator.streamsRepository(applicationContext),
                             /* Para series: pide /meta y convierte el póster de
                              * Cinemeta (tt…) en un episodio jugable (tt…:S:E). */
-                            client = ServiceLocator.addonClient(),
+                            client = ServiceLocator.contentClient(applicationContext),
                             settings = ServiceLocator.settings(applicationContext),
                         )
                     }

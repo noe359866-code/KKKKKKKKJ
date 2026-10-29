@@ -119,13 +119,13 @@ fun HomeScreen(
                     Spacer(Modifier.height(20.dp))
                     /* Ambos botones siempre presentes: esta pantalla sustituye al
                      * Home entero, así que si aquí no se puede abrir el diálogo
-                     * del servidor el usuario se queda sin salida (una TV no
-                     * tiene otra forma de corregir la IP). El orden cambia según
+                     * de ajustes el usuario se queda sin salida (una TV no
+                     * tiene otra forma de cambiar el origen). El orden cambia según
                      * lo que probablemente arregle el problema. */
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (current.needsSetup) {
                             OutlinedButton(onClick = onOpenSettings) {
-                                Text("Configurar servidor")
+                                Text("Ajustes")
                             }
                         }
                         OutlinedButton(onClick = { viewModel.load() }) {
@@ -133,7 +133,7 @@ fun HomeScreen(
                         }
                         if (!current.needsSetup) {
                             OutlinedButton(onClick = onOpenSettings) {
-                                Text("Configurar servidor")
+                                Text("Ajustes")
                             }
                         }
                     }
@@ -341,7 +341,7 @@ private fun HomeTopBar(
                 .padding(horizontal = 14.dp, vertical = 8.dp),
         ) {
             Text(
-                text = "Servidor",
+                text = "Ajustes",
                 style = MaterialTheme.typography.labelLarge,
                 color = StreamflixColors.OnSurface,
             )

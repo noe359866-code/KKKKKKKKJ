@@ -3,25 +3,21 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.chaquopy)
 }
 
 /*
  * ---------------------------------------------------------------------------
  * Configuración de release
  * ---------------------------------------------------------------------------
- * La URL del addon es lo único que cambia entre un build de desarrollo y uno de
- * producción, y es lo que más fácil se olvida: un release que apunte a
- * `10.0.2.2` funciona en el emulador y no en el salón.
+ * La APK es autónoma: scrapers Python embebidos, catálogo y reproductor en el
+ * mismo paquete. ADDON_BASE_URL es opcional y sólo deja preseleccionado un
+ * servidor Node externo en Ajustes.
  *
  * Orden de resolución (el primero que exista gana):
  *   1. variable de entorno         ADDON_BASE_URL
  *   2. propiedad de Gradle         -PreleaseAddonBaseUrl=…
  *   3. keystore.properties         releaseAddonBaseUrl=…   (no se versiona)
- *
- * Si se pide empaquetar un release sin URL, el build **falla** con instrucciones
- * en lugar de publicar un APK que no conecta a ningún sitio. El valor se puede
- * corregir luego desde la app (Ajustes), pero el APK debe nacer apuntando al
- * backend real.
  */
 def buildProps = new Properties()
 def keystorePropsFile = rootProject.file('keystore.properties')
@@ -59,29 +55,14 @@ def releaseRequested = gradle.startParameter.taskNames.any { String task ->
     name.contains('release') || releaseTriggers.contains(name)
 }
 
-/* Escape hatch explícito para empaquetar sin dominio todavía: el APK queda con
- * la URL vacía y la app la pide en el primer arranque. Sirve para builds de
- * sideload y para CI mientras no haya dominio propio. Nunca es el
- * comportamiento por defecto, y nunca cae al loopback del emulador. */
-def allowEmptyBaseUrl = (resolve(['ALLOW_EMPTY_ADDON_BASE_URL', 'allowEmptyAddonBaseUrl']) ?: 'false')
-    .toBoolean()
-
 if (releaseRequested) {
-    if (releaseBaseUrl == null || releaseBaseUrl.isEmpty()) {
-        if (!allowEmptyBaseUrl) {
-            throw new GradleException(
-                "Falta la URL de producción del addon.\n" +
-                "Compila con:  ./gradlew assembleRelease -PreleaseAddonBaseUrl=https://addon.tu-dominio.com\n" +
-                "o exporta ADDON_BASE_URL=https://addon.tu-dominio.com (también vale releaseAddonBaseUrl= en keystore.properties).\n" +
-                "Para un build sin dominio (la app lo pregunta al arrancar): -PallowEmptyAddonBaseUrl=true\n" +
-                "Un release nunca se empaqueta apuntando al loopback del emulador."
-            )
-        }
-        logger.lifecycle(
-            "AVISO: release sin URL de backend; la app pedirá la dirección del servidor al arrancar."
-        )
-    } else if (!validBaseUrl(releaseBaseUrl)) {
+    if (releaseBaseUrl != null && !releaseBaseUrl.isEmpty() && !validBaseUrl(releaseBaseUrl)) {
         throw new GradleException("releaseAddonBaseUrl no es una URL http(s) válida: '${releaseBaseUrl}'")
+    }
+    if (releaseBaseUrl == null || releaseBaseUrl.isEmpty()) {
+        logger.lifecycle(
+            "Release autónomo: scrapers embebidos; no se necesita backend externo."
+        )
     }
 }
 
@@ -104,9 +85,9 @@ if (storeFilePath != null && !hasReleaseKeystore) {
     )
 }
 
-/* La variante exclusiva de Android TV mantiene la versión visible 0.9.9 y
- * sube el código interno para poder actualizar instalaciones con la misma firma. */
-def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '3').toInteger()
+/* APK autónoma de Android TV: scrapers Python embebidos con Chaquopy.
+ * Mantiene la versión visible 0.9.9 y sube el código interno para actualizar. */
+def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '4').toInteger()
 def versionNameValue = resolve(['VERSION_NAME', 'versionName']) ?: '0.9.9'
 
 android {
@@ -115,15 +96,21 @@ android {
 
     defaultConfig {
         applicationId 'com.tanasi.streamflix'
-        minSdk 23
+        /* Chaquopy requiere API 24; Android TV 7.0+ sigue siendo el objetivo. */
+        minSdk 24
         targetSdk 35
         versionCode versionCodeValue
         versionName versionNameValue
 
-        /* Se sobreescribe por buildType: debug apunta al emulador, release a
-         * producción (ver arriba). */
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'
+        }
+
+        /* La app arranca en modo autónomo (scrapers embebidos). La URL del
+         * addon es opcional y sólo se usa si el usuario elige servidor externo. */
         buildConfigField 'String', 'DEFAULT_ADDON_BASE_URL', "\"\""
         buildConfigField 'boolean', 'DEBUG_BUILD', 'false'
+        buildConfigField 'boolean', 'EMBEDDED_SCRAPERS', 'true'
     }
 
     signingConfigs {
@@ -212,6 +199,20 @@ android {
         checkReleaseBuilds true
     }
 }
+
+/* Python embebido: los scrapers existentes se ejecutan dentro de la APK.
+ * No hace falta Node, Python del sistema ni un servidor en la LAN. */
+chaquopy {
+    defaultConfig {
+        version = '3.10'
+        buildPython 'python3'
+        pip {
+            install 'certifi'
+        }
+    }
+}
+chaquopy.sourceSets.getByName('main').srcDir('src/main/python')
+chaquopy.sourceSets.getByName('main').srcDir('../server/scrapers')
 
 dependencies {
     implementation libs.androidx.core.ktx

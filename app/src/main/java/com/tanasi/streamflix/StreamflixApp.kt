@@ -22,8 +22,10 @@ class StreamflixApp : Application() {
     override fun onCreate() {
         super.onCreate()
         deviceProfile = DeviceDetector.detect(this)
-        /* Inicializa HTTP antes del primer frame del catálogo. */
-        ServiceLocator.addonClient()
+        /* Crea el cliente de contenido (autónomo por defecto) antes del primer
+         * frame. El intérprete Python se inicia de forma perezosa al pedir la
+         * primera fuente, no en el arranque. */
+        ServiceLocator.contentClient(this)
 
         AppLog.i(
             "arranque: android_tv=%s táctil=%s ancho=%ddp",
