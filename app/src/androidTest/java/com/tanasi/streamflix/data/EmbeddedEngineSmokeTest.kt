@@ -61,6 +61,17 @@ class EmbeddedEngineSmokeTest {
             assertEquals(server.url("/fixture").toString(), response[1].toString())
             assertEquals("https://fixture.invalid/", server.takeRequest(2, TimeUnit.SECONDS)?.getHeader("Referer"))
 
+            server.enqueue(MockResponse().setBody("posted"))
+            val formData = python.getModule("builtins").callAttr("bytes", "id=fixture", "utf-8")
+            val form = python.getModule("urllib.request").callAttr("Request", server.url("/form").toString(), formData)
+            val post = helper.callAttr("open_url", form, 2.0)
+            assertEquals("posted", post.callAttr("read").callAttr("decode", "utf-8").toString())
+            post.callAttr("close")
+            val recorded = server.takeRequest(2, TimeUnit.SECONDS)!!
+            assertEquals("POST", recorded.method)
+            assertEquals("application/x-www-form-urlencoded", recorded.getHeader("Content-Type"))
+            assertEquals("id=fixture", recorded.body.readUtf8())
+
             server.enqueue(MockResponse().setBody("Delayed body").setBodyDelay(3, TimeUnit.SECONDS))
             val start = SystemClock.elapsedRealtime()
             try {

@@ -29,8 +29,28 @@ jobs:
       - name: Autonomous engine (offline HTTP fixtures)
         run: python3 -m unittest discover -s app/src/test/python -v
       - name: Existing server and scraper regressions
-        run: npm ci && npm test
         working-directory: server
+        run: |
+          set -o pipefail
+          # Keep file-level concurrency modest: tests spawn Python processes and
+          # include strict deadline assertions; their internal pool stays parallel.
+          { npm ci && npm test -- --test-concurrency=2; } 2>&1 | tee "$RUNNER_TEMP/server-test.log"
+      - name: Engine regression diagnostic
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const file = `${process.env.RUNNER_TEMP}/server-test.log`;
+            const raw = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '(Python engine step failed before server tests.)';
+            const lines = raw.split('\n');
+            const failures = lines.flatMap((line, index) => /not ok|npm ERR|npm error/.test(line) ? lines.slice(Math.max(0, index - 2), index + 45) : []);
+            await github.rest.checks.create({
+              owner: context.repo.owner, repo: context.repo.repo, name: 'autonomous-engine-diagnostic',
+              head_sha: context.sha, status: 'completed', conclusion: 'neutral',
+              output: {title: 'Engine regression diagnostic', summary: 'Regression test output',
+                text: ['### Failures', '```', failures.join('\n'), '```', '### Tail', '```', lines.slice(-80).join('\n'), '```'].join('\n').slice(-60000)},
+            });
 
   android:
     runs-on: ubuntu-24.04
@@ -45,6 +65,8 @@ jobs:
         with:
           python-version: '3.11'
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
       - name: Android SDK 36 (preinstalled runner tools)
         run: |
           set -euo pipefail

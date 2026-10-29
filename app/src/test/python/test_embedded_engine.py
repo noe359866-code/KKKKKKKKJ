@@ -285,14 +285,27 @@ class AndroidTransportTests(unittest.TestCase):
                                    "headers": {"Content-Type": "text/html; charset=utf-8"},
                                    "body": base64.b64encode("áé".encode()).decode()})
         request = urllib.request.Request("https://fixture.invalid/start", data=b'{"fixture":true}',
-                                         headers={"Referer": "https://embed.invalid/"}, method="POST")
+                                         headers={"Referer": "https://embed.invalid/", "Content-Type": "application/json"}, method="POST")
         with AndroidUrlOpener(Transport())(request, timeout=100) as response:
             self.assertEqual("áé", response.read().decode())
             self.assertEqual("utf-8", response.headers.get_content_charset())
             self.assertEqual("https://fixture.invalid/final", response.geturl())
         self.assertEqual("POST", captured[0][1])
+        self.assertEqual("application/json", json.loads(captured[0][2])["Content-type"])
         self.assertEqual(8000, captured[0][3])
         self.assertEqual(b'{"fixture":true}', base64.b64decode(captured[0][4]))
+
+    def test_post_without_content_type_keeps_the_urllib_form_default(self):
+        from _android_http import AndroidUrlOpener
+        captured = []
+        class Transport:
+            def request(self, *args):
+                captured.append(args)
+                return json.dumps({"url": args[0], "status": 200, "headers": {}, "body": ""})
+        with AndroidUrlOpener(Transport())(urllib.request.Request("https://fixture.invalid", data=b"id=fixture")):
+            pass
+        self.assertEqual("application/x-www-form-urlencoded", json.loads(captured[0][2])["Content-Type"])
+        self.assertEqual(b"id=fixture", base64.b64decode(captured[0][4]))
 
     def test_native_failures_and_http_errors_keep_the_urllib_contract(self):
         from _android_http import AndroidUrlOpener

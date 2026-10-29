@@ -31,9 +31,13 @@ class AndroidUrlOpener:
     def __call__(self, request, timeout=8):
         data = request.data
         encoded = base64.b64encode(data).decode("ascii") if data is not None else None
+        headers = dict(request.header_items())
+        if data is not None and not any(name.lower() == "content-type" for name in headers):
+            # This is the default normally supplied by urllib's HTTPHandler.
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
         try:
             raw = self.transport.request(
-                request.full_url, request.get_method(), json.dumps(dict(request.header_items())),
+                request.full_url, request.get_method(), json.dumps(headers),
                 max(100, min(8000, int(timeout * 1000))), encoded,
             )
             result = json.loads(str(raw))

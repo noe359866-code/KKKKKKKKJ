@@ -7,6 +7,8 @@ scrapers reales de `server/scrapers/`, sus helpers, el registro de proveedores
 y los identificadores de canales guardados. No basta con copiar los `.py` como
 assets: `ChaquopyRuntime` inicia el intérprete y el motor importa cada módulo
 y llama a su función `scrape(payload)` dentro del proceso Android.
+Las sinopsis, fondos y datos extraídos al abrir una ficha actualizan la interfaz
+sin cambiar el identificador del proveedor ni borrar los datos de la tarjeta.
 
 ```text
 Home / búsqueda / detalles / episodios
@@ -109,6 +111,8 @@ python3 scripts/verify-embedded-apk.py app/build/outputs/apk/debug/app-debug.apk
 ./scripts/release-android.sh
 ```
 
+Sólo se empaquetan `providers.json` y `live-catalog.json` de `server/config/`,
+generados con lista blanca durante el build; no se incluyen sus addons externos.
 No se necesita `ADDON_BASE_URL`, `allowEmptyAddonBaseUrl` ni iniciar Node.
 La URL de backend, si se especifica al compilar, sólo sirve de valor por defecto
 al elegir manualmente el modo servidor. Sin keystore, el release queda sin
@@ -128,11 +132,11 @@ python3 -m unittest discover -s app/src/test/python -v
 # Contrato Kotlin, ambos modos y cancelación:
 ./gradlew :app:testDebugUnitTest :app:lintDebug
 
-# Intérprete, 12 imports y puente HTTP nativo con timeout, sin backend:
+# Intérprete, 12 imports y HTTP nativo (GET, POST/formulario y timeout), sin backend:
 ./gradlew :app:connectedDebugAndroidTest
 
 # Regresiones del servidor opcional y sus scrapers existentes:
-(cd server && npm ci && npm test)
+(cd server && npm ci && npm test -- --test-concurrency=2)
 ```
 
 Los fixtures comprueban navegación de catálogo a reproducción usando el scraper
@@ -145,8 +149,3 @@ una fuente autorizada disponible en su red.
 `autonomous-checks.yml` añade compilación, inspección del APK y smoke test de
 Android TV en emulador. `android-release.yml` aplica también las pruebas offline
 y la inspección del contenido al generar los APK/AAB de producción.
-
-Las sinopsis, fondos y datos adicionales extraídos al abrir una ficha actualizan
-la interfaz sin cambiar el identificador del proveedor ni borrar los datos
-que ya contenía la tarjeta. Los únicos JSON de servidor que se empaquetan son
-`providers.json` y `live-catalog.json`, generados con lista blanca durante el build.

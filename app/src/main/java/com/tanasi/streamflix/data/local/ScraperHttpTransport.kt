@@ -7,7 +7,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -38,8 +37,9 @@ class ScraperHttpTransport {
             request.header(name, value.jsonPrimitive.content)
         }
         val body = bodyBase64?.let {
-            Base64.decode(it, Base64.NO_WRAP).toRequestBody("application/json".toMediaType())
-        }
+            // No imponer JSON: OkHttp sobrescribiría el Content-Type del scraper.
+            Base64.decode(it, Base64.NO_WRAP).toRequestBody()
+        } ?: if (method in setOf("POST", "PUT", "PATCH")) ByteArray(0).toRequestBody() else null
         request.method(method, body)
         return client.newCall(request.build()).execute().use { response ->
             val bytes = ByteArrayOutputStream()
