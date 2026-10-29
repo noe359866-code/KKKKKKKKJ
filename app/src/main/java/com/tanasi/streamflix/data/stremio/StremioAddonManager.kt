@@ -82,6 +82,29 @@ class StremioAddonManager(
 
     fun presets(): List<StremioPreset> = PRESETS
 
+    /**
+     * Instala los addons recomendados la primera vez que se abre la app.
+     *
+     * Cinemeta **no** se instala aquí: el motor local ya publica sus catálogos
+     * ("Películas populares", "Series populares"…) con el mismo arte, e
+     * instalarlo además duplicaría las filas. Lo que sí falta de fábrica son las
+     * filas por plataforma (Netflix, Disney+, HBO Max…), que sólo existen en el
+     * addon "Streaming Catalogs".
+     *
+     * @return `true` si se instaló algo y merece la pena recargar el Home.
+     */
+    suspend fun seedDefaultAddons(): Boolean {
+        if (storage.isSeeded()) return false
+        storage.markSeeded()
+        if (getAddons().isNotEmpty()) return false
+        var installed = false
+        for (preset in PRESETS) {
+            if (preset.bundled) continue
+            if (installAddon(preset.manifestUrl).isSuccess) installed = true
+        }
+        return installed
+    }
+
     private fun loadSavedAddons(): List<StremioAddon> = synchronized(lock) {
         val raw = storage.loadAddonsJson() ?: return emptyList()
         try {
@@ -107,6 +130,8 @@ class StremioAddonManager(
                 name = "Cinemeta Oficial",
                 description = "Catálogos y metadatos oficiales de películas y series de IMDb y Stremio",
                 manifestUrl = "https://v3-cinemeta.strem.io/manifest.json",
+                /* Ya viene integrado en el motor local: instalarlo duplicaría filas. */
+                bundled = true,
             ),
         )
     }

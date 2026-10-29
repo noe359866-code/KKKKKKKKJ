@@ -119,6 +119,7 @@ fun LandscapeCard(
         BackdropImage(
             url = entry.backdrop ?: entry.poster,
             artKey = entry.art,
+            entry = entry,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -239,7 +240,9 @@ private fun ContentCard(
                 .graphicsLayer { alpha = if (isTv) focusProgress else 1f },
         )
         Text(
-            text = entry.subtitle ?: entry.year?.toString().orEmpty(),
+            text = entry.subtitle?.takeIf { it.isNotBlank() }
+                ?: entry.metaLine.takeIf { it.isNotBlank() }
+                ?: entry.year?.toString().orEmpty(),
             style = MaterialTheme.typography.labelMedium,
             color = StreamflixColors.OnSurfaceMuted,
             maxLines = 1,

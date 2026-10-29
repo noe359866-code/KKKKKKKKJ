@@ -6,10 +6,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,6 +71,15 @@ fun MediaRow(
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            /* Acento de marca: separa el título de la fila del póster de al
+             * lado sin añadir cajas ni ruido. */
+            Box(
+                modifier = Modifier
+                    .padding(end = 10.dp)
+                    .width(3.dp)
+                    .height(if (deviceProfile.requiresDpadFocus) 20.dp else 16.dp)
+                    .background(StreamflixColors.Primary, RoundedCornerShape(2.dp)),
+            )
             Text(
                 text = row.title,
                 style = MaterialTheme.typography.titleLarge,
@@ -75,6 +88,13 @@ fun MediaRow(
                 maxLines = 1,
             )
             Spacer(Modifier.weight(1f))
+            Text(
+                text = "${row.items.size} títulos",
+                style = MaterialTheme.typography.labelMedium,
+                color = StreamflixColors.OnSurfaceMuted,
+                maxLines = 1,
+                modifier = Modifier.padding(end = 10.dp),
+            )
             if (row.rowAspect == RowAspect.Landscape) {
                 /* Pista de formato discreta: en las filas 16:9 se ve menos
                  * contenido por pantalla y el usuario agradece saber por qué. */

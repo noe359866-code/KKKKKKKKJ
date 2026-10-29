@@ -215,8 +215,9 @@ private fun DetailsHeader(entry: MediaEntry, isTv: Boolean) {
             .height(if (isTv) 220.dp else 160.dp),
     ) {
         BackdropImage(
-            url = entry.backdrop,
+            url = entry.backdrop ?: entry.poster,
             artKey = entry.art,
+            entry = entry,
             modifier = Modifier.fillMaxSize(),
         )
         Box(

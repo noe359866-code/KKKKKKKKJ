@@ -174,7 +174,7 @@ fun ServerSettingsDialog(
                         if (autonomous) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(checked = metadata, onCheckedChange = { metadata = it })
-                                Text("Añadir catálogos de Cinemeta (opcional)", style = MaterialTheme.typography.bodyMedium)
+                                Text("Catálogos de Cinemeta (recomendado)", style = MaterialTheme.typography.bodyMedium)
                             }
                         }
                         Spacer(Modifier.height(12.dp))
@@ -540,9 +540,12 @@ private fun PresetItemCard(
                 )
             }
             Spacer(Modifier.width(8.dp))
-            if (isInstalled) {
+            if (isInstalled || preset.bundled) {
+                /* Cinemeta ya está dentro del motor local: se ofrece por si el
+                 * usuario prefiere gestionarlo como addon, pero no hace falta
+                 * instalarlo para ver sus catálogos. */
                 Text(
-                    text = "Instalado",
+                    text = if (isInstalled) "Instalado" else "Incluido",
                     style = MaterialTheme.typography.labelMedium,
                     color = Color(0xFF69F0AE),
                 )

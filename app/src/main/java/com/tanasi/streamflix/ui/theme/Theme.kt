@@ -111,6 +111,6 @@ fun StreamflixTheme(
 /** Medidas comunes de la UI (evita números mágicos repartidos). */
 object Dimens {
     val rowSpacing = 28.dp
-    val cardCornerRadius = 10.dp
+    val cardCornerRadius = 12.dp
     val focusBorder = 3.dp
 }

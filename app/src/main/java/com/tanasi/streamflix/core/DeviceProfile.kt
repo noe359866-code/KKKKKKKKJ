@@ -31,10 +31,10 @@ data class DeviceProfile(
      * no se escribe a mano: si mañana cambia el ancho, la tarjeta sigue siendo
      * 2:3 exacta en vez de deformarse.
      */
-    val posterWidthDp: Int get() = if (isTelevision) 220 else 112
+    val posterWidthDp: Int get() = if (isTelevision) 168 else 112
 
     /** Ancho de una tarjeta 16:9 (directos, deportes, continuar viendo). */
-    val landscapeWidthDp: Int get() = if (isTelevision) 400 else 208
+    val landscapeWidthDp: Int get() = if (isTelevision) 300 else 208
 
     /** Separación entre tarjetas: en el salón se agradece más aire. */
     val cardSpacingDp: Int get() = if (isTelevision) 18 else 10

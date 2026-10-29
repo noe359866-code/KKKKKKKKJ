@@ -75,7 +75,13 @@ class MainActivity : ComponentActivity() {
         val homeFactory = remember {
             viewModelFactory {
                 initializer {
-                    HomeViewModel(ServiceLocator.catalogRepository(applicationContext))
+                    HomeViewModel(
+                        repository = ServiceLocator.catalogRepository(applicationContext),
+                        /* El hero pide la ficha del título enfocado para tener
+                         * backdrop 16:9 y sinopsis aunque el catálogo no las traiga. */
+                        client = ServiceLocator.contentClient(applicationContext),
+                        baseUrl = { ServiceLocator.settings(applicationContext).baseUrl },
+                    )
                 }
             }
         }
@@ -85,6 +91,20 @@ class MainActivity : ComponentActivity() {
         /* Primer arranque autónomo: no pide IP, dominio ni un backend. */
         var showSettings by remember { mutableStateOf(false) }
         var pendingUpdate by remember { mutableStateOf<UpdateInfo?>(null) }
+
+        /*
+         * Primer arranque: se instalan los addons recomendados (Streaming
+         * Catalogs) en segundo plano. Sin ellos faltan las filas por plataforma
+         * (Netflix, Disney+, HBO Max…) y el Home se queda sólo con los
+         * proveedores. Cinemeta no se instala: ya viene en el motor local.
+         */
+        LaunchedEffect(Unit) {
+            val manager = ServiceLocator.stremioAddonManager(applicationContext)
+            if (manager.seedDefaultAddons()) {
+                ServiceLocator.catalogRepository(applicationContext).invalidate()
+                homeViewModel.refreshInBackground()
+            }
+        }
 
         // Comprobación automática de actualización al iniciar la app (100% autónoma)
         LaunchedEffect(Unit) {

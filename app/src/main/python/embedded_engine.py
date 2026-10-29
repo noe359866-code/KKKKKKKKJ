@@ -28,6 +28,18 @@ TYPES = frozenset(("movie", "series", "anime", "tv"))
 PLAYABLE = (".m3u8", ".mpd", ".mp4", ".m4v", ".webm", ".mkv", ".ts")
 CINEMETA = "https://v3-cinemeta.strem.io"
 
+# Filas de Cinemeta (tipo publicado, id del catálogo upstream, título en la app).
+# Se publican antes que las de los proveedores: sus pósters y backdrops son los
+# únicos de calidad cinematográfica que no dependen de la web de origen.
+CINEMETA_CATALOGS = (
+    ("movie", "top", "Películas populares"),
+    ("series", "top", "Series populares"),
+    ("movie", "imdbRating", "Mejor valoradas"),
+    ("series", "imdbRating", "Series mejor valoradas"),
+    ("movie", "year", "Estrenos recientes"),
+    ("anime", "top", "Anime popular"),
+)
+
 
 def normalize_meta(raw: Dict[str, Any], media_type: str) -> Optional[Dict[str, Any]]:
     content_id = str(raw.get("id") or raw.get("imdb_id") or "").strip()
@@ -131,20 +143,25 @@ class Engine:
         self.pool.shutdown(wait=True, cancel_futures=True)
 
     def catalogs(self, metadata_catalogs: bool = False) -> Dict[str, Any]:
-        rows = [{"id": "bundled_live", "type": "tv", "name": "TV en vivo · Canales guardados",
-                 "posterShape": "landscape", "order": 0, "source": "embedded"}]
-        for order, (name, provider) in enumerate(self.providers.items(), 1):
+        rows: List[Dict[str, Any]] = []
+        if metadata_catalogs:
+            # Cinemeta va PRIMERO: es la única fuente que trae póster 2:3 real y
+            # backdrop 16:9 para todos sus títulos, así que el hero y las
+            # primeras filas se pintan con arte de verdad. Los proveedores
+            # (títulos en español, pósters pequeños de su propia web) van
+            # después, como "catálogo profundo".
+            for order, (media_type, catalog_id, title) in enumerate(CINEMETA_CATALOGS):
+                rows.append({"id": "cinemeta_" + catalog_id, "type": media_type, "name": title,
+                             "posterShape": "poster", "order": order, "source": "cinemeta",
+                             "provider": "Cinemeta"})
+        rows.append({"id": "bundled_live", "type": "tv", "name": "TV en vivo · Canales guardados",
+                     "posterShape": "landscape", "order": len(rows), "source": "embedded"})
+        for order, (name, provider) in enumerate(self.providers.items(), len(rows)):
             media_type = "tv" if name in providers.LIVE else "anime" if name in providers.ANIME else "movie"
             category = {"tv": "TV y deportes", "anime": "Anime", "movie": "Películas y series"}[media_type]
             rows.append({"id": name, "type": media_type, "name": f"{category} · {provider['label']}",
                          "posterShape": "landscape" if media_type == "tv" else "poster", "order": order,
                          "source": "embedded", "provider": provider["label"]})
-        if metadata_catalogs:
-            for order, (media_type, catalog_id, title) in enumerate((
-                ("movie", "top", "Películas populares"), ("movie", "imdbRating", "Mejor valoradas"),
-                ("series", "top", "Series populares"), ("anime", "top", "Anime popular")), 100):
-                rows.append({"id": "cinemeta_" + catalog_id, "type": media_type, "name": title,
-                             "posterShape": "poster", "order": order, "source": "cinemeta", "provider": "Cinemeta"})
         return {"catalogs": rows}
 
     def _remember(self, metas: List[Dict[str, Any]]) -> None:

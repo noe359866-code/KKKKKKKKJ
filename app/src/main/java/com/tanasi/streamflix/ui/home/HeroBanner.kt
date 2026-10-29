@@ -43,8 +43,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tanasi.streamflix.core.DeviceProfile
+import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.Spotlight
-import com.tanasi.streamflix.ui.components.BackdropImage
+import com.tanasi.streamflix.ui.components.HeroBackdropImage
 import com.tanasi.streamflix.ui.components.GlassBadge
 import com.tanasi.streamflix.ui.components.LiveBadge
 import com.tanasi.streamflix.ui.components.RatingBadge
@@ -108,8 +109,7 @@ fun HeroBanner(
             label = "heroBackdrop",
         ) { current ->
             KenBurnsBackdrop(
-                url = current.entry.backdrop,
-                artKey = current.entry.art,
+                entry = current.entry,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -260,8 +260,7 @@ fun HeroBanner(
  */
 @Composable
 private fun KenBurnsBackdrop(
-    url: String?,
-    artKey: String?,
+    entry: MediaEntry,
     modifier: Modifier = Modifier,
 ) {
     val motion by rememberInfiniteTransition(label = "kenBurns").animateFloat(
@@ -274,9 +273,10 @@ private fun KenBurnsBackdrop(
         label = "kenBurnsScale",
     )
 
-    BackdropImage(
-        url = url,
-        artKey = artKey,
+    /* backdrop 16:9 → póster desenfocado → arte local. Así el hero nunca
+     * aparece como un bloque de color liso. */
+    HeroBackdropImage(
+        entry = entry,
         modifier = modifier.graphicsLayer {
             scaleX = motion
             scaleY = motion

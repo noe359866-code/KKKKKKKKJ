@@ -22,7 +22,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -368,8 +367,6 @@ private fun HomeTopBar(
     searching: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    var settingsFocused by remember { mutableStateOf(false) }
-
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -401,32 +398,70 @@ private fun HomeTopBar(
             maxLines = 1,
         )
         Spacer(Modifier.weight(1f))
-        if (searching) TextButton(onClick = onClearSearch) { Text("Inicio") }
-        TextButton(
-            onClick = onOpenSearch,
-            modifier = if (settingsDownFocus != null) Modifier.focusProperties { down = settingsDownFocus } else Modifier,
-        ) { Text("Buscar") }
-        Spacer(Modifier.width(8.dp))
-
-        Box(
-            modifier = Modifier
-                .then(if (settingsDownFocus != null) Modifier.focusProperties { down = settingsDownFocus } else Modifier)
-                .then(if (settingsFocus != null) Modifier.focusRequester(settingsFocus) else Modifier)
-                .tvFocusGlow(
-                    progress = if (settingsFocused) 1f else 0f,
-                    cornerRadius = 6.dp,
-                )
-                .background(Color.White.copy(alpha = if (settingsFocused) 0.24f else 0.12f), RoundedCornerShape(6.dp))
-                .onFocusChanged { settingsFocused = it.isFocused }
-                .clickable(onClick = onOpenSettings)
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-        ) {
-            Text(
-                text = "Ajustes",
-                style = MaterialTheme.typography.labelLarge,
-                color = StreamflixColors.OnSurface,
+        if (searching) {
+            TopBarChip(
+                text = "Inicio",
+                focusDown = settingsDownFocus,
+                onClick = onClearSearch,
+                modifier = Modifier.padding(end = 8.dp),
             )
         }
+        TopBarChip(
+            text = "Buscar",
+            focusDown = settingsDownFocus,
+            onClick = onOpenSearch,
+            modifier = Modifier.padding(end = 8.dp),
+        )
+        TopBarChip(
+            text = "Ajustes",
+            onClick = onOpenSettings,
+            focusDown = settingsDownFocus,
+            focusRequester = settingsFocus,
+        )
+    }
+}
+
+/**
+ * Píldora de la barra superior.
+ *
+ * Las tres acciones (Inicio, Buscar, Ajustes) comparten forma para que la barra
+ * se lea como un menú y no como texto suelto; el foco del mando añade el anillo
+ * neón y sube el brillo del vidrio.
+ */
+@Composable
+private fun TopBarChip(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    focusDown: FocusRequester? = null,
+    focusRequester: FocusRequester? = null,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val glow by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (focused) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(durationMillis = 120),
+        label = "chipFocus",
+    )
+
+    Box(
+        modifier = modifier
+            .then(if (focusDown != null) Modifier.focusProperties { down = focusDown } else Modifier)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .tvFocusGlow(progress = glow, cornerRadius = 6.dp)
+            .background(
+                Color.White.copy(alpha = 0.10f + 0.14f * glow),
+                RoundedCornerShape(6.dp),
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = StreamflixColors.OnSurface,
+            maxLines = 1,
+        )
     }
 }
 

@@ -95,12 +95,14 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(all(row["source"] == "embedded" for row in rows))
         self.assertTrue(all(callable(catalogs.module_for(p).scrape) for p in health["providers"]))
 
-    def test_cinemeta_is_explicit_opt_in_and_not_a_home_dependency(self):
+    def test_cinemeta_is_explicit_opt_in_and_always_first_when_enabled(self):
         base_rows = self.engine.catalogs()["catalogs"]
         extra_rows = self.engine.catalogs(True)["catalogs"]
-        self.assertEqual(len(base_rows) + 4, len(extra_rows))
+        self.assertEqual(len(base_rows) + len(embedded.CINEMETA_CATALOGS), len(extra_rows))
         self.assertFalse(any("cinemeta" in row["id"] for row in base_rows))
-        self.assertTrue(all(row["provider"] == "Cinemeta" for row in extra_rows[-4:]))
+        # Cinemeta encabeza el Home: sus pósters y backdrops son el arte bueno.
+        self.assertTrue(all(row["provider"] == "Cinemeta" for row in extra_rows[:len(embedded.CINEMETA_CATALOGS)]))
+        self.assertEqual("bundled_live", extra_rows[len(embedded.CINEMETA_CATALOGS)]["id"])
 
     def test_can_browse_bundled_live_cards_without_network_or_url(self):
         with patch("urllib.request.urlopen", side_effect=AssertionError("No backend")):

@@ -22,9 +22,14 @@ class Settings(context: Context) : AddonSettings {
         get() = prefs.getBoolean(KEY_AUTONOMOUS, true)
         set(value) = prefs.edit { putBoolean(KEY_AUTONOMOUS, value) }
 
-    /** Cinemeta es un enriquecimiento optativo; los catálogos de proveedores no lo requieren. */
+    /**
+     * Cinemeta viene activado de fábrica: es la única fuente que garantiza
+     * póster 2:3 y backdrop 16:9 de calidad para cada título, así que sin él el
+     * Home se queda con los pósters pequeños (o ausentes) de las webs de
+     * origen. Se puede desactivar en Ajustes → Conexión.
+     */
     override var metadataCatalogs: Boolean
-        get() = prefs.getBoolean(KEY_METADATA, false)
+        get() = prefs.getBoolean(KEY_METADATA, true)
         set(value) = prefs.edit { putBoolean(KEY_METADATA, value) }
 
     var autoCheckUpdates: Boolean

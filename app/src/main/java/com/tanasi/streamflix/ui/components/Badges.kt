@@ -165,8 +165,14 @@ internal fun EntryTopStartBadge(entry: MediaEntry, modifier: Modifier = Modifier
 
 @Composable
 internal fun EntryTopEndBadge(entry: MediaEntry, modifier: Modifier = Modifier) {
-    /* Si el estado ya ocupa la izquierda con la calidad, no se duplica. */
-    val quality = entry.quality ?: return
-    if (!entry.isLive && !entry.trending) return
-    QualityBadge(quality, modifier)
+    /* La nota es el dato que más se mira al elegir: si existe, ocupa la
+     * derecha. La calidad sólo se repite aquí cuando el estado de la izquierda
+     * no la muestra ya (directos y tendencias). */
+    val rating = entry.rating
+    val quality = entry.quality
+    when {
+        rating != null -> RatingBadge(rating, modifier)
+        quality != null && (entry.isLive || entry.trending) -> QualityBadge(quality, modifier)
+        else -> Unit
+    }
 }
