@@ -3,6 +3,9 @@ package com.tanasi.streamflix.data
 import com.tanasi.streamflix.data.local.EmbeddedContentClient
 import com.tanasi.streamflix.data.local.EmbeddedRuntime
 import com.tanasi.streamflix.data.model.hasEpisodeNumber
+import com.tanasi.streamflix.data.model.MediaEntry
+import com.tanasi.streamflix.data.model.RemoteMeta
+import com.tanasi.streamflix.data.model.enrichedBy
 import com.tanasi.streamflix.data.repo.CatalogRepository
 import com.tanasi.streamflix.data.repo.CatalogResult
 import com.tanasi.streamflix.data.repo.StreamsRepository
@@ -189,4 +192,15 @@ class AutonomousContentTest {
         assertFalse(hasEpisodeNumber("anime", "animeflv:one-piece"))
         assertFalse(hasEpisodeNumber("series", "tt1234567"))
     }
+    @Test
+    fun `la ficha usa la sinopsis y el arte locales sin perder el identificador original`() {
+        val entry = MediaEntry(id = "pelisplushd:fixture", type = "movie", title = "Fixture", poster = "https://fixture.invalid/poster.jpg")
+        val enriched = entry.enrichedBy(RemoteMeta(id = "another-id", name = "Ficha completa", description = "Sinopsis del proveedor", releaseInfo = "2026", rating = 8.5))
+        assertEquals(entry.id, enriched.id)
+        assertEquals(entry.poster, enriched.poster)
+        assertEquals("Sinopsis del proveedor", enriched.synopsis)
+        assertEquals(2026, enriched.year)
+        assertEquals("Ficha completa", enriched.title)
+    }
+
 }

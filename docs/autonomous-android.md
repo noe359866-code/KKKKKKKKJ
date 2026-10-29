@@ -145,3 +145,8 @@ una fuente autorizada disponible en su red.
 `autonomous-checks.yml` añade compilación, inspección del APK y smoke test de
 Android TV en emulador. `android-release.yml` aplica también las pruebas offline
 y la inspección del contenido al generar los APK/AAB de producción.
+
+Las sinopsis, fondos y datos adicionales extraídos al abrir una ficha actualizan
+la interfaz sin cambiar el identificador del proveedor ni borrar los datos
+que ya contenía la tarjeta. Los únicos JSON de servidor que se empaquetan son
+`providers.json` y `live-catalog.json`, generados con lista blanca durante el build.

@@ -61,6 +61,15 @@ if (storeFilePath != null && !hasReleaseKeystore) {
 def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '2').toInteger()
 def versionNameValue = resolve(['VERSION_NAME', 'versionName']) ?: '1.1.0'
 
+// AGP no aplica de forma fiable assets.exclude a directorios externos. Generar
+// una carpeta con lista blanca evita empaquetar catalogs.json y sus addons.
+def generateEmbeddedAssets = tasks.register('generateEmbeddedAssets', Sync) {
+    from(rootProject.file('server/config')) {
+        include 'providers.json', 'live-catalog.json'
+    }
+    into layout.buildDirectory.dir('generated/embeddedAssets')
+}
+
 android {
     namespace 'com.tanasi.streamflix'
     compileSdk 36
@@ -134,9 +143,8 @@ android {
 
     sourceSets {
         main {
-            // Mismo registro y canales que el servidor, sin copiar archivos a mano.
-            assets.srcDir rootProject.file('server/config')
-            assets.exclude 'catalogs.json' // No se incluyen addons de terceros preconfigurados.
+            // Mismo registro y canales que el servidor, generados al compilar.
+            assets.srcDir generateEmbeddedAssets
         }
     }
 
@@ -229,4 +237,10 @@ dependencies {
     testImplementation libs.junit
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.okhttp.mockwebserver
+}
+
+// Dependencia explícita además de srcDir(task): AGP convierte algunos source sets
+// en rutas y puede perder la dependencia de su tarea generadora.
+tasks.named('preBuild').configure {
+    dependsOn generateEmbeddedAssets
 }

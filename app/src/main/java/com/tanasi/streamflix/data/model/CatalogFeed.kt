@@ -234,3 +234,16 @@ fun List<RemoteVideo>.toSeasonGroups(): List<SeasonGroup> =
         .sortedWith(compareBy({ it.season }, { it.episode }))
         .groupBy { it.season }
         .map { (season, episodes) -> SeasonGroup(season, episodes) }
+
+/** Enriquece la ficha sin cambiar su identificador de reproducción ni borrar datos válidos. */
+fun MediaEntry.enrichedBy(meta: RemoteMeta): MediaEntry = copy(
+    title = meta.name.takeIf { it.isNotBlank() } ?: title,
+    poster = meta.poster ?: poster,
+    backdrop = meta.background ?: backdrop,
+    synopsis = meta.description?.takeIf { it.isNotBlank() } ?: synopsis,
+    year = meta.year ?: meta.toEntry().year ?: year,
+    rating = meta.rating ?: rating,
+    genres = meta.genres.takeIf { it.isNotEmpty() } ?: genres,
+    runtime = meta.runtime ?: runtime,
+    provider = meta.sourceName ?: provider,
+)

@@ -6,6 +6,7 @@ import com.tanasi.streamflix.data.model.EpisodeOption
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.MediaType
 import com.tanasi.streamflix.data.model.PlaybackRequest
+import com.tanasi.streamflix.data.model.RemoteMeta
 import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.data.model.SeasonGroup
 import com.tanasi.streamflix.data.model.StreamSource
@@ -93,6 +94,9 @@ class DetailsViewModel(
     private val mutableState = MutableStateFlow<SourcesUiState>(SourcesUiState.Loading)
     val state: StateFlow<SourcesUiState> = mutableState.asStateFlow()
 
+    private val mutableMetadata = MutableStateFlow<RemoteMeta?>(null)
+    val metadata: StateFlow<RemoteMeta?> = mutableMetadata.asStateFlow()
+
     private val mutableEpisodes = MutableStateFlow<EpisodesUiState>(EpisodesUiState.Hidden)
     val episodes: StateFlow<EpisodesUiState> = mutableEpisodes.asStateFlow()
 
@@ -151,6 +155,7 @@ class DetailsViewModel(
                 null
             }
 
+            mutableMetadata.value = meta
             val seasons = (meta?.videos ?: emptyList()).toSeasonGroups()
             if (seasons.isEmpty()) {
                 if (entry.mediaType == MediaType.Movie) {
@@ -238,7 +243,9 @@ class DetailsViewModel(
     fun playbackRequest(startIndex: Int = selectedIndex()): PlaybackRequest =
         entry.playbackRequest(startIndex).copy(
             id = requestedId,
-            title = selectedEpisode()?.let { episode -> "${entry.title} · ${episode.label}" } ?: entry.title,
+            title = selectedEpisode()?.let { episode -> "${displayTitle()} · ${episode.label}" } ?: displayTitle(),
         )
+
+    private fun displayTitle(): String = mutableMetadata.value?.name?.takeIf { it.isNotBlank() } ?: entry.title
 
 }
