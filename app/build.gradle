@@ -1,0 +1,110 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.kotlin.compose)
+}
+
+/*
+ * The server base URL is a build-time default that can be overridden:
+ *   - gradle.properties / local.properties -> addonBaseUrl=http://192.168.1.50:7000
+ *   - command line                          -> -PaddonBaseUrl=http://10.0.2.2:7000
+ * It is also editable at runtime from the app's settings sheet, because a TV
+ * box and a phone rarely live on the same subnet as the laptop running Node.
+ */
+def addonBaseUrl = (project.findProperty('addonBaseUrl') ?: 'http://10.0.2.2:7000').toString()
+
+android {
+    namespace 'com.tanasi.streamflix'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.tanasi.streamflix'
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+
+        buildConfigField 'String', 'DEFAULT_ADDON_BASE_URL', "\"${addonBaseUrl}\""
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+        freeCompilerArgs += ['-opt-in=androidx.compose.material3.ExperimentalMaterial3Api']
+    }
+
+    buildFeatures {
+        compose true
+        buildConfig true
+    }
+
+    packaging {
+        resources {
+            excludes += ['/META-INF/{AL2.0,LGPL2.1}', 'META-INF/DEPENDENCIES']
+        }
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+
+    lint {
+        /* Media3 marca como @UnstableApi casi todo lo que necesita un
+         * reproductor (PlayerView, DefaultHttpDataSource,
+         * DefaultMediaSourceFactory). Anotar cada llamada sería ruido; se
+         * reconoce una vez aquí. Lo que sí se evita es depender de APIs que
+         * cambien de firma: todo el contacto con Media3 vive en MediaSources. */
+        disable 'UnsafeOptInUsageError'
+        warningsAsErrors false
+        abortOnError true
+    }
+}
+
+dependencies {
+    implementation libs.androidx.core.ktx
+    implementation libs.androidx.lifecycle.runtime.ktx
+    implementation libs.androidx.lifecycle.runtime.compose
+    implementation libs.androidx.lifecycle.viewmodel.compose
+    implementation libs.androidx.activity.compose
+
+    /* Compose BOM keeps every androidx.compose.* artifact on the same version. */
+    implementation platform(libs.androidx.compose.bom)
+    implementation libs.androidx.compose.ui
+    implementation libs.androidx.compose.foundation
+    implementation libs.androidx.compose.material3
+    debugImplementation libs.androidx.compose.ui.tooling
+    implementation libs.androidx.compose.ui.tooling.preview
+
+    /* Media3: ExoPlayer + HLS (.m3u8) + the data source that carries the
+     * Referer/User-Agent headers coming from the addon. */
+    implementation libs.androidx.media3.exoplayer
+    implementation libs.androidx.media3.exoplayer.hls
+    implementation libs.androidx.media3.datasource
+    implementation libs.androidx.media3.ui
+
+    implementation libs.okhttp
+    implementation libs.kotlinx.serialization.json
+    implementation libs.kotlinx.coroutines.android
+    implementation libs.coil.compose
+
+    testImplementation libs.junit
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.okhttp.mockwebserver
+}

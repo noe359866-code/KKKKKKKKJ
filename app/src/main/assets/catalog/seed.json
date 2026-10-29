@@ -1,0 +1,223 @@
+{
+  "version": 1,
+  "rows": [
+    {
+      "id": "movies",
+      "title": "Películas",
+      "items": [
+        {
+          "id": "pelisjuanita:spider-man-un-nuevo-dia-2026",
+          "type": "movie",
+          "title": "Spider-Man: Un nuevo día",
+          "poster": "https://image.tmdb.org/t/p/w342/fBFjaDWfNslvrs6bJjknmG27wOS.jpg",
+          "year": 2026,
+          "subtitle": "Latino · HD",
+          "provider": "PelisJuanita"
+        },
+        {
+          "id": "gnula:street-fighter",
+          "type": "movie",
+          "title": "Street Fighter",
+          "poster": "https://image.tmdb.org/t/p/w342/qoyIWgvedhBFmoRFSoCPIFF3as8.png",
+          "year": 2026,
+          "subtitle": "Latino · HD",
+          "provider": "Gnula"
+        },
+        {
+          "id": "cuevana:spider-man-de-regreso-a-casa",
+          "type": "movie",
+          "title": "Spider-Man: De regreso a casa",
+          "poster": "https://image.tmdb.org/t/p/w342/h1Iq6WfE4RWc9klGvN8sdi5aR6V.jpg",
+          "year": 2017,
+          "subtitle": "Latino · HD",
+          "provider": "Cuevana"
+        },
+        {
+          "id": "pelisplushd:clayface",
+          "type": "movie",
+          "title": "Clayface",
+          "poster": "https://image.tmdb.org/t/p/w342/z2BW35kSA4QZrqs2LO5UpADoUWM.png",
+          "year": 2026,
+          "subtitle": "Subtitulado · CAM",
+          "provider": "PelisPlus"
+        },
+        {
+          "id": "peliculasflix:la-odisea-2026",
+          "type": "movie",
+          "title": "La Odisea",
+          "poster": "https://image.tmdb.org/t/p/w342/mKPGRRyXIwN8JOLhAbWnxV1gNrS.jpg",
+          "year": 2026,
+          "subtitle": "Latino · HD",
+          "provider": "PeliculasFlix"
+        },
+        {
+          "id": "repelis:el-origen-2010",
+          "type": "movie",
+          "title": "El Origen",
+          "poster": "https://image.tmdb.org/t/p/w342/xgPGDEKkBrXhPaNmwIlf8e2RCMk.jpg",
+          "year": 2010,
+          "subtitle": "Latino · HD",
+          "provider": "Repelis"
+        }
+      ]
+    },
+    {
+      "id": "series",
+      "title": "Series",
+      "items": [
+        {
+          "id": "pelisplushd:the-last-of-us:1:1",
+          "type": "series",
+          "title": "The Last of Us",
+          "poster": "https://image.tmdb.org/t/p/w342/uKvVjHNqB5VmOrdxqAt2F7J78ED.jpg",
+          "year": 2023,
+          "subtitle": "T1 E1 · Latino",
+          "provider": "PelisPlus"
+        },
+        {
+          "id": "pelisjuanita:reacher-2022:1:1",
+          "type": "series",
+          "title": "Reacher",
+          "poster": "https://image.tmdb.org/t/p/w342/puKRIbG2asaTFHIjJS5sydIW1zB.jpg",
+          "year": 2022,
+          "subtitle": "T1 E1 · Latino",
+          "provider": "PelisJuanita"
+        },
+        {
+          "id": "cuevana:the-last-of-us:1:2",
+          "type": "series",
+          "title": "The Last of Us",
+          "poster": "https://image.tmdb.org/t/p/w342/uKvVjHNqB5VmOrdxqAt2F7J78ED.jpg",
+          "year": 2023,
+          "subtitle": "T1 E2 · Latino",
+          "provider": "Cuevana"
+        },
+        {
+          "id": "gnula:visionquest:1:1",
+          "type": "series",
+          "title": "VisionQuest",
+          "poster": "https://image.tmdb.org/t/p/w342/mQwaoWvWJGiuVY6CT1V6AiuSIqi.png",
+          "year": 2026,
+          "subtitle": "T1 E1 · Latino",
+          "provider": "Gnula"
+        },
+        {
+          "id": "pelisjuanita:mentes-criminales-2005:1:1",
+          "type": "series",
+          "title": "Mentes Criminales",
+          "poster": "https://image.tmdb.org/t/p/w342/3UyUgPfcs7ByA9hxbhWSW98xdpg.jpg",
+          "year": 2005,
+          "subtitle": "T1 E1 · Latino",
+          "provider": "PelisJuanita"
+        },
+        {
+          "id": "pelisplushd:breaking-bad-2008:1:1",
+          "type": "series",
+          "title": "Breaking Bad",
+          "poster": "https://image.tmdb.org/t/p/w342/anFx9aTOOYqgS3v7x3R84Kz67ly.jpg",
+          "year": 2008,
+          "subtitle": "T1 E1 · Latino",
+          "provider": "PelisPlus"
+        }
+      ]
+    },
+    {
+      "id": "anime",
+      "title": "Anime",
+      "items": [
+        {
+          "id": "animeflv:one-piece:1180",
+          "type": "anime",
+          "title": "One Piece",
+          "poster": "https://image.tmdb.org/t/p/w342/cMD9Ygz11zjJzAovURpO75Qg7rT.jpg",
+          "year": 1999,
+          "subtitle": "Ep. 1180 · Subtitulado",
+          "provider": "AnimeFLV"
+        },
+        {
+          "id": "jkanime:one-piece:1180",
+          "type": "anime",
+          "title": "One Piece",
+          "poster": "https://image.tmdb.org/t/p/w342/cMD9Ygz11zjJzAovURpO75Qg7rT.jpg",
+          "year": 1999,
+          "subtitle": "Ep. 1180 · Japonés",
+          "provider": "JkAnime"
+        },
+        {
+          "id": "monoschinos:one-piece-sub-espanol:1",
+          "type": "anime",
+          "title": "One Piece",
+          "poster": "https://image.tmdb.org/t/p/w342/cMD9Ygz11zjJzAovURpO75Qg7rT.jpg",
+          "year": 1999,
+          "subtitle": "Ep. 1 · Subtitulado",
+          "provider": "MonosChinos"
+        },
+        {
+          "id": "animeflv:jujutsu-kaisen:47",
+          "type": "anime",
+          "title": "Jujutsu Kaisen",
+          "poster": "https://image.tmdb.org/t/p/w342/fHpKWq9ayzSk8nSwqRuaAUemRKh.jpg",
+          "year": 2020,
+          "subtitle": "Ep. 47 · Subtitulado",
+          "provider": "AnimeFLV"
+        },
+        {
+          "id": "jkanime:dragon-ball-super:131",
+          "type": "anime",
+          "title": "Dragon Ball Super",
+          "poster": "https://image.tmdb.org/t/p/w342/3wxFXCYQ1jBnLHq8CDszTS2tM7X.jpg",
+          "year": 2015,
+          "subtitle": "Ep. 131 · Japonés",
+          "provider": "JkAnime"
+        },
+        {
+          "id": "monoschinos:solo-leveling-sub-espanol:13",
+          "type": "anime",
+          "title": "Solo Leveling",
+          "poster": "https://image.tmdb.org/t/p/w342/geCRueV3ElhRTr0xtJuEWJt6dJ1.jpg",
+          "year": 2024,
+          "subtitle": "Ep. 13 · Subtitulado",
+          "provider": "MonosChinos"
+        }
+      ]
+    },
+    {
+      "id": "live",
+      "title": "TV en vivo",
+      "items": [
+        {
+          "id": "tv:futbolibre:espn-1",
+          "type": "tv",
+          "title": "ESPN 1",
+          "year": 2026,
+          "subtitle": "EN VIVO",
+          "provider": "FutbolLibre"
+        },
+        {
+          "id": "tv:tvenvivo:espn-2",
+          "type": "tv",
+          "title": "ESPN 2",
+          "year": 2026,
+          "subtitle": "EN VIVO",
+          "provider": "TVEnVivo"
+        },
+        {
+          "id": "tv:deportelibre:stream-01",
+          "type": "tv",
+          "title": "Deporte Libre",
+          "year": 2026,
+          "subtitle": "EN VIVO",
+          "provider": "DeporteLibre"
+        },
+        {
+          "id": "tv:futbolibre:evento:final-liga-mx",
+          "type": "tv",
+          "title": "Final Liga MX",
+          "year": 2026,
+          "subtitle": "EN VIVO · 6 señales",
+          "provider": "FutbolLibre"
+        }
+      ]
+    }
+  ]
+}

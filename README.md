@@ -28,6 +28,7 @@
   - [Prerequisites](#prerequisites)
   - [Setup](#setup)
 - [Stremio addon backend (Node.js)](#stremio-addon-backend-nodejs)
+- [Android client (Kotlin + Compose)](#android-client-kotlin--compose)
 - [Development](#development)
 - [Contributing](#contributing)
 - [Legal Disclaimer](#legal-disclaimer)
@@ -62,21 +63,19 @@ The interface aggregates content from multiple sources and provides a convenient
 - Aggregates content from multiple third-party providers
 - No account required for the app interface
 - Educational and personal use only
-- Optimized UI & UX
-- Multiple providers
-- Resume from last playback position
-- In-app update
+- One APK with an adaptive UI: D-Pad-first on Android TV, touch-first on phones
+- Multiple providers, with automatic silent failover between their streams
+- Home with horizontal carousels for Películas, Series, Anime and TV en Vivo
 
 ### Built with
 
 - [Android Studio](https://developer.android.com/studio)
-- [Kotlin](https://kotlinlang.org)
-- [Retrofit](https://square.github.io/retrofit)
-- [ExoPlayer](https://exoplayer.dev)
-- Leanback
-- Coroutines
-- MVVM Architecture
-- Android Architecture Components
+- [Kotlin](https://kotlinlang.org) + Coroutines
+- [Jetpack Compose](https://developer.android.com/jetpack/compose) + Material 3
+- [Media3 ExoPlayer](https://developer.android.com/media/media3/exoplayer)
+- [OkHttp](https://square.github.io/okhttp) + kotlinx.serialization
+- MVVM architecture (`ViewModel` + `StateFlow`)
+- One APK for phones and Android TV
 
 
 ## Stremio addon backend (Node.js)
@@ -156,6 +155,115 @@ law.
 See [`server/README.md`](server/README.md) for the full documentation
 (architecture, environment variables, cache internals, adding providers,
 tests and Docker).
+
+## Android client (Kotlin + Compose)
+
+`app/` is the client. It contains **no scraping logic**: it asks the Node addon
+for `GET /stream/{type}/{id}.json` and plays whatever ordered list comes back.
+
+| Concern | Choice |
+| --- | --- |
+| UI | Jetpack Compose, Material 3 (Compose BOM `2025.06.00`) |
+| Player | Media3 ExoPlayer `1.7.1` + `media3-exoplayer-hls` |
+| HTTP | OkHttp `4.12.0` + kotlinx.serialization |
+| Posters | Coil |
+| DI | hand-written `ServiceLocator` (no annotation processor) |
+| SDK | `minSdk 23`, `targetSdk 35`, `compileSdk 36`, JVM 17 |
+
+### One APK, two form factors
+
+`core/DeviceProfile.kt` decides once (in `Application.onCreate`) whether the app
+is running on a TV:
+
+```text
+UI_MODE_TYPE_TELEVISION               -> TV
+FEATURE_LEANBACK or FEATURE_TELEVISION and no touchscreen -> TV
+otherwise                             -> touch
+```
+
+The result is published through `LocalDeviceProfile`, so every composable reads
+it without touching the `Context`:
+
+- **TV** — larger cards (196×292 dp), 48 dp side margins, typography scaled
+  ×1.15–1.25, and every card draws a red focus ring plus an 8 % scale-up when
+  the D-Pad lands on it. The first card of the top row grabs focus on purpose:
+  without it a remote does nothing until the user guesses to press a key. The
+  player overlay chips (Fuentes / Volver) get the same treatment.
+- **Touch** — compact cards (128×192 dp), 16 dp margins, ripple instead of a
+  focus ring.
+
+`AndroidManifest.xml` declares `android.software.leanback` and
+`android.hardware.touchscreen` as `required="false"` and registers both
+`LAUNCHER` and `LEANBACK_LAUNCHER`, so the same APK shows up on a phone and in
+the Android TV home row.
+
+### Player and automatic failover
+
+`player/` holds the whole policy, and it is plain Kotlin (no Android imports)
+except for `MediaSources`, which is the only place that knows about Media3:
+
+1. `StreamsRepository` normalises the addon response: drops unplayable URLs and
+   duplicates, keeps the server's priority order **untouched**.
+2. `FailoverPlanner` walks that list: index 0 is the best source, each source is
+   tried once, and the list never wraps around (no infinite loops).
+3. `FailoverController` reacts to `onPlayerError` and to silent stalls (a
+   12 s watchdog while buffering with `playWhenReady` — a user pause never
+   triggers a hop), and swaps the `MediaSource` on the **same** `ExoPlayer`
+   instance, resuming at the last known position. No black flash, no dialog, no
+   relaunch: at most a brief "Cambiando de servidor…" chip.
+4. DRM errors are the one exception: another CDN cannot fix a license, so the
+   user is told instead of being bounced around (`FailoverRules`).
+
+### Per-source HTTP headers
+
+Streamwish, Filemoon, VOE and friends reject a `.m3u8` without the `Referer` of
+the page that published it. The addon already ships those headers in
+`behaviorHints.requestHeaders`; `MediaSources.dataSourceFactory()` copies them
+into a `DefaultHttpDataSource.Factory` (adding a derived `Origin` and allowing
+cross-protocol redirects), and each source gets its own factory, since the
+`Referer` changes hop by hop.
+
+### Server URL
+
+The backend runs on your laptop or a TV box, so its address cannot be baked into
+the APK:
+
+```bash
+./gradlew :app:assembleDebug -PaddonBaseUrl=http://192.168.1.50:7000
+```
+
+`10.0.2.2:7000` (the emulator's view of the host) is the default. It is also
+editable at runtime from **Servidor** in the home header; the value is stored in
+`SharedPreferences` and normalised (`192.168.1.50:7000` → `http://…`).
+
+Cleartext HTTP is allowed because a LAN address cannot be known in advance; the
+video CDNs themselves are HTTPS.
+
+### Home catalogue
+
+The addon publishes no catalogs (`manifest.catalogs = []`), so the home screen
+is fed by `app/src/main/assets/catalog/seed.json`: four rows (Películas, Series,
+Anime, TV en Vivo) pointing at real provider ids. Edit that JSON to change what
+shows up — nothing is hardcoded in Kotlin. Remote catalogs are supported but
+opt-in (`Settings.remoteCatalogs`, off by default).
+
+### Build, run, test
+
+```bash
+cd server && npm start                 # addon on :7000
+./gradlew :app:assembleDebug           # → app/build/outputs/apk/debug/
+./gradlew :app:testDebugUnitTest       # JVM tests, no emulator needed
+```
+
+Unit tests live in `app/src/test/` and cover the parts where a bug costs a
+movie: `FailoverPlannerTest` (order, one attempt per source, no wrap-around),
+`FailoverRulesTest` (which error codes hop, which do not) and
+`StreamsRepositoryTest` (URL shape, header parsing, HTTP failures via
+`MockWebServer`).
+
+Smoke test with the real backend: run `npm start`, point the app at it, open a
+title, then stop the first provider (or block a CDN) and watch the player hop to
+the next source without losing your position.
 
 ## Getting started
 
