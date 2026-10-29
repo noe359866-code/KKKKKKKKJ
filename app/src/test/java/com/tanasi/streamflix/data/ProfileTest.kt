@@ -6,6 +6,7 @@ import com.tanasi.streamflix.data.model.Profile
 import com.tanasi.streamflix.data.model.WatchProgress
 import com.tanasi.streamflix.data.model.defaultProfileName
 import com.tanasi.streamflix.data.model.nextColorIndex
+import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.data.model.profileName
 import com.tanasi.streamflix.data.model.profileInitials
 import org.junit.Assert.assertEquals
@@ -104,6 +105,22 @@ class ProfileTest {
         assertEquals("https://cdn.example/backdrop.jpg", entry.backdrop)
         assertEquals(50, entry.progressPercent)
         assertEquals("1 h 00 min restantes", entry.subtitle)
+    }
+
+    @Test
+    fun `seguir viendo reanuda donde se quedo`() {
+        val entry = progress(position = 3_600_000L, duration = 7_200_000L).toEntry()
+
+        assertEquals(3_600_000L, entry.resumePositionMs)
+
+        val request = entry.playbackRequest(startIndex = 1)
+        assertEquals("gnula:una-pelicula", request.id)
+        assertEquals(1, request.startIndex)
+        assertEquals(
+            "El reproductor debe arrancar en el minuto 60, no en el 0",
+            3_600_000L,
+            request.startPositionMs,
+        )
     }
 
     private fun progress(position: Long, duration: Long) = WatchProgress(

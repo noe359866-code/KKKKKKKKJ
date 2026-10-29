@@ -240,11 +240,16 @@ class DetailsViewModel(
      * es una serie) + índice de fuente elegido. El failover sigue desde ahí
      * hacia abajo, sin reordenar.
      */
-    fun playbackRequest(startIndex: Int = selectedIndex()): PlaybackRequest =
-        entry.playbackRequest(startIndex).copy(
+    fun playbackRequest(startIndex: Int = selectedIndex()): PlaybackRequest {
+        val base = entry.playbackRequest(startIndex)
+        return base.copy(
             id = requestedId,
             title = selectedEpisode()?.let { episode -> "${displayTitle()} · ${episode.label}" } ?: displayTitle(),
+            /* Sólo se reanuda el título que se estaba viendo: si el usuario
+             * elige otro capítulo, empieza desde el principio. */
+            startPositionMs = if (requestedId == entry.id) base.startPositionMs else 0L,
         )
+    }
 
     private fun displayTitle(): String = mutableMetadata.value?.name?.takeIf { it.isNotBlank() } ?: entry.title
 

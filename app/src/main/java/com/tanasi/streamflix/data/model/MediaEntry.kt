@@ -68,6 +68,12 @@ data class MediaEntry(
     @SerialName("live") val live: Boolean = false,
     /** 0-100 para las tarjetas de "Continuar viendo". */
     @SerialName("progressPercent") val progressPercent: Int? = null,
+    /**
+     * Milisegundo en el que se quedó este título. Sólo lo rellena "Seguir
+     * viendo" (`WatchProgress.toEntry`): al pulsar esa tarjeta el reproductor
+     * arranca ahí en vez de desde el principio. No viaja en el JSON.
+     */
+    @kotlinx.serialization.Transient val resumePositionMs: Long = 0L,
 ) {
     val mediaType: MediaType get() = MediaType.fromWire(type) ?: MediaType.Movie
 
@@ -116,6 +122,7 @@ fun MediaEntry.playbackRequest(startIndex: Int = 0) = PlaybackRequest(
     startIndex = startIndex,
     poster = poster,
     backdrop = backdrop,
+    startPositionMs = resumePositionMs,
 )
 
 /** Lo que el reproductor necesita saber para abrir un título. */
@@ -135,6 +142,8 @@ data class PlaybackRequest(
      */
     val poster: String? = null,
     val backdrop: String? = null,
+    /** Posición de arranque: 0 salvo que venga de "Seguir viendo". */
+    val startPositionMs: Long = 0L,
 )
 
 /** Tanto :temporada:episodio como los ids de anime proveedor:slug:episodio. */

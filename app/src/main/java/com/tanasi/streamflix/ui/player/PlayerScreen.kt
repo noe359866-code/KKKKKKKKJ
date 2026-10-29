@@ -204,7 +204,13 @@ private fun PlaybackSurface(
     var subtitlesOn by remember { mutableStateOf(false) }
 
     DisposableEffect(controller) {
-        controller.start(startIndex = request.startIndex)
+        /* `startPositionMs` > 0 cuando la tarjeta viene de "Seguir viendo":
+         * el título retoma donde el perfil lo dejó. El failover conserva esa
+         * posición al saltar de fuente. */
+        controller.start(
+            startPositionMs = request.startPositionMs,
+            startIndex = request.startIndex,
+        )
         onDispose {
             /* Antes de soltar el decodificador: después, `currentPosition` ya
              * es 0 y el progreso se perdería. */

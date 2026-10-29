@@ -100,6 +100,7 @@ class PlayerActivity : ComponentActivity() {
             title = getStringExtra(EXTRA_TITLE) ?: id,
             isLive = getBooleanExtra(EXTRA_IS_LIVE, false),
             startIndex = getIntExtra(EXTRA_START_INDEX, 0).coerceAtLeast(0),
+            startPositionMs = getLongExtra(EXTRA_START_POSITION, 0L).coerceAtLeast(0L),
         )
     }
 
@@ -109,6 +110,7 @@ class PlayerActivity : ComponentActivity() {
         const val EXTRA_TITLE = "extra.title"
         const val EXTRA_IS_LIVE = "extra.isLive"
         const val EXTRA_START_INDEX = "extra.startIndex"
+        const val EXTRA_START_POSITION = "extra.startPosition"
         const val EXTRA_PROFILE_ID = "extra.profileId"
         const val EXTRA_POSTER = "extra.poster"
         const val EXTRA_BACKDROP = "extra.backdrop"

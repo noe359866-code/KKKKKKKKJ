@@ -66,6 +66,7 @@ data class WatchProgress(
         backdrop = backdrop,
         progressPercent = percent,
         subtitle = remainingLabel(),
+        resumePositionMs = positionMs,
     )
 
     companion object {

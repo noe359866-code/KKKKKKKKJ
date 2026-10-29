@@ -281,6 +281,7 @@ class MainActivity : ComponentActivity() {
                 .putExtra(PlayerActivity.EXTRA_TITLE, request.title)
                 .putExtra(PlayerActivity.EXTRA_IS_LIVE, request.isLive)
                 .putExtra(PlayerActivity.EXTRA_START_INDEX, request.startIndex)
+                .putExtra(PlayerActivity.EXTRA_START_POSITION, request.startPositionMs)
                 /* Con estos tres extras el reproductor puede guardar el
                  * progreso del perfil y su arte para "Seguir viendo". */
                 .putExtra(PlayerActivity.EXTRA_PROFILE_ID, profileId)

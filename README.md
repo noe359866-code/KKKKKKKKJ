@@ -360,6 +360,9 @@ Decisiones de salón:
   texto; activa/desactiva `TRACK_TYPE_TEXT` en el propio `ExoPlayer`.
 - **Directo**: se ocultan −10/+10 y la barra de progreso (una ventana HLS no
   tiene duración que enseñar); queda el chip EN VIVO y "Señal en directo".
+- **Reanuda donde se quedó**: la tarjeta de "Seguir viendo" viaja con
+  `PlaybackRequest.startPositionMs` y el `FailoverController` arranca ahí; si
+  el usuario cambia de capítulo en la ficha, empieza desde el principio.
 - **Lista de fuentes** como panel centrado con filas grandes y `LazyColumn` (el
   foco arrastra la lista), no como `AlertDialog` de Material: en una TV los
   botones de 40 dp y las listas que no se desplazan no se pueden usar.
