@@ -3,7 +3,6 @@ package com.tanasi.streamflix.ui.components
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,6 +41,7 @@ import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.MediaType
 import com.tanasi.streamflix.ui.theme.Dimens
 import com.tanasi.streamflix.ui.theme.StreamflixColors
+import com.tanasi.streamflix.ui.theme.tvFocusGlow
 
 /**
  * Tarjeta de catálogo, compartida por TV y móvil.
@@ -70,10 +70,12 @@ fun MediaCard(
         animationSpec = tween(durationMillis = 120),
         label = "cardScale",
     )
-    val borderAlpha by animateFloatAsState(
+    /* 0 = reposo, 1 = foco pleno. Alimenta el "selector" de foco de TV
+     * (`tvFocusGlow`): borde + halo que crecen en 120 ms. */
+    val focusProgress by animateFloatAsState(
         targetValue = if (isTv && focused) 1f else 0f,
         animationSpec = tween(durationMillis = 120),
-        label = "cardBorder",
+        label = "cardFocus",
     )
 
     val shape = RoundedCornerShape(Dimens.cardCornerRadius)
@@ -97,13 +99,14 @@ fun MediaCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(deviceProfile.cardHeightDp.dp)
+                /* El halo va ANTES del `clip`: si no, el recorte de la tarjeta
+                 * se comería justo la parte que sobresale. */
+                .tvFocusGlow(
+                    progress = focusProgress,
+                    cornerRadius = Dimens.cardCornerRadius,
+                )
                 .clip(shape)
-                .background(StreamflixColors.PosterPlaceholder)
-                .border(
-                    width = Dimens.focusBorder,
-                    color = StreamflixColors.FocusRing.copy(alpha = borderAlpha),
-                    shape = shape,
-                ),
+                .background(StreamflixColors.PosterPlaceholder),
         ) {
             if (entry.poster.isNullOrBlank()) {
                 /* Sin póster: degradado + título, nunca un hueco gris vacío. */

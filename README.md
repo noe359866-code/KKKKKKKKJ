@@ -214,6 +214,43 @@ except for `MediaSources`, which is the only place that knows about Media3:
 4. DRM errors are the one exception: another CDN cannot fix a license, so the
    user is told instead of being bounced around (`FailoverRules`).
 
+### Player controls (D-Pad first)
+
+The player doesn't use Media3's built-in controller (`useController = false`);
+`ui/player/PlayerControls.kt` draws its own, because the stock one documents no
+behaviour for the direction keys and can't share the app's focus language.
+
+| Key | Action |
+| --- | --- |
+| `OK` / `ENTER` / `SPACE` / gamepad `A` | play / pause |
+| `◀` / `▶` (and `MEDIA_REWIND` / `MEDIA_FAST_FORWARD`) | −10 s / +10 s (VOD only) |
+| `▼` / `▲` | show the controls and move the focus into them |
+| `BACK` | hide the controls; a second press leaves the player |
+| tap (phone) | show / hide the controls |
+
+Details that matter on a sofa:
+
+- everything fades out after **4 s** while playing, and only while the focus is
+  still on the video surface — if you are walking the buttons they stay put;
+- while the controls are hidden, `OK` pauses and the arrows seek **without**
+  bringing the UI back, so the failover and normal playback stay unobtrusive;
+- `LEFT`/`RIGHT` never steal the event when a button is focused: there they move
+  the focus between buttons, as expected;
+- the seek arithmetic lives in `player/SeekPolicy.kt` (clamped to `0..duration`,
+  unknown duration = no upper bound) and is unit-tested;
+- live channels hide the seek buttons and the progress bar: an HLS live window
+  has no duration to show, and seeking it only triggers a rebuffer.
+
+The red ring + halo is `Modifier.tvFocusGlow` (`ui/theme/Focus.kt`), the Compose
+equivalent of the classic pair of XML state drawables:
+
+```text
+res/color/card_focus.xml + android:focusable="true"   →  Modifier.tvFocusGlow(progress)
+```
+
+Both the home cards and the player buttons use it, so the focus style is
+identical in the catalogue and on top of the video.
+
 ### Per-source HTTP headers
 
 Streamwish, Filemoon, VOE and friends reject a `.m3u8` without the `Referer` of
@@ -257,9 +294,10 @@ cd server && npm start                 # addon on :7000
 
 Unit tests live in `app/src/test/` and cover the parts where a bug costs a
 movie: `FailoverPlannerTest` (order, one attempt per source, no wrap-around),
-`FailoverRulesTest` (which error codes hop, which do not) and
-`StreamsRepositoryTest` (URL shape, header parsing, HTTP failures via
-`MockWebServer`).
+`FailoverRulesTest` (which error codes hop, which do not), `SeekPolicyTest`
+(seeking at the edges of the timeline), `PlayerKeyMapTest` (the remote-control
+mapping), `DurationsTest` (clock formatting) and `StreamsRepositoryTest` (URL
+shape, header parsing, HTTP failures via `MockWebServer`).
 
 Smoke test with the real backend: run `npm start`, point the app at it, open a
 title, then stop the first provider (or block a CDN) and watch the player hop to

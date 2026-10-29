@@ -160,7 +160,7 @@ private fun HomeHeader(
         )
         Spacer(Modifier.width(16.dp))
         Text(
-            text = "Películas · Series · Anime · TV",
+            text = "Películas · Series · Anime · TV y deportes",
             style = MaterialTheme.typography.bodyMedium,
             color = StreamflixColors.OnSurfaceMuted,
             maxLines = 1,
