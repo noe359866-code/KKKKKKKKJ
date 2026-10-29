@@ -532,8 +532,9 @@ signature with `apksigner`, and uploads the APK, the AAB and the R8 mapping.
 
 - **manual**: *Run workflow* with the backend URL (leave it empty to get an APK
   that asks for the server on first launch);
-- **tag**: pushing `v1.0.0` uses the `PRODUCTION_ADDON_BASE_URL` repository
-  variable.
+- **tag**: pushing `v0.9.9` uses the `PRODUCTION_ADDON_BASE_URL` repository
+  variable and attaches the APK, AAB and SHA-256 digests to a GitHub Release
+  for direct downloads (artifacts are also retained for 30 days).
 
 Signing: if the `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`,
 `RELEASE_KEY_ALIAS` and `RELEASE_KEY_PASSWORD` secrets exist, that keystore is

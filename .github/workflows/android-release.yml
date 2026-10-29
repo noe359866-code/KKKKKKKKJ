@@ -28,7 +28,8 @@ on:
       - 'v*'
 
 permissions:
-  contents: read
+  # Necesario para adjuntar la APK/AAB a la publicación de la etiqueta.
+  contents: write
   # Sólo para publicar el diagnóstico del build como check-run (ver más abajo).
   checks: write
 
@@ -263,6 +264,40 @@ jobs:
           path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publicar APK en GitHub Releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "## Streamflix $VERSION"
+            echo
+            echo "APK firmada para Android y Android TV (Android 6.0 o posterior)."
+            echo "Descarga \`streamflix-$VERSION.apk\` y ábrela en el dispositivo."
+            echo
+            echo "- Versión visible: $VERSION; código interno: 2."
+            echo "- Pruebas unitarias, lint y firma comprobados por GitHub Actions."
+            echo "- Si no hay un backend configurado, la app pide su dirección al abrir."
+            echo "- Si Android informa de un conflicto de firma, hace falta desinstalar la versión anterior antes de instalar esta."
+            echo "- Conserva el keystore de firma para futuras actualizaciones."
+            echo
+            echo "SHA-256 de la APK y del AAB en \`digests.txt\`."
+          } > "$NOTES"
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$APK" "$AAB" digests.txt \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$APK" "$AAB" digests.txt \
+              --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "Streamflix $VERSION" --notes-file "$NOTES"
+          fi
+          URL=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json url --jq .url)
+          echo "### Descarga directa" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Streamflix $VERSION]($URL)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload R8 mapping
         uses: actions/upload-artifact@v4
