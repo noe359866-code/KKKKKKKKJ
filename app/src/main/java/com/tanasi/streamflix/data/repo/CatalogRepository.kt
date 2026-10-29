@@ -3,7 +3,7 @@ package com.tanasi.streamflix.data.repo
 import com.tanasi.streamflix.data.model.CatalogDescriptor
 import com.tanasi.streamflix.data.model.CatalogRow
 import com.tanasi.streamflix.data.model.HomeCatalog
-import com.tanasi.streamflix.data.remote.AddonClient
+import com.tanasi.streamflix.data.ContentClient
 import com.tanasi.streamflix.data.remote.Urls
 import com.tanasi.streamflix.util.AddonSettings
 import com.tanasi.streamflix.util.AppLog
@@ -15,14 +15,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-/**
- * Resultado de cargar el Home.
- *
- * No hay datos locales de respaldo: la cartelera **sólo** la publica el servidor
- * del addon. Por eso el fallo es un estado explícito y no una lista vacía: la UI
- * necesita distinguir "falta configurar el servidor" (abrir ajustes) de "el
- * servidor no responde" (reintentar) de "el servidor no publica filas".
- */
+/** Resultado de cargar el Home desde el motor local o el servidor opcional. */
 sealed interface CatalogResult {
     data class Ready(val catalog: HomeCatalog) : CatalogResult
 
@@ -35,35 +28,23 @@ sealed interface CatalogResult {
 }
 
 /**
- * De dónde salen las filas del Home: **del servidor**, siempre.
- *
- * Al abrir la app se pregunta `GET /catalogs.json` y cada fila se alimenta de
- * `GET /catalog/{type}/{id}.json` (protocolo Stremio). La cartelera —incluida la
- * TV en vivo, los deportes y las filas de Netflix/Disney+— se cambia editando
- * `server/config/catalogs.json`, sin recompilar ni reinstalar el APK.
- *
- * Las filas se piden **en paralelo** y cada una falla por su cuenta: si Cinemeta
- * se cae, las filas de películas desaparecen pero la de TV en vivo (que sale de
- * un JSON local del servidor) se sigue viendo. Una fila lenta no retrasa al
- * resto: tiene su propio tope.
- *
- * El APK no lleva catálogo embebido. Un build de producción sin servidor
- * configurado muestra el diálogo de ajustes en el primer arranque; no una lista
- * de prueba que el usuario confunda con contenido real.
+ * Las filas se resuelven en paralelo. En modo autónomo salen de los proveedores
+ * del APK; sólo el modo remoto necesita baseUrl. Una fila caída no tumba las demás.
  */
 class CatalogRepository(
-    private val client: AddonClient,
+    private val client: ContentClient,
     private val settings: AddonSettings,
 ) {
 
     @Volatile
-    private var cached: HomeCatalog? = null
+    private var cached: Pair<String, HomeCatalog>? = null
 
-    suspend fun load(): CatalogResult = withContext(Dispatchers.IO) {
-        cached?.let { return@withContext CatalogResult.Ready(it) }
+    suspend fun load(search: String? = null, onPartial: ((HomeCatalog) -> Unit)? = null): CatalogResult = withContext(Dispatchers.IO) {
+        val key = "${settings.autonomous}:${settings.metadataCatalogs}:${settings.baseUrl}:${search.orEmpty()}"
+        cached?.takeIf { it.first == key }?.let { return@withContext CatalogResult.Ready(it.second) }
 
         val baseUrl = settings.baseUrl.trim()
-        if (baseUrl.isEmpty()) {
+        if (!settings.autonomous && baseUrl.isEmpty()) {
             return@withContext CatalogResult.Failure(
                 "Falta configurar la dirección del servidor.",
                 needsSetup = true,
@@ -79,27 +60,30 @@ class CatalogRepository(
         } catch (error: Exception) {
             AppLog.w("no se pudieron leer los catálogos del addon: %s", error.message)
             return@withContext CatalogResult.Failure(
-                "No se pudo conectar con ${Urls.hostLabel(baseUrl)}. Revisa que el servidor esté encendido y la dirección sea correcta.",
-                needsSetup = true,
+                if (settings.autonomous) "No se pudo iniciar el motor local. Vuelve a intentarlo."
+                else "No se pudo conectar con ${Urls.hostLabel(baseUrl)}. Revisa que el servidor esté encendido y la dirección sea correcta.",
+                needsSetup = !settings.autonomous,
             )
         }
 
         if (descriptors.isEmpty()) {
             return@withContext CatalogResult.Failure(
-                "El servidor respondió pero no publica catálogos. Revisa config/catalogs.json en el backend.",
+                if (settings.autonomous) "El motor local no publicó catálogos. Revisa la instalación del APK."
+                else "El servidor respondió pero no publica catálogos. Revisa config/catalogs.json en el backend.",
                 needsSetup = false,
             )
         }
 
-        val rows = loadRows(baseUrl, descriptors)
+        val rows = loadRows(baseUrl, descriptors, search, onPartial)
         if (rows.isEmpty()) {
             return@withContext CatalogResult.Failure(
-                "Ninguna fila del catálogo respondió. Se reintentará al volver a esta pantalla.",
+                if (!search.isNullOrBlank()) "No se encontraron títulos para esa búsqueda."
+                else "No se pudo cargar contenido de los proveedores. Revisa Internet y vuelve a intentarlo.",
                 needsSetup = false,
             )
         }
 
-        HomeCatalog(rows).also { cached = it }.let(CatalogResult::Ready)
+        HomeCatalog(rows).also { cached = key to it }.let(CatalogResult::Ready)
     }
 
     /** Fuerza una recarga (reintento manual o cambio de servidor). */
@@ -108,24 +92,39 @@ class CatalogRepository(
     }
 
     /** Carga todas las filas a la vez; una que falle simplemente no se pinta. */
-    private suspend fun loadRows(baseUrl: String, descriptors: List<CatalogDescriptor>): List<CatalogRow> =
+    private suspend fun loadRows(baseUrl: String, descriptors: List<CatalogDescriptor>, search: String?, onPartial: ((HomeCatalog) -> Unit)?): List<CatalogRow> =
         coroutineScope {
-            descriptors
+            val completed = linkedMapOf<String, CatalogRow>()
+            // Arranca con los canales empaquetados antes de ocupar el pool con peticiones de Internet.
+            val saved = descriptors.firstOrNull { settings.autonomous && it.id == "bundled_live" && it.type == "tv" }
+            if (saved != null) {
+                fetchRow(baseUrl, saved, search)?.let { row ->
+                    completed[saved.rowId] = row
+                    onPartial?.invoke(HomeCatalog(listOf(row)))
+                }
+            }
+            descriptors.filterNot { it == saved }
                 .map { descriptor ->
                     async(Dispatchers.IO) {
-                        descriptor to withTimeoutOrNull(ROW_TIMEOUT_MS) { fetchRow(baseUrl, descriptor) }
+                        val row = withTimeoutOrNull(ROW_TIMEOUT_MS) { fetchRow(baseUrl, descriptor, search) }
+                        if (row != null) synchronized(completed) {
+                            completed[descriptor.rowId] = row
+                            // Publica primero los canales guardados; las filas de Internet aparecen al llegar.
+                            onPartial?.invoke(HomeCatalog(descriptors.mapNotNull { completed[it.rowId] }))
+                        }
+                        descriptor to row
                     }
                 }
                 .awaitAll()
-                .mapNotNull { (descriptor, row) ->
+                .forEach { (descriptor, row) ->
                     if (row == null) AppLog.w("catálogo %s/%s sin datos", descriptor.type, descriptor.id)
-                    row
                 }
+            descriptors.mapNotNull { completed[it.rowId] }
         }
 
     /** Una fila remota, o `null` si el catálogo no devolvió nada útil. */
-    private suspend fun fetchRow(baseUrl: String, descriptor: CatalogDescriptor): CatalogRow? = try {
-        val response = client.catalog(baseUrl, descriptor.type, descriptor.id)
+    private suspend fun fetchRow(baseUrl: String, descriptor: CatalogDescriptor, search: String?): CatalogRow? = try {
+        val response = client.catalog(baseUrl, descriptor.type, descriptor.id, search = search)
         val items = response?.metas.orEmpty()
             .map { meta -> meta.toEntry(descriptor) }
             .distinctBy { entry -> entry.id }
@@ -139,8 +138,7 @@ class CatalogRepository(
             CatalogRow(
                 id = descriptor.rowId,
                 title = descriptor.name,
-                /* La forma la decide el SERVIDOR: 2:3 para películas/series,
-                 * 16:9 para TV en vivo y deportes. */
+                /* La forma la decide la fuente de datos. */
                 aspect = descriptor.posterShape,
                 items = items,
             )
@@ -154,9 +152,9 @@ class CatalogRepository(
 
     private companion object {
         /** Tope del descubrimiento de catálogos (ms). */
-        const val DISCOVERY_TIMEOUT_MS = 4_000L
+        const val DISCOVERY_TIMEOUT_MS = 15_000L // Incluye el primer arranque de Python.
 
         /** Tope por fila (ms), holgado sobre el `CINEMETA_TIMEOUT_MS` del servidor. */
-        const val ROW_TIMEOUT_MS = 12_000L
+        const val ROW_TIMEOUT_MS = 35_000L // Consultas acotadas, hasta 4 filas locales simultáneas.
     }
 }

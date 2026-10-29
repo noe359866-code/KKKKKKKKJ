@@ -6,9 +6,8 @@ name: Android release
 #   - manual (workflow_dispatch): URL del backend opcional;
 #   - tag v*: usa la variable de repositorio PRODUCTION_ADDON_BASE_URL.
 #
-# Si no hay URL, el APK se compila con la URL vacía a propósito: la app abre el
-# diálogo "Servidor del addon" en el primer arranque (nunca una IP de emulador ni
-# contenido de prueba). Con URL, esa URL queda como valor por defecto.
+# Todos los APK incluyen Python y los scrapers y arrancan en modo autónomo.
+# La URL sólo se utiliza si se elige explícitamente el modo servidor en Ajustes.
 #
 # Firma:
 #   - si existe el secreto RELEASE_KEYSTORE_BASE64 se usa esa clave (la buena
@@ -20,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       addon_base_url:
-        description: "URL pública del backend Node (vacío = pedirla en la app)"
+        description: "Backend opcional para el modo servidor (vacío = sin backend)"
         required: false
         type: string
   push:
@@ -59,6 +58,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Python 3.11 (runtime embebido)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Pruebas offline del motor autónomo
+        run: python3 -m unittest discover -s app/src/test/python -v
+
       - name: Gradle cache
         uses: gradle/actions/setup-gradle@v4
 
@@ -92,9 +99,8 @@ jobs:
         id: url
         run: |
           if [ -z "${ADDON_BASE_URL:-}" ]; then
-            echo "Sin URL: el APK se compilará con la URL vacía y la pedirá al arrancar."
-            echo "ALLOW_EMPTY_ADDON_BASE_URL=true" >> "$GITHUB_ENV"
-            echo "value=(preguntar en la app)" >> "$GITHUB_OUTPUT"
+            echo "APK autónomo: no se requiere una URL de backend."
+            echo "value=(autónomo, sin servidor)" >> "$GITHUB_OUTPUT"
           else
             echo "Backend: $ADDON_BASE_URL"
             echo "value=$ADDON_BASE_URL" >> "$GITHUB_OUTPUT"
@@ -160,6 +166,7 @@ jobs:
           echo "AAB=$AAB" >> "$GITHUB_ENV"
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           "$APKSIGNER" verify --print-certs "$APK"
+          python3 scripts/verify-embedded-apk.py "$APK"
           sha256sum "$APK" "$AAB" | tee digests.txt
 
       - name: Resumen
@@ -169,7 +176,8 @@ jobs:
             echo ""
             echo "| | |"
             echo "| --- | --- |"
-            echo "| Backend por defecto | \`${{ steps.url.outputs.value }}\` |"
+            echo "| Motor | Python + 12 scrapers dentro del APK |"
+            echo "| Backend opcional | \`${{ steps.url.outputs.value }}\` |"
             echo "| Firma | \`${{ steps.signing.outputs.kind }}\` |"
             echo "| APK | \`$(basename "$APK")\` ($(du -h "$APK" | cut -f1)) |"
             echo "| AAB | \`$(basename "$AAB")\` ($(du -h "$AAB" | cut -f1)) |"

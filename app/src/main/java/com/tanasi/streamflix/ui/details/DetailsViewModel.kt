@@ -6,15 +6,18 @@ import com.tanasi.streamflix.data.model.EpisodeOption
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.MediaType
 import com.tanasi.streamflix.data.model.PlaybackRequest
+import com.tanasi.streamflix.data.model.RemoteMeta
 import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.data.model.SeasonGroup
 import com.tanasi.streamflix.data.model.StreamSource
 import com.tanasi.streamflix.data.model.toSeasonGroups
-import com.tanasi.streamflix.data.remote.AddonClient
+import com.tanasi.streamflix.data.ContentClient
+import com.tanasi.streamflix.data.model.hasEpisodeNumber
 import com.tanasi.streamflix.data.repo.StreamsRepository
 import com.tanasi.streamflix.data.repo.StreamsResult
 import com.tanasi.streamflix.util.AddonSettings
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -67,7 +70,7 @@ sealed interface EpisodesUiState {
     }
 
     /** Es una serie, pero el servidor no devolvió episodios: se intenta igual. */
-    data class Unavailable(val message: String) : EpisodesUiState
+    data class Unavailable(val message: String, val selected: EpisodeOption? = null) : EpisodesUiState
 }
 
 /**
@@ -84,12 +87,15 @@ sealed interface EpisodesUiState {
 class DetailsViewModel(
     val entry: MediaEntry,
     private val repository: StreamsRepository,
-    private val client: AddonClient? = null,
+    private val client: ContentClient? = null,
     private val settings: AddonSettings? = null,
 ) : ViewModel() {
 
     private val mutableState = MutableStateFlow<SourcesUiState>(SourcesUiState.Loading)
     val state: StateFlow<SourcesUiState> = mutableState.asStateFlow()
+
+    private val mutableMetadata = MutableStateFlow<RemoteMeta?>(null)
+    val metadata: StateFlow<RemoteMeta?> = mutableMetadata.asStateFlow()
 
     private val mutableEpisodes = MutableStateFlow<EpisodesUiState>(EpisodesUiState.Hidden)
     val episodes: StateFlow<EpisodesUiState> = mutableEpisodes.asStateFlow()
@@ -102,12 +108,14 @@ class DetailsViewModel(
     private var requestedId: String = entry.id
 
     /** Sólo se resuelven episodios cuando el id no los trae ya. */
-    private val needsEpisodePicker: Boolean
-        get() = entry.mediaType in setOf(MediaType.Series, MediaType.Anime) &&
-            EPISODE_SUFFIX.matches(entry.id).not()
+    private val needsMetadata: Boolean
+        get() = !entry.isLive && !hasEpisodeNumber(entry.type, entry.id)
+
+    private var sourcesJob: Job? = null
+    private var episodesJob: Job? = null
 
     init {
-        if (needsEpisodePicker && client != null && settings != null) {
+        if (needsMetadata && client != null && settings != null) {
             loadEpisodes()
         } else {
             loadSources(entry.id)
@@ -115,9 +123,10 @@ class DetailsViewModel(
     }
 
     fun load() {
-        if (mutableEpisodes.value is EpisodesUiState.Ready) {
+        if (mutableEpisodes.value is EpisodesUiState.Ready ||
+            (mutableEpisodes.value as? EpisodesUiState.Unavailable)?.selected != null) {
             loadSources(requestedId)
-        } else if (needsEpisodePicker && client != null && settings != null) {
+        } else if (needsMetadata && client != null && settings != null) {
             loadEpisodes()
         } else {
             loadSources(entry.id)
@@ -132,7 +141,9 @@ class DetailsViewModel(
         val addon = client ?: return
         val addonSettings = settings ?: return
 
-        viewModelScope.launch {
+        episodesJob?.cancel()
+        sourcesJob?.cancel()
+        episodesJob = viewModelScope.launch {
             mutableEpisodes.value = EpisodesUiState.Loading
             mutableState.value = SourcesUiState.Loading
 
@@ -144,14 +155,19 @@ class DetailsViewModel(
                 null
             }
 
+            mutableMetadata.value = meta
             val seasons = (meta?.videos ?: emptyList()).toSeasonGroups()
             if (seasons.isEmpty()) {
-                /* Sin lista de episodios no se bloquea la reproducción: se pide
-                 * el id tal cual (el servidor puede resolverlo por búsqueda). */
-                mutableEpisodes.value = EpisodesUiState.Unavailable(
-                    "No se pudo cargar la lista de episodios. Se buscarán fuentes para la serie completa.",
-                )
-                loadSources(entry.id)
+                if (entry.mediaType == MediaType.Movie) {
+                    mutableEpisodes.value = EpisodesUiState.Hidden
+                    loadSources(entry.id)
+                } else {
+                    // No inventar capítulos ni reproducir silenciosamente el episodio 1.
+                    mutableEpisodes.value = EpisodesUiState.Unavailable(
+                        "El proveedor no publicó la lista. Puedes indicar temporada y episodio manualmente.",
+                    )
+                    mutableState.value = SourcesUiState.Unavailable("Elige un episodio para buscar fuentes.")
+                }
                 return@launch
             }
 
@@ -170,6 +186,13 @@ class DetailsViewModel(
         loadSources(episode.idFor(entry.id))
     }
 
+    fun selectManualEpisode(episode: EpisodeOption) {
+        val unavailable = mutableEpisodes.value as? EpisodesUiState.Unavailable ?: return
+        if (episode.season !in 0..100 || episode.episode !in 1..10000) return
+        mutableEpisodes.value = unavailable.copy(selected = episode)
+        loadSources(episode.idFor(entry.id))
+    }
+
     /** Cambia la temporada visible (no recarga fuentes hasta elegir capítulo). */
     fun selectSeason(season: Int) {
         val ready = mutableEpisodes.value as? EpisodesUiState.Ready ?: return
@@ -181,7 +204,8 @@ class DetailsViewModel(
 
     private fun loadSources(id: String) {
         requestedId = id
-        viewModelScope.launch {
+        sourcesJob?.cancel()
+        sourcesJob = viewModelScope.launch {
             mutableState.value = SourcesUiState.Loading
             mutableState.value = when (val result = repository.streamsFor(entry.type, id)) {
                 is StreamsResult.Ready -> SourcesUiState.Ready(result.sources)
@@ -205,7 +229,11 @@ class DetailsViewModel(
     fun selectedIndex(): Int = (mutableState.value as? SourcesUiState.Ready)?.selected ?: 0
 
     /** Episodio elegido, si la hoja mostró la lista. */
-    fun selectedEpisode(): EpisodeOption? = (mutableEpisodes.value as? EpisodesUiState.Ready)?.selected
+    fun selectedEpisode(): EpisodeOption? = when (val current = mutableEpisodes.value) {
+        is EpisodesUiState.Ready -> current.selected
+        is EpisodesUiState.Unavailable -> current.selected
+        else -> null
+    }
 
     /**
      * Lo que hay que abrir en el reproductor: id (con `:temporada:episodio` si
@@ -215,11 +243,9 @@ class DetailsViewModel(
     fun playbackRequest(startIndex: Int = selectedIndex()): PlaybackRequest =
         entry.playbackRequest(startIndex).copy(
             id = requestedId,
-            title = selectedEpisode()?.let { episode -> "${entry.title} · ${episode.label}" } ?: entry.title,
+            title = selectedEpisode()?.let { episode -> "${displayTitle()} · ${episode.label}" } ?: displayTitle(),
         )
 
-    private companion object {
-        /** `tt0944947:1:2`, `gnula:x:2:5`… ya traen capítulo. */
-        val EPISODE_SUFFIX = Regex(""":\d+:\d+$""")
-    }
+    private fun displayTitle(): String = mutableMetadata.value?.name?.takeIf { it.isNotBlank() } ?: entry.title
+
 }

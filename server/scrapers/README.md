@@ -1,3 +1,9 @@
+> **Uso dentro del APK:** Gradle incluye estos mismos scripts, sin copiarlos,
+> mediante Chaquopy. Android llama a `scrape(payload)` en el intérprete embebido;
+> no usa el puente Node, `spawn()` ni stdin. `example_provider.py` y
+> `template_provider.py` se excluyen del APK. Más detalles en
+> [Modo autónomo Android](../../docs/autonomous-android.md).
+
 # Scrapers (Python)
 
 Cada archivo `.py` de esta carpeta es un **proveedor** independiente que el

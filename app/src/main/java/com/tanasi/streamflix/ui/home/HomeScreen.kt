@@ -22,6 +22,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,6 +47,7 @@ import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.core.LocalDeviceProfile
 import com.tanasi.streamflix.data.model.HomeCatalog
 import com.tanasi.streamflix.data.model.MediaEntry
+import com.tanasi.streamflix.data.model.hasEpisodeNumber
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.ui.components.MediaRow
@@ -92,6 +94,16 @@ fun HomeScreen(
     val deviceProfile = LocalDeviceProfile.current
     val state by viewModel.state.collectAsStateWithLifecycle()
     val hero by viewModel.hero.collectAsStateWithLifecycle()
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    var showSearch by remember { mutableStateOf(false) }
+
+    if (showSearch) {
+        CatalogSearchDialog(
+            initialQuery = query,
+            onSearch = { showSearch = false; viewModel.search(it) },
+            onDismiss = { showSearch = false },
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -132,7 +144,7 @@ fun HomeScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (current.needsSetup) {
                             OutlinedButton(onClick = onOpenSettings) {
-                                Text("Configurar servidor")
+                                Text("Ajustes")
                             }
                         }
                         OutlinedButton(onClick = { viewModel.load() }) {
@@ -140,7 +152,7 @@ fun HomeScreen(
                         }
                         if (!current.needsSetup) {
                             OutlinedButton(onClick = onOpenSettings) {
-                                Text("Configurar servidor")
+                                Text("Ajustes")
                             }
                         }
                     }
@@ -183,7 +195,8 @@ fun HomeScreen(
                             contentBottomPadding = contentBottomPadding,
                             onPlay = {
                                 spotlight?.entry?.let { entry ->
-                                    onPlay(entry.playbackRequest())
+                                    if (!entry.isLive && !hasEpisodeNumber(entry.type, entry.id)) onOpenDetails(entry, false)
+                                    else onPlay(entry.playbackRequest())
                                 }
                             },
                             onDetails = {
@@ -254,6 +267,9 @@ fun HomeScreen(
                         settingsFocus = if (deviceProfile.isTelevision) serverFocus else null,
                         settingsDownFocus = if (deviceProfile.isTelevision) heroPlayFocus else null,
                         onOpenSettings = onOpenSettings,
+                        onOpenSearch = { showSearch = true },
+                        onClearSearch = { viewModel.search("") },
+                        searching = query.isNotBlank(),
                         modifier = Modifier.align(Alignment.TopStart),
                     )
 
@@ -261,18 +277,31 @@ fun HomeScreen(
                      * mostrando el primer título de "Continuar viendo" y el
                      * usuario ya puede moverse sin adivinar nada. */
                     if (deviceProfile.requiresDpadFocus) {
+                        var initialFocusRequested by remember { mutableStateOf(false) }
                         LaunchedEffect(current.catalog.rows.firstOrNull()?.id) {
+                            if (initialFocusRequested) return@LaunchedEffect
                             /* `LaunchedEffect` corre antes del layout: sin
                              * esperar un frame, `requestFocus()` lanza
                              * "FocusRequester is not initialized" y el mando
                              * se queda sin cursor. */
                             withFrameNanos { }
                             withFrameNanos { }
-                            runCatching { firstCardFocus.requestFocus() }
+                            runCatching { firstCardFocus.requestFocus() }.onSuccess { initialFocusRequested = true }
                         }
                     }
                 }
             }
+        }
+        if (state !is HomeUiState.Ready) {
+            HomeTopBar(
+                deviceProfile = deviceProfile,
+                settingsFocus = null,
+                settingsDownFocus = null,
+                onOpenSettings = onOpenSettings,
+                onOpenSearch = { showSearch = true },
+                onClearSearch = { viewModel.search("") },
+                searching = query.isNotBlank(),
+            )
         }
     }
 }
@@ -334,6 +363,9 @@ private fun HomeTopBar(
     settingsFocus: FocusRequester?,
     settingsDownFocus: FocusRequester?,
     onOpenSettings: () -> Unit,
+    onOpenSearch: () -> Unit,
+    onClearSearch: () -> Unit,
+    searching: Boolean,
     modifier: Modifier = Modifier,
 ) {
     var settingsFocused by remember { mutableStateOf(false) }
@@ -362,13 +394,19 @@ private fun HomeTopBar(
             color = StreamflixColors.Primary,
         )
         Spacer(Modifier.width(14.dp))
-        Text(
+        if (deviceProfile.isTelevision) Text(
             text = "Películas · Series · Anime · TV y deportes",
             style = MaterialTheme.typography.labelMedium,
             color = StreamflixColors.OnSurfaceMuted.copy(alpha = 0.9f),
             maxLines = 1,
         )
         Spacer(Modifier.weight(1f))
+        if (searching) TextButton(onClick = onClearSearch) { Text("Inicio") }
+        TextButton(
+            onClick = onOpenSearch,
+            modifier = if (settingsDownFocus != null) Modifier.focusProperties { down = settingsDownFocus } else Modifier,
+        ) { Text("Buscar") }
+        Spacer(Modifier.width(8.dp))
 
         Box(
             modifier = Modifier
@@ -384,7 +422,7 @@ private fun HomeTopBar(
                 .padding(horizontal = 14.dp, vertical = 8.dp),
         ) {
             Text(
-                text = "Servidor",
+                text = "Ajustes",
                 style = MaterialTheme.typography.labelLarge,
                 color = StreamflixColors.OnSurface,
             )

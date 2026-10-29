@@ -16,7 +16,7 @@ import com.tanasi.streamflix.data.model.StreamSource
  *
  * El punto crítico son las **cabeceras HTTP**: Streamwish, Filemoon, VOE o
  * Mp4upload rechazan el `.m3u8` si falta el `Referer` del sitio que lo publica
- * (y a veces un `User-Agent` concreto). El backend ya los devuelve en
+ * (y a veces un `User-Agent` concreto). Ambos motores los devuelven en
  * `behaviorHints.requestHeaders`; aquí se inyectan en el `DataSource`.
  */
 object MediaSources {
@@ -36,12 +36,13 @@ object MediaSources {
      * (cada CDN exige el suyo), así que cada `MediaSource` lleva el suyo.
      */
     fun dataSourceFactory(source: StreamSource): DataSource.Factory {
-        val headers = linkedMapOf<String, String>()
+        val headers = linkedMapOf<String, String>().apply { putAll(source.requestHeaders) }
+        fun contains(name: String) = headers.keys.any { it.equals(name, ignoreCase = true) }
         source.referer?.takeIf { it.isNotBlank() }?.let { referer ->
-            headers["Referer"] = referer
-            originOf(referer)?.let { headers["Origin"] = it }
+            if (!contains("Referer")) headers["Referer"] = referer
+            if (!contains("Origin")) originOf(referer)?.let { headers["Origin"] = it }
         }
-        source.userAgent?.takeIf { it.isNotBlank() }?.let { headers["User-Agent"] = it }
+        source.userAgent?.takeIf { it.isNotBlank() }?.let { if (!contains("User-Agent")) headers["User-Agent"] = it }
 
         return DefaultHttpDataSource.Factory()
             .setUserAgent(source.userAgent ?: FALLBACK_USER_AGENT)

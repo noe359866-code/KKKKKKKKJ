@@ -1,0 +1,150 @@
+name: Autonomous app checks
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main, 'arena/**']
+
+permissions:
+  contents: read
+  checks: write
+
+concurrency:
+  group: autonomous-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Autonomous engine (offline HTTP fixtures)
+        run: python3 -m unittest discover -s app/src/test/python -v
+      - name: Existing server and scraper regressions
+        working-directory: server
+        run: |
+          set -o pipefail
+          # Keep file-level concurrency modest: tests spawn Python processes and
+          # include strict deadline assertions; their internal pool stays parallel.
+          { npm ci && npm test -- --test-concurrency=2; } 2>&1 | tee "$RUNNER_TEMP/server-test.log"
+      - name: Engine regression diagnostic
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const file = `${process.env.RUNNER_TEMP}/server-test.log`;
+            const raw = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '(Python engine step failed before server tests.)';
+            const lines = raw.split('\n');
+            const failures = lines.flatMap((line, index) => /not ok|npm ERR|npm error/.test(line) ? lines.slice(Math.max(0, index - 2), index + 45) : []);
+            await github.rest.checks.create({
+              owner: context.repo.owner, repo: context.repo.repo, name: 'autonomous-engine-diagnostic',
+              head_sha: context.sha, status: 'completed', conclusion: 'neutral',
+              output: {title: 'Engine regression diagnostic', summary: 'Regression test output',
+                text: ['### Failures', '```', failures.join('\n'), '```', '### Tail', '```', lines.slice(-80).join('\n'), '```'].join('\n').slice(-60000)},
+            });
+
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - name: Android SDK 36 (preinstalled runner tools)
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            echo "Runner Android SDK missing" | tee "$RUNNER_TEMP/android.log"
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          SDKMGR="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMGR" ]; then
+            SDKMGR="$(find "$SDK/cmdline-tools" -name sdkmanager -type f -print -quit)"
+          fi
+          yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+          "$SDKMGR" 'platforms;android-36' 'build-tools;35.0.0' 2>&1 | tee "$RUNNER_TEMP/android.log"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "$SDK/emulator" >> "$GITHUB_PATH"
+      - name: Kotlin tests, lint and build (no ADDON_BASE_URL)
+        run: |
+          set -o pipefail
+          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest --no-daemon --stacktrace 2>&1 | tee "$RUNNER_TEMP/android.log"
+      - name: Verify Python runtime and all twelve scrapers are actually packaged
+        run: |
+          set -euo pipefail
+          python3 scripts/verify-embedded-apk.py app/build/outputs/apk/debug/app-debug.apk 2>&1 | tee "$RUNNER_TEMP/apk-debug.json" | tee -a "$RUNNER_TEMP/android.log"
+          python3 scripts/verify-embedded-apk.py app/build/outputs/apk/release/app-release-unsigned.apk 2>&1 | tee "$RUNNER_TEMP/apk-release.json" | tee -a "$RUNNER_TEMP/android.log"
+          python3 - <<'PY'
+          import json, os
+          for name in ('debug', 'release'):
+              with open(os.path.join(os.environ['RUNNER_TEMP'], f'apk-{name}.json')) as file:
+                  result = json.load(file)
+              print(f"::notice title=Autonomous APK ({name})::{result['bytes']} bytes / {result['MiB']} MiB; Python + 12 scrapers; ARM32, ARM64, x86_64")
+          PY
+      - name: Enable emulator acceleration
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Run embedded engine on Android (no backend or external network calls)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          profile: tv_1080p
+          disable-animations: true
+          script: |
+            bash -o pipefail -c './gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace 2>&1 | tee -a "$RUNNER_TEMP/android.log"'
+      - name: Debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autonomous-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autonomous-android-reports
+          path: |
+            app/build/reports/tests/
+            app/build/reports/androidTests/
+            app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+      - name: Build diagnostic readable through checks API
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const file = `${process.env.RUNNER_TEMP}/android.log`;
+            const raw = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '(No Gradle log: inspect the failed setup or emulator step.)';
+            const lines = raw.split('\n');
+            const errors = lines.filter(l => /FAILED|AssertionError|expected:|Unresolved|^e: |Execution failed|error:|What went wrong/i.test(l));
+            await github.rest.checks.create({
+              owner: context.repo.owner, repo: context.repo.repo, name: 'autonomous-build-diagnostic',
+              head_sha: context.sha, status: 'completed', conclusion: 'neutral',
+              output: {title: 'Autonomous app build diagnostic',
+                summary: 'Build failed. Emulator failures are in the workflow log.',
+                text: ['### Errors', '```', errors.slice(-120).join('\n'), '```',
+                       '### Tail', '```', lines.slice(-120).join('\n'), '```'].join('\n').slice(-60000)},
+            });

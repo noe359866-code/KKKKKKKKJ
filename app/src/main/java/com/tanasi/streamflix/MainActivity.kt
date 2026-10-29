@@ -78,9 +78,8 @@ class MainActivity : ComponentActivity() {
         val homeViewModel: HomeViewModel = viewModel(factory = homeFactory)
 
         var details by remember { mutableStateOf<DetailsTarget?>(null) }
-        /* Build de release sin URL configurada: se pide el servidor en el primer
-         * arranque en lugar de dejar al usuario mirando un error. */
-        var showSettings by remember { mutableStateOf(settings.baseUrl.isBlank()) }
+        /* Primer arranque autónomo: no pide IP, dominio ni un backend. */
+        var showSettings by remember { mutableStateOf(false) }
 
         HomeScreen(
             viewModel = homeViewModel,
@@ -101,16 +100,15 @@ class MainActivity : ComponentActivity() {
                         DetailsViewModel(
                             entry = target.entry,
                             repository = ServiceLocator.streamsRepository(applicationContext),
-                            /* Para series: pide /meta y convierte el póster de
-                             * Cinemeta (tt…) en un episodio jugable (tt…:S:E). */
-                            client = ServiceLocator.addonClient(),
+                            /* Episodios del proveedor local o del backend opcional. */
+                            client = ServiceLocator.contentClient(applicationContext),
                             settings = ServiceLocator.settings(applicationContext),
                         )
                     }
                 }
             }
             val detailsViewModel: DetailsViewModel = viewModel(
-                key = "details:${target.entry.id}",
+                key = "details:${settings.autonomous}:${settings.baseUrl}:${target.entry.id}",
                 factory = factory,
             )
 
@@ -134,9 +132,8 @@ class MainActivity : ComponentActivity() {
                 onDismiss = { showSettings = false },
                 onSaved = {
                     showSettings = false
-                    /* El catálogo curado no cambia, pero un catálogo remoto sí:
-                     * se invalida para que la próxima carga use el servidor
-                     * nuevo. */
+                    /* Descarta fichas y fuentes del modo anterior. */
+                    details = null
                     ServiceLocator.catalogRepository(applicationContext).invalidate()
                     homeViewModel.refresh()
                 },

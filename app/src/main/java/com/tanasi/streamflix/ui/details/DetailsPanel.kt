@@ -54,6 +54,7 @@ import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.core.LocalDeviceProfile
 import com.tanasi.streamflix.data.model.EpisodeOption
 import com.tanasi.streamflix.data.model.MediaEntry
+import com.tanasi.streamflix.data.model.enrichedBy
 import com.tanasi.streamflix.data.model.StreamSource
 import com.tanasi.streamflix.ui.components.BackdropImage
 import com.tanasi.streamflix.ui.components.FailoverBadge
@@ -92,6 +93,8 @@ fun DetailsDialog(
     val isTv = deviceProfile.requiresDpadFocus
     val sources by viewModel.state.collectAsStateWithLifecycle()
     val episodes by viewModel.episodes.collectAsStateWithLifecycle()
+    val metadata by viewModel.metadata.collectAsStateWithLifecycle()
+    val displayEntry = metadata?.let { entry.enrichedBy(it) } ?: entry
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -115,7 +118,7 @@ fun DetailsDialog(
                     .background(StreamflixColors.Surface)
                     .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp)),
             ) {
-                DetailsHeader(entry = entry, isTv = isTv)
+                DetailsHeader(entry = displayEntry, isTv = isTv)
 
                 Row(
                     modifier = Modifier
@@ -126,7 +129,7 @@ fun DetailsDialog(
                         /* Póster a la izquierda sólo en TV: en el móvil el ancho
                          * se necesita para el texto y las fuentes. */
                         PosterImage(
-                            entry = entry,
+                            entry = displayEntry,
                             modifier = Modifier
                                 .width(150.dp)
                                 .height(225.dp)
@@ -149,7 +152,7 @@ fun DetailsDialog(
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = entry.synopsis ?: "Sin sinopsis disponible para este título.",
+                            text = displayEntry.synopsis ?: "Sin sinopsis disponible para este título.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = StreamflixColors.OnSurface.copy(alpha = 0.9f),
                         )
@@ -161,12 +164,13 @@ fun DetailsDialog(
                             isTv = isTv,
                             onSelectSeason = viewModel::selectSeason,
                             onSelectEpisode = viewModel::selectEpisode,
+                            onManualEpisode = viewModel::selectManualEpisode,
                         )
 
                         Spacer(Modifier.height(20.dp))
 
                         SourcesSection(
-                            entry = entry,
+                            entry = displayEntry,
                             state = sources,
                             isTv = isTv,
                             openOnSources = openOnSources,
@@ -282,6 +286,7 @@ private fun EpisodesSection(
     isTv: Boolean,
     onSelectSeason: (Int) -> Unit,
     onSelectEpisode: (EpisodeOption) -> Unit,
+    onManualEpisode: (EpisodeOption) -> Unit,
 ) {
     if (state is EpisodesUiState.Hidden) return
 
@@ -315,11 +320,15 @@ private fun EpisodesSection(
                 )
             }
 
-            is EpisodesUiState.Unavailable -> Text(
-                text = state.message,
-                style = MaterialTheme.typography.labelMedium,
-                color = StreamflixColors.OnSurfaceMuted,
-            )
+            is EpisodesUiState.Unavailable -> Column {
+                Text(
+                    text = state.message,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = StreamflixColors.OnSurfaceMuted,
+                )
+                Spacer(Modifier.height(8.dp))
+                ManualEpisodePicker(selected = state.selected, onSelect = onManualEpisode)
+            }
 
             is EpisodesUiState.Ready -> Column {
                 if (state.seasons.size > 1) {

@@ -264,10 +264,25 @@ def visible_text(chunk: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+# Android injects an OkHttp-backed opener with an overall call timeout. Node and
+# desktop CLI retain urllib unchanged. This is installed once before any scraping.
+_url_opener = None
+
+
+def install_url_opener(opener) -> None:
+    global _url_opener
+    _url_opener = opener
+
+
+def open_url(request, timeout: float):
+    opener = _url_opener or urllib.request.urlopen
+    return opener(request, timeout=timeout)
+
+
 def http_get(url: str, headers: Dict[str, str], timeout: float) -> Tuple[str, str, str]:
     """GET con timeout duro. Devuelve ``(texto, url_final, content_type)``."""
     request = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with open_url(request, timeout=timeout) as response:
         raw = response.read(MAX_BODY_BYTES)
         if "gzip" in (response.headers.get("Content-Encoding") or "").lower():
             raw = gzip.decompress(raw)
@@ -296,7 +311,7 @@ def http_post_json(url: str, data: Any, headers: Dict[str, str], timeout: float)
         body = body.encode("utf-8")
     request_headers = {"Content-Type": "application/json", **headers}
     request = urllib.request.Request(url, data=body, headers=request_headers, method="POST")
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with open_url(request, timeout=timeout) as response:
         raw = response.read(MAX_BODY_BYTES)
         if "gzip" in (response.headers.get("Content-Encoding") or "").lower():
             raw = gzip.decompress(raw)

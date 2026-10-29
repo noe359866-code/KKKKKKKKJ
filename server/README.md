@@ -1,3 +1,9 @@
+> **Android autónomo:** este backend ya no es un requisito para la app.
+> El APK incluye Python y reutiliza `scrapers/` directamente en el dispositivo.
+> Node.js sólo se necesita para utilizar este servidor como addon de Stremio o
+> al elegir expresamente el modo servidor de la app.
+> Ver [arquitectura y pruebas del modo autónomo](../docs/autonomous-android.md).
+
 # Streamflix Reborn · Stremio Addon Server
 
 Backend ligero en **Node.js (Express)** que implementa el protocolo oficial de
