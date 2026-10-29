@@ -466,6 +466,17 @@ Validation rejects anything that is not `http(s)://…`, and both debug and
 release strip trailing slashes before `BuildConfig.DEFAULT_ADDON_BASE_URL` is
 written, so `https://host/` and `https://host` produce identical requests.
 
+There is one explicit escape hatch for packaging before you have a domain:
+
+```bash
+./gradlew :app:assembleRelease -PallowEmptyAddonBaseUrl=true
+```
+
+The APK then carries **no** default URL and the app asks for the server on first
+launch (the same dialog you get when the address is wrong). It never falls back
+to `10.0.2.2` and never ships placeholder content; CI uses this mode when it is
+dispatched without a URL.
+
 #### Signing
 
 ```bash
@@ -514,9 +525,20 @@ degrades to *Reintentar* / *Configurar servidor* instead of fake content.
 #### CI
 
 `.github/workflows/android-release.yml` builds the same artifacts on a runner
-with JDK 17 + Android SDK, runs the unit tests and `lintRelease`, and uploads the
-APK, the AAB and the R8 mapping. Trigger it manually with the backend URL, or
-push a `v*` tag to use the `PRODUCTION_ADDON_BASE_URL` repository variable.
+with JDK 17 + Android SDK, runs the unit tests and `lintRelease`, verifies the
+signature with `apksigner`, and uploads the APK, the AAB and the R8 mapping.
+
+- **manual**: *Run workflow* with the backend URL (leave it empty to get an APK
+  that asks for the server on first launch);
+- **tag**: pushing `v1.0.0` uses the `PRODUCTION_ADDON_BASE_URL` repository
+  variable.
+
+Signing: if the `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`,
+`RELEASE_KEY_ALIAS` and `RELEASE_KEY_PASSWORD` secrets exist, that keystore is
+used. Otherwise the workflow generates a **sideload** key, signs with it, and
+publishes it as the `sideload-keystore` artifact — download it and keep it, or
+the next build will not install over this one (Android requires the same
+signature). That key is not valid for Google Play.
 
 ## Getting started
 

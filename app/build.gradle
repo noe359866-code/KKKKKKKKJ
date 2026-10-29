@@ -59,16 +59,28 @@ def releaseRequested = gradle.startParameter.taskNames.any { String task ->
     name.contains('release') || releaseTriggers.contains(name)
 }
 
+/* Escape hatch explícito para empaquetar sin dominio todavía: el APK queda con
+ * la URL vacía y la app la pide en el primer arranque. Sirve para builds de
+ * sideload y para CI mientras no haya dominio propio. Nunca es el
+ * comportamiento por defecto, y nunca cae al loopback del emulador. */
+def allowEmptyBaseUrl = (resolve(['ALLOW_EMPTY_ADDON_BASE_URL', 'allowEmptyAddonBaseUrl']) ?: 'false')
+    .toBoolean()
+
 if (releaseRequested) {
     if (releaseBaseUrl == null || releaseBaseUrl.isEmpty()) {
-        throw new GradleException(
-            "Falta la URL de producción del addon.\n" +
-            "Compila con:  ./gradlew assembleRelease -PreleaseAddonBaseUrl=https://addon.tu-dominio.com\n" +
-            "o exporta ADDON_BASE_URL=https://addon.tu-dominio.com (también vale releaseAddonBaseUrl= en keystore.properties).\n" +
-            "Un release nunca se empaqueta apuntando al loopback del emulador."
+        if (!allowEmptyBaseUrl) {
+            throw new GradleException(
+                "Falta la URL de producción del addon.\n" +
+                "Compila con:  ./gradlew assembleRelease -PreleaseAddonBaseUrl=https://addon.tu-dominio.com\n" +
+                "o exporta ADDON_BASE_URL=https://addon.tu-dominio.com (también vale releaseAddonBaseUrl= en keystore.properties).\n" +
+                "Para un build sin dominio (la app lo pregunta al arrancar): -PallowEmptyAddonBaseUrl=true\n" +
+                "Un release nunca se empaqueta apuntando al loopback del emulador."
+            )
+        }
+        logger.lifecycle(
+            "AVISO: release sin URL de backend; la app pedirá la dirección del servidor al arrancar."
         )
-    }
-    if (!validBaseUrl(releaseBaseUrl)) {
+    } else if (!validBaseUrl(releaseBaseUrl)) {
         throw new GradleException("releaseAddonBaseUrl no es una URL http(s) válida: '${releaseBaseUrl}'")
     }
 }
