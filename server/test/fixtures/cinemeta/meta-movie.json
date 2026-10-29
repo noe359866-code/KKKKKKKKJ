@@ -1,0 +1,16 @@
+{
+  "meta": {
+    "id": "tt0133093",
+    "type": "movie",
+    "name": "The Matrix",
+    "poster": "https://images.metahub.space/poster/medium/tt0133093/img",
+    "background": "https://images.metahub.space/background/medium/tt0133093/img",
+    "description": "Un hacker descubre la verdad sobre su realidad.",
+    "releaseInfo": "1999",
+    "runtime": "136 min",
+    "imdbRating": "8.7",
+    "imdb_id": "tt0133093",
+    "genres": ["Action", "Sci-Fi"],
+    "trailerStreams": []
+  }
+}

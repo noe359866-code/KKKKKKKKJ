@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  El addon vive en la red local: `http://192.168.x.x:7000` en el salón o
+  `http://10.0.2.2:7000` desde el emulador. La IP la elige el DHCP de cada casa,
+  así que no se puede enumerar de antemano y `<domain>` no acepta rangos CIDR:
+  el texto claro se permite en toda la app y se documenta aquí.
+
+  Consecuencia asumida: el canal hacia el backend no va cifrado. Los CDN de
+  vídeo (https) siguen validando el certificado contra el almacén del sistema,
+  y para exponer el servidor fuera de la LAN lo correcto es ponerle TLS delante
+  (Caddy/nginx) y escribir la URL `https://` en Ajustes, no abrir el puerto.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

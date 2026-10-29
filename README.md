@@ -28,6 +28,7 @@
   - [Prerequisites](#prerequisites)
   - [Setup](#setup)
 - [Stremio addon backend (Node.js)](#stremio-addon-backend-nodejs)
+- [Android client (Kotlin + Compose)](#android-client-kotlin--compose)
 - [Development](#development)
 - [Contributing](#contributing)
 - [Legal Disclaimer](#legal-disclaimer)
@@ -62,21 +63,19 @@ The interface aggregates content from multiple sources and provides a convenient
 - Aggregates content from multiple third-party providers
 - No account required for the app interface
 - Educational and personal use only
-- Optimized UI & UX
-- Multiple providers
-- Resume from last playback position
-- In-app update
+- One APK with an adaptive UI: D-Pad-first on Android TV, touch-first on phones
+- Multiple providers, with automatic silent failover between their streams
+- Home with horizontal carousels for Películas, Series, Anime and TV en Vivo
 
 ### Built with
 
 - [Android Studio](https://developer.android.com/studio)
-- [Kotlin](https://kotlinlang.org)
-- [Retrofit](https://square.github.io/retrofit)
-- [ExoPlayer](https://exoplayer.dev)
-- Leanback
-- Coroutines
-- MVVM Architecture
-- Android Architecture Components
+- [Kotlin](https://kotlinlang.org) + Coroutines
+- [Jetpack Compose](https://developer.android.com/jetpack/compose) + Material 3
+- [Media3 ExoPlayer](https://developer.android.com/media/media3/exoplayer)
+- [OkHttp](https://square.github.io/okhttp) + kotlinx.serialization
+- MVVM architecture (`ViewModel` + `StateFlow`)
+- One APK for phones and Android TV
 
 
 ## Stremio addon backend (Node.js)
@@ -85,23 +84,461 @@ The interface aggregates content from multiple sources and provides a convenient
 catalogue to any Stremio-compatible client (including the Android TV app)
 through the official Addon protocol:
 
-- `GET /manifest.json` — declares `movie`, `series`, `anime` and `tv`.
+- `GET /manifest.json` — declares `movie`, `series`, `anime`, `tv` and the
+  published catalogs (`catalog` + `meta` resources).
+- `GET /catalog/:type/:id.json` — Stremio catalog protocol, backed by
+  **[Cinemeta](https://github.com/Stremio/stremio-addon-sdk)** (the official
+  metadata addon), merged with the local live TV/sports rows and with the
+  catalogs of a third-party Stremio addon:
+  `top`, `year`, `imdbRating` for movies and series, `anime/top`
+  (Cinemeta `series` + `genre=Animation`), `tv/live` from
+  `server/config/live-catalog.json`, and **`streaming_<service>`** rows
+  (Netflix, Disney+, Prime Video, HBO Max, Apple TV+…) republished from
+  *Streaming Catalogs* — any other Stremio addon can be added the same way
+  through the `addons` block (no code, no copying their data).
+  Accepts the standard extras as path segments — `/catalog/movie/top/search=matrix.json`,
+  `/catalog/tv/live/genre=Deportes/skip=20.json`.
+- `GET /meta/:type/:id.json` — rich metadata (synopsis, poster, year, rating)
+  and, for series, the episode list (`tt0944947:1:2`), so a Cinemeta poster
+  becomes a playable request.
 - `GET /stream/:type/:id.json` — returns `streams` ordered by provider
   priority so ExoPlayer can fail over (source 1 → 2 → 3).
 - In-memory TTL cache (2 h live / 6 h VOD) with single-flight and
   stale-while-revalidate: a cached live `.m3u8` is served in a few milliseconds.
 - Python scraper bridge (`child_process.spawn`) invoked only on cache misses.
+- Twelve real providers ship in `server/scrapers/`, ordered by priority.
+
+  **Live** (`kind: "live"`, requested as `tv:<id>`):
+
+  - `futbolibre.py` — [futbolibre.live](https://futbolibre.live/) (priority 3):
+    Mexican sports channels (`tv:futbolibre:espn-1`) plus the daily match agenda
+    where every match yields several signals
+    (`tv:futbolibre:evento:<slug>`);
+  - `deportelibre.py` — [deportelibre.top](https://deportelibre.top/) (4):
+    24/7 channel catalogue (`tv:deportelibre:stream-01`);
+  - `tvenvivo.py` — [tvenvivo.org](https://www.tvenvivo.org/) (5): live
+    TV/sports (`tv:tvenvivo:espn-2`).
+
+  **Anime** (`kind: "vod"`, requested as `anime:<id>`):
+
+  - `animeflv.py` — [animeflv.net](https://www3.animeflv.net/) (6):
+    `animeflv:one-piece:1180`;
+  - `jkanime.py` — [jkanime.net](https://jkanime.net/) (7):
+    `jkanime:one-piece:1180`;
+  - `monoschinos.py` — [monoschinos.st](https://monoschinos.st/) (8):
+    `monoschinos:one-piece-sub-espanol:1`.
+
+  **Movies & series** (`kind: "vod"`, requested as `movie:<id>` or
+  `series:<id>:<season>:<episode>`):
+
+  - `gnula.py` — [gnulahd.nu](https://ww3.gnulahd.nu/) (11):
+    `gnula:street-fighter` (decodes the site's `GNRD` player API);
+  - `cuevana.py` — [cuevana3.nu](https://cue.cuevana3.nu/) (12):
+    `cuevana:spider-man-de-regreso-a-casa` (`showEmbed` base64 payloads);
+  - `pelisplushd.py` — [pelisplushd.la](https://www.pelisplushd.la/) (13):
+    `pelisplushd:the-last-of-us:1:2`;
+  - `repelis.py` — Repelis (14): `repelis:<slug>`, domain set with
+    `REPELIS_BASE` / `REPELIS_MIRRORS`;
+  - `peliculasflix.py` — [peliculasflix.co](https://peliculasflix.co/) (15):
+    `peliculasflix:<slug>` (own GraphQL API);
+  - `pelisjuanita.py` — [pelisjuanita.org](https://pelisjuanita.org/) (16):
+    `pelisjuanita:spider-man-un-nuevo-dia-2026`;
+
+  The anime and movie providers return **one stream per resolved server**
+  (Streamwish, VOE, Filemoon, Streamtape…), in the site's order, so the
+  ExoPlayer failover also covers a dead file host. Movie ids accept a site slug,
+  `season:episode`, an IMDb id (`gnula:tt0145487`, with `TMDB_API_KEY`) or free
+  text that gets searched on the site.
 
 ```bash
 cd server
 npm install
 npm start
 # manifest → http://localhost:7000/manifest.json
+# catalog rows → http://localhost:7000/catalog/tv/live.json
+#               http://localhost:7000/catalog/movie/top.json
+# search →      http://localhost:7000/catalog/movie/top/search=matrix.json
+# metadata →    http://localhost:7000/meta/series/tt0944947.json
+# live channel → http://localhost:7000/stream/tv/tv:futbolibre:espn-1.json
+# anime episode → http://localhost:7000/stream/anime/animeflv:one-piece:1180.json
+npm run channels:futbolibre   # list channels + matches with ready-to-use ids
+npm run channels:deportelibre
+npm run channels:tvenvivo
+npm run anime:animeflv        # list episodes + ids (also jkanime, monoschinos)
+npm run movies:gnula -- "street fighter"   # search + ids (also cuevana, pelisplushd…)
 ```
+
+These scrapers only read public pages: nothing is hosted or redistributed here.
+Use them with authorization and in line with each site's terms and your local
+law.
 
 See [`server/README.md`](server/README.md) for the full documentation
 (architecture, environment variables, cache internals, adding providers,
 tests and Docker).
+
+## Android client (Kotlin + Compose)
+
+`app/` is the client. It contains **no scraping logic**: it asks the Node addon
+for `GET /stream/{type}/{id}.json` and plays whatever ordered list comes back.
+
+| Concern | Choice |
+| --- | --- |
+| UI | Jetpack Compose, Material 3 (Compose BOM `2025.06.00`) |
+| Player | Media3 ExoPlayer `1.7.1` + `media3-exoplayer-hls` |
+| HTTP | OkHttp `4.12.0` + kotlinx.serialization |
+| Posters | Coil |
+| DI | hand-written `ServiceLocator` (no annotation processor) |
+| SDK | `minSdk 23`, `targetSdk 35`, `compileSdk 36`, JVM 17 |
+
+### Visual design
+
+Three references, each doing one job:
+
+| Reference | What is borrowed |
+| --- | --- |
+| **Apple TV+** | a cinematic hero whose backdrop follows the focus, with a slow Ken Burns drift and three actions (Reproducir / Más información / Cambiar servidor) |
+| **Netflix** | fluid horizontal carousels, 2:3 poster cards, focus scale 1.08x and a floating "Continuar viendo" row |
+| **Prime Video** | floating state badges on the artwork (EN VIVO, quality, provider) and a quick-look details panel before playback |
+
+Everything is Compose (no XML layouts): `ui/home/HeroBanner.kt`,
+`ui/components/MediaCards.kt`, `ui/components/MediaRow.kt`,
+`ui/components/Badges.kt`, `ui/details/DetailsPanel.kt`.
+
+![Home design preview: Android TV and mobile](docs/design-preview.jpg)
+
+*(Static render of the same colours, sizes and artwork the Compose code uses —
+useful as a reference while the APK cannot be built in this environment.)*
+
+**Hero geometry (TV).** Two different numbers: the backdrop box is 0.78 of the
+screen height, but the text block is anchored at a 0.62 baseline, and that is
+exactly where the first shelf starts. That leaves the CTAs clear, one full 16:9
+row visible and the next row's title peeking — the visual cue to press DOWN.
+On phones the hero is simply the first cell of the list (0.62 of the screen).
+
+**Hero.** `HomeCatalog` + `HomeViewModel` keep a `Spotlight`: the card currently
+focused (TV) or the featured title (phone). Focusing a card swaps the backdrop
+with a 420 ms crossfade, so the hero reads like it is following intent rather
+than looping slides. The backdrop is one of four 1280×720 stills shipped in
+`res/drawable-nodpi` (`art_movies`, `art_series`, `art_anime`, `art_live`), used
+when a title has no 16:9 artwork of its own — which is the normal case for
+provider catalogues (they publish 2:3 posters only).
+
+**Cards.** One shared `ContentCard` skeleton renders both proportions, and the
+row decides which one it wants (`aspect: "poster" | "landscape"` in the
+catalogue JSON):
+
+| Row | Aspect | Content |
+| --- | --- | --- |
+| Continuar viendo | 16:9 | progress bar under the artwork |
+| Películas populares | 2:3 | poster |
+| Series que enganchan | 2:3 | poster |
+| Anime en emisión | 2:3 | poster |
+| Deportes en directo | 16:9 | live channel tile |
+
+Focus in TV = scale 1.08 + elevation + the neon ring (`Modifier.tvFocusGlow`,
+cyan on purpose: red is already "live/brand"). The title under a card fades in
+with the focus, so an unfocused shelf stays clean.
+
+**Badges.** `LiveBadge` (pulsing dot), `TrendingBadge` (TOP 10),
+`QualityBadge` (4K in neon), provider chip at the bottom and a progress bar for
+resumed titles. During playback the player shows `FailoverBadge` with the source
+actually on screen ("Fuente 2 de 5"), which is where that number is truthful.
+
+**Details before playback.** Tapping a card opens `DetailsDialog`, a `Dialog`
+(its own window, so the D-Pad cannot escape to the shelf behind): backdrop
+header with rating/quality/genres, synopsis, and the **server selector** — the
+list of sources the addon returned, in its priority order, already loaded
+through `StreamsRepository`. The chosen index travels to the player as
+`PlaybackRequest.startIndex`, and the silent failover continues downward from
+there. "Cambiar servidor" in the hero opens this same panel with the focus
+already on the list.
+
+### One APK, two form factors
+
+`core/DeviceProfile.kt` decides once (in `Application.onCreate`) whether the app
+is running on a TV:
+
+```text
+UI_MODE_TYPE_TELEVISION               -> TV
+FEATURE_LEANBACK or FEATURE_TELEVISION and no touchscreen -> TV
+otherwise                             -> touch
+```
+
+The result is published through `LocalDeviceProfile`, so every composable reads
+it without touching the `Context`:
+
+- **TV** — larger cards (196×292 dp), 48 dp side margins, typography scaled
+  ×1.15–1.25, and every card draws a red focus ring plus an 8 % scale-up when
+  the D-Pad lands on it. The first card of the top row grabs focus on purpose:
+  without it a remote does nothing until the user guesses to press a key. The
+  player overlay chips (Fuentes / Volver) get the same treatment.
+- **Touch** — compact cards (128×192 dp), 16 dp margins, ripple instead of a
+  focus ring.
+
+`AndroidManifest.xml` declares `android.software.leanback` and
+`android.hardware.touchscreen` as `required="false"` and registers both
+`LAUNCHER` and `LEANBACK_LAUNCHER`, so the same APK shows up on a phone and in
+the Android TV home row.
+
+### Player and automatic failover
+
+`player/` holds the whole policy, and it is plain Kotlin (no Android imports)
+except for `MediaSources`, which is the only place that knows about Media3:
+
+1. `StreamsRepository` normalises the addon response: drops unplayable URLs and
+   duplicates, keeps the server's priority order **untouched**.
+2. `FailoverPlanner` walks that list: index 0 is the best source, each source is
+   tried once, and the list never wraps around (no infinite loops).
+3. `FailoverController` reacts to `onPlayerError` and to silent stalls (a
+   12 s watchdog while buffering with `playWhenReady` — a user pause never
+   triggers a hop), and swaps the `MediaSource` on the **same** `ExoPlayer`
+   instance, resuming at the last known position. No black flash, no dialog, no
+   relaunch: at most a brief "Cambiando de servidor…" chip.
+4. DRM errors are the one exception: another CDN cannot fix a license, so the
+   user is told instead of being bounced around (`FailoverRules`).
+
+### Player controls (D-Pad first)
+
+The player doesn't use Media3's built-in controller (`useController = false`);
+`ui/player/PlayerControls.kt` draws its own, because the stock one documents no
+behaviour for the direction keys and can't share the app's focus language.
+
+| Key | Action |
+| --- | --- |
+| `OK` / `ENTER` / `SPACE` / gamepad `A` | play / pause |
+| `◀` / `▶` (and `MEDIA_REWIND` / `MEDIA_FAST_FORWARD`) | −10 s / +10 s (VOD only) |
+| `▼` / `▲` | show the controls and move the focus into them |
+| `BACK` | hide the controls; a second press leaves the player |
+| tap (phone) | show / hide the controls |
+
+Details that matter on a sofa:
+
+- everything fades out after **4 s** while playing, and only while the focus is
+  still on the video surface — if you are walking the buttons they stay put;
+- while the controls are hidden, `OK` pauses and the arrows seek **without**
+  bringing the UI back, so the failover and normal playback stay unobtrusive;
+- `LEFT`/`RIGHT` never steal the event when a button is focused: there they move
+  the focus between buttons, as expected;
+- the seek arithmetic lives in `player/SeekPolicy.kt` (clamped to `0..duration`,
+  unknown duration = no upper bound) and is unit-tested;
+- live channels hide the seek buttons and the progress bar: an HLS live window
+  has no duration to show, and seeking it only triggers a rebuffer.
+
+The red ring + halo is `Modifier.tvFocusGlow` (`ui/theme/Focus.kt`), the Compose
+equivalent of the classic pair of XML state drawables:
+
+```text
+res/color/card_focus.xml + android:focusable="true"   →  Modifier.tvFocusGlow(progress)
+```
+
+Both the home cards and the player buttons use it, so the focus style is
+identical in the catalogue and on top of the video.
+
+### Per-source HTTP headers
+
+Streamwish, Filemoon, VOE and friends reject a `.m3u8` without the `Referer` of
+the page that published it. The addon already ships those headers in
+`behaviorHints.requestHeaders`; `MediaSources.dataSourceFactory()` copies them
+into a `DefaultHttpDataSource.Factory` (adding a derived `Origin` and allowing
+cross-protocol redirects), and each source gets its own factory, since the
+`Referer` changes hop by hop.
+
+### Server URL
+
+The backend runs on your laptop or a TV box, so its address cannot be baked into
+the APK:
+
+```bash
+./gradlew :app:assembleDebug -PaddonBaseUrl=http://192.168.1.50:7000
+```
+
+`10.0.2.2:7000` (the emulator's view of the host) is the default **only for debug
+builds**. A release build takes its URL from the build environment (see
+[Release build](#release-build-apk--aab)) and refuses to be packaged without
+one, so a production APK never ships pointing at the emulator loopback.
+
+The address stays editable at runtime from **Servidor** in the home header — a TV
+box in another subnet must be fixable without a laptop and a rebuild. The value
+is stored in `SharedPreferences` and normalised (`192.168.1.50:7000` →
+`http://…`). A release APK with no URL configured opens that dialog on first
+launch instead of showing an error.
+
+Cleartext HTTP is allowed because a LAN address cannot be known in advance; the
+video CDNs themselves are HTTPS.
+
+### Home catalogue (server-driven)
+
+The home screen is built from the **backend catalog config**, not from Kotlin and
+not from a bundled JSON. On launch the app asks `GET /catalogs.json` which rows
+the addon publishes and then loads every row in parallel from
+`GET /catalog/{type}/{id}.json`:
+
+- **card shape comes from the server** — `posterShape: "poster"` renders 2:3
+  posters (movies, series, anime), `posterShape: "landscape"` renders 16:9
+  cards (live TV and sports);
+- rows are `movie/top`, `movie/imdbRating`, `series/top`, `anime/top`,
+  `anime/imdbRating` (Cinemeta, enriched with synopsis/poster/year/rating),
+  `tv/live` (curated channels from `server/config/live-catalog.json`, whose ids
+  are exactly the stream ids — `tv:futbolibre:espn-1`) and the per-service
+  rows republished from the *Streaming Catalogs* addon
+  (`movie/streaming_nfx` Netflix, `movie/streaming_dnp` Disney+,
+  `series/streaming_amp` Prime Video…, chosen in the `addons` block of
+  `server/config/catalogs.json`; empty `only` publishes all 41);
+- adding, removing or reordering a row is editing
+  `server/config/catalogs.json` and restarting Node: no APK rebuild, no
+  reinstall on the TV;
+- each row fails on its own: if Cinemeta is down the movie rows disappear but
+  the live row (served from a local JSON) still plays. Rows have their own
+  timeout, so a slow catalog never blocks the Home.
+
+There is **no bundled catalogue**: the release APK contains no mock cards. If the
+server is not configured or unreachable, the screen states it and offers
+*Reintentar* / *Configurar servidor* instead of showing placeholder content.
+
+Tapping a Cinemeta card keeps its **IMDb id** (`tt0944947`). For a series the
+details sheet asks `GET /meta/{type}/{id}.json` for the episode list, picks one
+(`tt0944947:1:2`) and only then requests
+`GET /stream/series/tt0944947:1:2.json`; the chosen source index still flows
+into `PlaybackRequest.startIndex`, so ExoPlayer starts on the server the user
+picked and fails over downward exactly like any other row.
+
+### Build, run, test
+
+```bash
+cd server && npm start                 # addon on :7000
+./gradlew :app:assembleDebug           # → app/build/outputs/apk/debug/
+./gradlew :app:testDebugUnitTest       # JVM tests, no emulator needed
+```
+
+Unit tests live in `app/src/test/` and cover the parts where a bug costs a
+movie: `FailoverPlannerTest` (order, one attempt per source, no wrap-around),
+`FailoverRulesTest` (which error codes hop, which do not), `SeekPolicyTest`
+(seeking at the edges of the timeline), `PlayerKeyMapTest` (the remote-control
+mapping), `DurationsTest` (clock formatting), `StreamsRepositoryTest` (URL
+shape, header parsing, HTTP failures via `MockWebServer`) and
+`CatalogRepositoryTest` (the Home against a fake backend: no local catalogue,
+server-decided card shape, per-row isolation, unreachable host vs. server with
+no rows).
+
+Smoke test with the real backend: run `npm start`, point the app at it, move the
+D-Pad across a shelf (the hero must follow), open a card, pick the third server
+in the panel, press Reproducir, then stop that provider and watch the player hop
+to the next source without losing your position.
+
+### Release build (APK + AAB)
+
+One signed artifact installs on both a phone and an Android TV box (see
+[One APK, two form factors](#one-apk-two-form-factors)).
+
+```bash
+export ADDON_BASE_URL=https://addon.tu-dominio.com    # required
+./scripts/release-android.sh                          # APK + AAB + summary
+```
+
+The script is a thin wrapper; the same build by hand is:
+
+```bash
+./gradlew :app:assembleRelease :app:bundleRelease \
+    -PreleaseAddonBaseUrl=https://addon.tu-dominio.com
+```
+
+Outputs:
+
+| Artifact | Path |
+| --- | --- |
+| APK (sideload to TV/phone) | `app/build/outputs/apk/release/app-release.apk` |
+| AAB (Google Play) | `app/build/outputs/bundle/release/app-release.aab` |
+| R8 mapping (crash de-obfuscation) | `app/build/outputs/mapping/release/mapping.txt` |
+
+Without a keystore the APK is written as `app-release-unsigned.apk`: **it will
+not install** until it is signed. That is deliberate — silently signing with the
+debug key produces an app that cannot be updated later.
+
+#### Where the production URL comes from
+
+First match wins; the build **fails with instructions** if none is set:
+
+1. environment variable `ADDON_BASE_URL` (what CI uses);
+2. Gradle property `-PreleaseAddonBaseUrl=…`;
+3. `releaseAddonBaseUrl=…` in `keystore.properties` (not versioned).
+
+Validation rejects anything that is not `http(s)://…`, and both debug and
+release strip trailing slashes before `BuildConfig.DEFAULT_ADDON_BASE_URL` is
+written, so `https://host/` and `https://host` produce identical requests.
+
+There is one explicit escape hatch for packaging before you have a domain:
+
+```bash
+./gradlew :app:assembleRelease -PallowEmptyAddonBaseUrl=true
+```
+
+The APK then carries **no** default URL and the app asks for the server on first
+launch (the same dialog you get when the address is wrong). It never falls back
+to `10.0.2.2` and never ships placeholder content; CI uses this mode when it is
+dispatched without a URL.
+
+#### Signing
+
+```bash
+keytool -genkeypair -v -keystore release.keystore -alias streamflix \
+    -keyalg RSA -keysize 4096 -validity 10000
+cp keystore.properties.example keystore.properties   # then fill it in
+```
+
+`keystore.properties` and every `*.keystore` / `*.jks` are git-ignored. The four
+values can also come from the environment (`RELEASE_STORE_FILE`,
+`RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`), which is
+how `.github/workflows/android-release.yml` signs in CI (keystore base64 in a
+secret). Signing enables v1 + v2 + v3, so the same APK installs on old Android TV
+boxes and on current phones.
+
+#### What the release build changes
+
+- **R8 full mode**: obfuscation + tree shaking + resource shrinking
+  (`android.enableR8.fullMode=true`). `proguard-rules.pro` keeps only what is
+  resolved by name (manifest components, `kotlinx.serialization` metadata and
+  `$$serializer`s) plus `-assumenosideeffects` on `Log.v/d/i`, so debug logging
+  and signed URLs do not survive into the APK. No blanket
+  `-keep class androidx.**`.
+- **No demo data**: `app/src/main/assets/` is gone; the catalogue is whatever
+  the backend publishes.
+- **No tooling**: Compose preview/tooling is `debugImplementation`; `DEBUG_BUILD`
+  is `false` and `AppLog.d/i` are stripped.
+- **Smaller, faster**: `shrinkResources`, `resConfigs` not needed (single
+  locale), packaging excludes, and `versionCode`/`versionName` overridable with
+  `-PVERSION_CODE=…  -PVERSION_NAME=…` for store uploads.
+
+#### Install and verify
+
+```bash
+adb install -r app/build/outputs/apk/release/app-release.apk
+adb shell pm list packages | grep tanasi      # com.tanasi.streamflix
+```
+
+On a TV: `adb connect <box-ip>:5555` first, then the same `install`. The leanback
+launcher entry and the TV banner come from the manifest, and `uses-feature
+leanback/touchscreen` are both `required="false"`, so a single APK is offered to
+phones and TVs alike. Smoke test: open the app, check the header shows the
+production host, play a live channel, then kill the backend and confirm the Home
+degrades to *Reintentar* / *Configurar servidor* instead of fake content.
+
+#### CI
+
+`.github/workflows/android-release.yml` builds the same artifacts on a runner
+with JDK 17 + Android SDK, runs the unit tests and `lintRelease`, verifies the
+signature with `apksigner`, and uploads the APK, the AAB and the R8 mapping.
+
+- **manual**: *Run workflow* with the backend URL (leave it empty to get an APK
+  that asks for the server on first launch);
+- **tag**: pushing `v1.0.0` uses the `PRODUCTION_ADDON_BASE_URL` repository
+  variable.
+
+Signing: if the `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`,
+`RELEASE_KEY_ALIAS` and `RELEASE_KEY_PASSWORD` secrets exist, that keystore is
+used. Otherwise the workflow generates a **sideload** key, signs with it, and
+publishes it as the `sideload-keystore` artifact — download it and keep it, or
+the next build will not install over this one (Android requires the same
+signature). That key is not valid for Google Play.
 
 ## Getting started
 

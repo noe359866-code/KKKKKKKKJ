@@ -61,16 +61,19 @@ function envList(name, fallback) {
 const HOUR = 60 * 60 * 1000;
 
 /*
- * The requirement asks for a configurable TTL between 2 and 6 hours.
- *  - LIVE  (live TV, sports, IPTV): shortest TTL, streams rotate constantly.
- *  - VOD   (movies / series / anime): longest TTL, links are stable.
- *  Both stay inside the 2h–6h contract; the clamp below enforces it even if a
- *  careless env override is supplied.
+ * TTL contract (enforced at boot and again when the cache is written):
+ *  - LIVE (live TV, sports, IPTV): 2h – 4h. The .m3u8 URLs of tvenvivo,
+ *    deportelibre and futbolibre must be answered from a cache hit, but they
+ *    rotate, so the window is capped at 4 hours.
+ *  - VOD  (movies / series / anime): 2h – 6h. Links are stable for longer.
  */
 const TTL_MIN_MS = 2 * HOUR;
 const TTL_MAX_MS = 6 * HOUR;
+const TTL_LIVE_MIN_MS = 2 * HOUR;
+const TTL_LIVE_MAX_MS = 4 * HOUR;
 
-const ttlLiveMs = envInt('CACHE_TTL_LIVE_HOURS', 2, { min: 2, max: 6 }) * HOUR;
+/* Out of range => throw at boot instead of silently caching stale links. */
+const ttlLiveMs = envInt('CACHE_TTL_LIVE_HOURS', 2, { min: 2, max: 4 }) * HOUR;
 const ttlVodMs = envInt('CACHE_TTL_VOD_HOURS', 6, { min: 2, max: 6 }) * HOUR;
 
 /* -------------------------------------------------------------------------- */
@@ -116,9 +119,11 @@ export const config = {
   },
 
   cache: {
-    /* Hard contract: 2h <= TTL <= 6h. */
+    /* Hard contract: 2h <= TTL <= 6h (live: 2h <= TTL <= 4h). */
     ttlMinMs: TTL_MIN_MS,
     ttlMaxMs: TTL_MAX_MS,
+    ttlLiveMinMs: TTL_LIVE_MIN_MS,
+    ttlLiveMaxMs: TTL_LIVE_MAX_MS,
     /* VOD / movies / series / anime. */
     ttlVodMs,
     /* Live TV + sports: streams expire fast, so cache them conservatively. */
@@ -133,6 +138,38 @@ export const config = {
     /* Serve stale data while refreshing in the background (stale-while-revalidate)
      * as long as the entry is not older than ttl * staleFactor. */
     staleFactor: Number.parseFloat(process.env.CACHE_STALE_FACTOR || '1.25'),
+  },
+
+  catalogs: {
+    /* Cinemeta is the official Stremio metadata addon: it publishes the
+     * "top", "year" and "imdbRating" rows for movies/series plus every
+     * /meta/:type/:id.json lookup. We proxy it so the client only ever talks
+     * to this server (one origin, one cache, one failure mode). */
+    cinemetaBase: (process.env.CINEMETA_BASE || 'https://v3-cinemeta.strem.io').replace(/\/+$/, ''),
+    /* A slow Cinemeta must never hold the Home screen hostage. */
+    timeoutMs: envInt('CINEMETA_TIMEOUT_MS', 6_000, { min: 500, max: 30_000 }),
+    /* Catalog rows (top/imdbRating) move slowly: 30 min is plenty. */
+    ttlMs: envInt('CATALOG_TTL_MINUTES', 30, { min: 1, max: 1440 }) * 60_000,
+    /* Searches are user driven and change constantly: cache them briefly. */
+    searchTtlMs: envInt('CATALOG_SEARCH_TTL_MINUTES', 5, { min: 1, max: 1440 }) * 60_000,
+    /* Metadata for one title (title + year + episodes) is stable for a day,
+     * and it is what turns an IMDb id into a provider search. */
+    metaTtlMs: envInt('CATALOG_META_TTL_HOURS', 24, { min: 1, max: 720 }) * HOUR,
+    /* Empty/failed upstream responses are cached for a minute, not for 30. */
+    missTtlMs: envInt('CATALOG_MISS_SECONDS', 60, { min: 5, max: 3600 }) * 1000,
+    /* Metas returned per catalog page. Cinemeta itself caps at 100. */
+    pageSize: envInt('CATALOG_PAGE_SIZE', 100, { min: 10, max: 200 }),
+    /* Where the published catalogs are declared (type, id, name, source). */
+    configPath: process.env.CATALOGS_CONFIG || path.join(ROOT, 'config', 'catalogs.json'),
+    /* Curated live TV / sports channels: the "local" half of the home screen. */
+    liveCatalogPath: process.env.LIVE_CATALOG_PATH || path.join(ROOT, 'config', 'live-catalog.json'),
+    /* Third-party Stremio addons whose *catalogs* we republish (see the
+     * `addons` block in config/catalogs.json). Their manifest is fetched once
+     * per boot and cached on disk, so a cold start behind a broken WAN still
+     * knows which rows to publish. */
+    remoteTimeoutMs: envInt('CATALOG_REMOTE_TIMEOUT_MS', 8_000, { min: 500, max: 60_000 }),
+    remoteTtlMs: envInt('CATALOG_REMOTE_TTL_HOURS', 6, { min: 1, max: 720 }) * HOUR,
+    remoteCachePath: process.env.CATALOG_REMOTE_CACHE || path.join(ROOT, '.cache', 'remote-catalogs.json'),
   },
 
   scrapers: {
@@ -154,9 +191,10 @@ export const config = {
   },
 
   streams: {
-    /* Per-provider budget. A slow provider must never delay the whole
-     * response: after this budget its (partial) results are dropped. */
-    providerTimeoutMs: envInt('PROVIDER_TIMEOUT_MS', 12_000, { min: 500, max: 60_000 }),
+    /* Per-provider budget (8 s). A slower script is killed by the bridge and
+     * its slot is filled by the secondary sources that did answer, so one dead
+     * site never delays the playable response. */
+    providerTimeoutMs: envInt('PROVIDER_TIMEOUT_MS', 8_000, { min: 500, max: 60_000 }),
     /* Give up when this many providers returned at least one stream, so the
      * response is fast even if the last provider is slow. */
     minProvidersForFastReturn: envInt('MIN_PROVIDERS_FOR_FAST_RETURN', 2, { min: 1, max: 10 }),

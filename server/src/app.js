@@ -23,6 +23,7 @@ import { streamRouter } from './routes/stream.js';
 import { healthRouter } from './routes/health.js';
 import { adminRouter } from './routes/admin.js';
 import { proxyRouter } from './routes/proxy.js';
+import { catalogRouter } from './routes/catalog.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.resolve(__dirname, '../public');
@@ -65,7 +66,7 @@ export function createApp(options = {}) {
   app.use(
     createRateLimiter({
       max: options.rateLimit === undefined ? config.http.rateLimitMax : options.rateLimit,
-      pathPrefixes: options.rateLimit === 0 ? null : ['/stream', '/proxy'],
+      pathPrefixes: options.rateLimit === 0 ? null : ['/stream', '/proxy', '/catalog', '/meta'],
     }),
   );
 
@@ -73,6 +74,7 @@ export function createApp(options = {}) {
   /* Routes                                                             */
   /* ------------------------------------------------------------------ */
   app.use(manifestRouter);
+  app.use(catalogRouter);
   app.use(streamRouter);
   app.use(healthRouter);
   app.use(adminRouter);

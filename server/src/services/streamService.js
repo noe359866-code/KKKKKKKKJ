@@ -50,10 +50,15 @@ export function isLiveContent(type, parsed) {
   return String(type).toLowerCase() === 'tv' || parsed.isLive || parsed.isSports;
 }
 
-/** TTL for a content class, clamped to the 2h–6h contract. */
+/**
+ * TTL for a content class, clamped to the contract of that class:
+ * live/sports 2h–4h (URLs rotate), VOD 2h–6h (links are stable).
+ */
 export function ttlFor(isLive) {
   const ttl = isLive ? config.cache.ttlLiveMs : config.cache.ttlVodMs;
-  return Math.min(Math.max(ttl, config.cache.ttlMinMs), config.cache.ttlMaxMs);
+  const min = isLive ? config.cache.ttlLiveMinMs : config.cache.ttlMinMs;
+  const max = isLive ? config.cache.ttlLiveMaxMs : config.cache.ttlMaxMs;
+  return Math.min(Math.max(ttl, min), max);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -361,6 +366,8 @@ export function ttlPolicy() {
   return {
     liveMs: ttlFor(true),
     vodMs: ttlFor(false),
+    liveMinMs: config.cache.ttlLiveMinMs,
+    liveMaxMs: config.cache.ttlLiveMaxMs,
     minMs: config.cache.ttlMinMs,
     maxMs: config.cache.ttlMaxMs,
     missMs: config.cache.ttlMissMs,

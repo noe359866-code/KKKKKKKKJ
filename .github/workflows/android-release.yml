@@ -1,0 +1,194 @@
+name: Android release
+
+# Compila el APK/AAB de producción en un runner con JDK 17 + Android SDK.
+#
+# Disparadores:
+#   - manual (workflow_dispatch): URL del backend opcional;
+#   - tag v*: usa la variable de repositorio PRODUCTION_ADDON_BASE_URL.
+#
+# Si no hay URL, el APK se compila con la URL vacía a propósito: la app abre el
+# diálogo "Servidor del addon" en el primer arranque (nunca una IP de emulador ni
+# contenido de prueba). Con URL, esa URL queda como valor por defecto.
+#
+# Firma:
+#   - si existe el secreto RELEASE_KEYSTORE_BASE64 se usa esa clave (la buena
+#     para publicar actualizaciones);
+#   - si no, se genera una clave *sideload* efímera y se publica como artefacto
+#     para que puedas guardarla y firmar las próximas versiones igual.
+
+on:
+  workflow_dispatch:
+    inputs:
+      addon_base_url:
+        description: "URL pública del backend Node (vacío = pedirla en la app)"
+        required: false
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      # Input manual primero; si el disparador es un tag, la variable del repo.
+      ADDON_BASE_URL: ${{ inputs.addon_base_url || vars.PRODUCTION_ADDON_BASE_URL }}
+      KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+      SECRET_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+      SECRET_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+      SECRET_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      # El runner de Ubuntu no trae el SDK de Android; la action oficial lo
+      # instala y acepta las licencias (compileSdk 36).
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Resolver URL del backend
+        id: url
+        run: |
+          if [ -z "${ADDON_BASE_URL:-}" ]; then
+            echo "Sin URL: el APK se compilará con la URL vacía y la pedirá al arrancar."
+            echo "ALLOW_EMPTY_ADDON_BASE_URL=true" >> "$GITHUB_ENV"
+            echo "value=(preguntar en la app)" >> "$GITHUB_OUTPUT"
+          else
+            echo "Backend: $ADDON_BASE_URL"
+            echo "value=$ADDON_BASE_URL" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Sin secreto de keystore se genera una clave de sideload. Viaja como
+      # artefacto para que puedas guardarla: sin ella, la siguiente versión no
+      # se instala *encima* de esta (Android exige la misma firma).
+      - name: Preparar firma
+        id: signing
+        run: |
+          set -euo pipefail
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > "${RUNNER_TEMP}/release.keystore"
+            {
+              echo "RELEASE_STORE_FILE=${RUNNER_TEMP}/release.keystore"
+              echo "RELEASE_STORE_PASSWORD=${SECRET_STORE_PASSWORD}"
+              echo "RELEASE_KEY_ALIAS=${SECRET_KEY_ALIAS}"
+              echo "RELEASE_KEY_PASSWORD=${SECRET_KEY_PASSWORD}"
+            } >> "$GITHUB_ENV"
+            echo "kind=secreto" >> "$GITHUB_OUTPUT"
+            echo "Firmando con el keystore del repositorio (secreto)."
+          else
+            SIDELOAD_PASS="streamflix-sideload"
+            keytool -genkeypair -noprompt \
+              -keystore "${RUNNER_TEMP}/sideload.keystore" \
+              -storetype PKCS12 \
+              -alias streamflix \
+              -keyalg RSA -keysize 4096 -validity 10000 \
+              -storepass "$SIDELOAD_PASS" -keypass "$SIDELOAD_PASS" \
+              -dname "CN=Streamflix Sideload, OU=Android, O=Streamflix, C=NI"
+            {
+              echo "RELEASE_STORE_FILE=${RUNNER_TEMP}/sideload.keystore"
+              echo "RELEASE_STORE_PASSWORD=${SIDELOAD_PASS}"
+              echo "RELEASE_KEY_ALIAS=streamflix"
+              echo "RELEASE_KEY_PASSWORD=${SIDELOAD_PASS}"
+            } >> "$GITHUB_ENV"
+            echo "kind=sideload" >> "$GITHUB_OUTPUT"
+            echo "Firmando con una clave sideload nueva (sin secretos de firma)."
+          fi
+
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Lint (release)
+        run: ./gradlew :app:lintRelease --no-daemon --stacktrace
+
+      - name: Build release APK + AAB
+        run: ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace
+
+      - name: Verificar APK y calcular digests
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          AAB=$(ls app/build/outputs/bundle/release/*.aab | head -1)
+          echo "APK=$APK" >> "$GITHUB_ENV"
+          echo "AAB=$AAB" >> "$GITHUB_ENV"
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs "$APK"
+          sha256sum "$APK" "$AAB" | tee digests.txt
+
+      - name: Resumen
+        run: |
+          {
+            echo "## Build de release"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Backend por defecto | \`${{ steps.url.outputs.value }}\` |"
+            echo "| Firma | \`${{ steps.signing.outputs.kind }}\` |"
+            echo "| APK | \`$(basename "$APK")\` ($(du -h "$APK" | cut -f1)) |"
+            echo "| AAB | \`$(basename "$AAB")\` ($(du -h "$AAB" | cut -f1)) |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo ""
+            echo "### SHA-256"
+            echo '```'
+            cat digests.txt
+            echo '```'
+            echo ""
+            echo "### Instalar"
+            echo '```bash'
+            echo "adb install -r $(basename "$APK")"
+            echo "# TV: adb connect <ip-del-box>:5555 && adb install -r $(basename "$APK")"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: streamflix-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload AAB (Google Play)
+        uses: actions/upload-artifact@v4
+        with:
+          name: streamflix-release-aab
+          path: app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload R8 mapping
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-mapping
+          path: app/build/outputs/mapping/release/mapping.txt
+          if-no-files-found: warn
+          retention-days: 90
+
+      # Sólo existe en el modo sideload. Guárdala si quieres instalar la próxima
+      # versión encima de esta sin desinstalar; caduca a los 30 días.
+      - name: Upload keystore de sideload
+        if: steps.signing.outputs.kind == 'sideload'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sideload-keystore
+          path: ${{ runner.temp }}/sideload.keystore
+          if-no-files-found: warn
+          retention-days: 30

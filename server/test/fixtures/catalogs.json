@@ -1,0 +1,50 @@
+{
+  "$comment": "Registro de catálogos usado por test/catalogs.test.js (CATALOGS_CONFIG).",
+  "catalogs": [
+    {
+      "type": "tv",
+      "id": "live",
+      "name": "TV en Vivo",
+      "posterShape": "landscape",
+      "order": 1,
+      "genres": ["Deportes", "Eventos"],
+      "source": { "kind": "local" }
+    },
+    {
+      "type": "movie",
+      "id": "top",
+      "name": "Películas populares",
+      "posterShape": "poster",
+      "order": 2,
+      "source": { "kind": "cinemeta", "type": "movie", "id": "top" }
+    },
+    {
+      "type": "anime",
+      "id": "top",
+      "name": "Anime",
+      "posterShape": "poster",
+      "order": 3,
+      "source": { "kind": "cinemeta", "type": "series", "id": "top", "genre": "Animation" }
+    },
+    {
+      "type": "movie",
+      "id": "boom",
+      "name": "Catálogo roto",
+      "posterShape": "poster",
+      "order": 4,
+      "source": { "kind": "cinemeta", "type": "movie", "id": "boom" }
+    },
+    {
+      "type": "movie",
+      "id": "Bad Id!",
+      "name": "Inválido por id",
+      "source": { "kind": "cinemeta", "type": "movie", "id": "top" }
+    },
+    {
+      "type": "podcast",
+      "id": "nope",
+      "name": "Tipo no soportado",
+      "source": { "kind": "local" }
+    }
+  ]
+}

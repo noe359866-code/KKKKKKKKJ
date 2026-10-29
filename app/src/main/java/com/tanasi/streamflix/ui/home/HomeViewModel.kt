@@ -1,0 +1,109 @@
+package com.tanasi.streamflix.ui.home
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.tanasi.streamflix.data.model.HomeCatalog
+import com.tanasi.streamflix.data.model.MediaEntry
+import com.tanasi.streamflix.data.model.Spotlight
+import com.tanasi.streamflix.data.repo.CatalogRepository
+import com.tanasi.streamflix.data.repo.CatalogResult
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+sealed interface HomeUiState {
+    data object Loading : HomeUiState
+    data class Ready(val catalog: HomeCatalog) : HomeUiState
+
+    /**
+     * @param needsSetup el problema se resuelve configurando la URL del addon;
+     *   la UI ofrece el botón de ajustes además de reintentar.
+     */
+    data class Error(val message: String, val needsSetup: Boolean = false) : HomeUiState
+}
+
+/**
+ * Estado del Home: filas + el título que ocupa el hero.
+ *
+ * El hero se mantiene **fuera** de [HomeUiState] a propósito. En una TV, mover
+ * la flecha sobre una fila emite un evento de foco por tarjeta; si eso cambiase
+ * el estado del catálogo, la `LazyColumn` se recompondría entera decenas de veces
+ * por segundo. Aquí sólo cambia un `StateFlow` pequeño y el hero se recompone
+ * solo.
+ */
+class HomeViewModel(
+    private val repository: CatalogRepository,
+) : ViewModel() {
+
+    private val mutableState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
+    val state: StateFlow<HomeUiState> = mutableState.asStateFlow()
+
+    private val mutableHero = MutableStateFlow<Spotlight?>(null)
+    val hero: StateFlow<Spotlight?> = mutableHero.asStateFlow()
+
+    init {
+        load()
+    }
+
+    fun load() {
+        viewModelScope.launch {
+            mutableState.value = HomeUiState.Loading
+            try {
+                when (val result = repository.load()) {
+                    is CatalogResult.Ready -> {
+                        if (result.catalog.isEmpty) {
+                            mutableState.value = HomeUiState.Error(
+                                "El servidor no devolvió ningún título. Revisa los catálogos del backend.",
+                            )
+                            return@launch
+                        }
+                        mutableHero.value = result.catalog.featured
+                        mutableState.value = HomeUiState.Ready(result.catalog)
+                    }
+
+                    is CatalogResult.Failure -> {
+                        mutableState.value = HomeUiState.Error(result.message, result.needsSetup)
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                mutableState.value = HomeUiState.Error(error.message ?: "Error desconocido")
+            }
+        }
+    }
+
+    /**
+     * El usuario enfocó una tarjeta: el hero pasa a mostrarla.
+     *
+     * Se compara **(fila, id)** antes de emitir, por dos motivos:
+     *  - mantener la flecha pulsada sobre la misma tarjeta no debe regenerar el
+     *    `StateFlow` en cada frame (en una TV el foco llega decenas de veces por
+     *    segundo);
+     *  - con catálogos del servidor, el mismo título aparece en varias filas
+     *    (`movie/top` y `movie/imdbRating`), así que comparar sólo el id dejaría
+     *    el hero con la etiqueta de la fila equivocada.
+     */
+    fun onCardFocused(rowId: String, entry: MediaEntry) {
+        val catalog = (mutableState.value as? HomeUiState.Ready)?.catalog ?: return
+        val spotlight = catalog.spotlightFor(rowId, entry.id) ?: return
+        val current = mutableHero.value
+        val changed = current == null ||
+            current.rowId != spotlight.rowId ||
+            current.entry.id != spotlight.entry.id
+        if (changed) mutableHero.value = spotlight
+    }
+
+    /** Vuelve al destacado por defecto (p. ej. al abrir los ajustes). */
+    fun resetHero() {
+        val catalog = (mutableState.value as? HomeUiState.Ready)?.catalog ?: return
+        mutableHero.value = catalog.featured
+    }
+
+    fun refresh() {
+        repository.invalidate()
+        load()
+    }
+}

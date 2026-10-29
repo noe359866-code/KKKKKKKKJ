@@ -8,6 +8,26 @@ import test, { before } from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.DEMO_DELAY_MS = '150';
+/* Proveedor real deshabilitado por red en tests: falla al instante. */
+process.env.TVENVIVO_BASE = 'http://127.0.0.1:1';
+process.env.TVENVIVO_INDEX_TTL_SECONDS = '0';
+/* Los proveedores reales están habilitados en config/providers.json:
+ * en los tests apuntan a un puerto cerrado para no depender de la red. */
+process.env.ANIMEFLV_BASE = 'http://127.0.0.1:1';
+process.env.JKANIME_BASE = 'http://127.0.0.1:1';
+process.env.MONOSCHINOS_BASE = 'http://127.0.0.1:1';
+process.env.GNULA_BASE = 'http://127.0.0.1:1';
+process.env.CUEVANA_BASE = 'http://127.0.0.1:1';
+process.env.PELISPLUSHD_BASE = 'http://127.0.0.1:1';
+process.env.REPELIS_BASE = 'http://127.0.0.1:1';
+process.env.PELICULASFLIX_API = 'http://127.0.0.1:1/api/gql';
+process.env.PELISJUANITA_BASE = 'http://127.0.0.1:1';
+process.env.FUTBOLIBRE_BASE = 'http://127.0.0.1:1';
+process.env.FUTBOLIBRE_AGENDA_URL = 'http://127.0.0.1:1/agenda.json';
+process.env.FUTBOLIBRE_INDEX_TTL_SECONDS = '0';
+process.env.FUTBOLIBRE_AGENDA_TTL_SECONDS = '0';
+process.env.DEPORTELIBRE_BASE = 'http://127.0.0.1:1';
+process.env.DEPORTELIBRE_INDEX_TTL_SECONDS = '0';
 
 const { runProviderPool } = await import('../src/providers/runner.js');
 const { loadProviders, getProvidersFor } = await import('../src/providers/index.js');

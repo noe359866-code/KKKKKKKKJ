@@ -1,0 +1,30 @@
+{
+  "metas": [
+    {
+      "id": "tt0133093",
+      "type": "movie",
+      "name": "The Matrix",
+      "poster": "https://images.metahub.space/poster/medium/tt0133093/img",
+      "background": "https://images.metahub.space/background/medium/tt0133093/img",
+      "description": "Un hacker descubre la verdad sobre su realidad.",
+      "releaseInfo": "1999",
+      "imdbRating": "8.7",
+      "genres": ["Action", "Sci-Fi"]
+    },
+    {
+      "id": "tt1375666",
+      "type": "movie",
+      "name": "Inception",
+      "poster": "https://images.metahub.space/poster/medium/tt1375666/img",
+      "releaseInfo": "2010–2011",
+      "imdbRating": "8.8",
+      "genres": ["Action"]
+    },
+    {
+      "id": "tt1375666",
+      "type": "movie",
+      "name": "Inception (duplicado en el upstream)"
+    },
+    { "type": "movie", "name": "Sin id, se descarta" }
+  ]
+}
