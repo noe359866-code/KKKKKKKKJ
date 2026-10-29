@@ -134,8 +134,8 @@ data class RemoteMeta(
         /* Se conserva el tipo PUBLICADO: es el que acepta `/stream/{type}/{id}`. */
         type = type,
         title = name.ifBlank { id },
-        poster = poster,
-        backdrop = background,
+        poster = normalizeArtworkUrl(poster),
+        backdrop = normalizeArtworkUrl(background),
         art = descriptor?.artKey ?: artKeyFor(type),
         year = year ?: releaseInfo?.let { info -> parseYear(info) },
         subtitle = releaseInfo,
@@ -168,6 +168,18 @@ data class RemoteMeta(
         fun parseYear(releaseInfo: String): Int? =
             Regex("(\\d{4})").find(releaseInfo)?.groupValues?.getOrNull(1)?.toIntOrNull()
     }
+}
+
+/**
+ * Normaliza la URL de una imagen.
+ *
+ * Varios proveedores publican el póster como URL relativa al protocolo
+ * (`//cdn.sitio/x.jpg`), que Coil no sabe resolver y deja la tarjeta sin arte.
+ * Una cadena vacía se convierte en `null` para que la UI use el respaldo.
+ */
+internal fun normalizeArtworkUrl(url: String?): String? {
+    val value = url?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return if (value.startsWith("//")) "https:$value" else value
 }
 
 /** Un episodio tal como lo devuelve Cinemeta a través de `/meta`. */

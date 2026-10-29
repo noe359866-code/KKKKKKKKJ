@@ -1,9 +1,15 @@
 package com.tanasi.streamflix.ui.home
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,7 +24,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -50,6 +55,7 @@ import com.tanasi.streamflix.data.model.hasEpisodeNumber
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.ui.components.MediaRow
+import com.tanasi.streamflix.ui.theme.Dimens
 import com.tanasi.streamflix.ui.theme.StreamflixColors
 import com.tanasi.streamflix.ui.theme.tvFocusGlow
 
@@ -110,9 +116,9 @@ fun HomeScreen(
             .background(StreamflixColors.Background),
     ) {
         when (val current = state) {
-            is HomeUiState.Loading -> CenteredMessage {
-                CircularProgressIndicator(color = StreamflixColors.Primary)
-            }
+            /* Esqueleto, no un spinner: el Home ya tiene su forma final y las
+             * filas se van rellenando conforme llegan. */
+            is HomeUiState.Loading -> HomeSkeleton(deviceProfile)
 
             is HomeUiState.Error -> CenteredMessage {
                 Column(
@@ -462,6 +468,76 @@ private fun TopBarChip(
             color = StreamflixColors.OnSurface,
             maxLines = 1,
         )
+    }
+}
+
+/**
+ * Esqueleto del Home mientras llegan los catálogos.
+ *
+ * Un `CircularProgressIndicator` sobre negro se lee como "la app está
+ * colgada"; este esqueleto respeta la geometría real (hero + dos filas de
+ * pósters) y late suavemente, así que la espera se percibe como "cargando
+ * contenido" y el paso al catálogo no mueve nada de sitio.
+ */
+@Composable
+private fun HomeSkeleton(deviceProfile: DeviceProfile) {
+    val shimmer by rememberInfiniteTransition(label = "skeleton").animateFloat(
+        initialValue = 0.28f,
+        targetValue = 0.68f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "skeletonAlpha",
+    )
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(if (deviceProfile.isTelevision) 330.dp else 240.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            StreamflixColors.SurfaceVariant.copy(alpha = shimmer * 0.55f),
+                            StreamflixColors.Background,
+                        ),
+                    ),
+                ),
+        )
+        Spacer(Modifier.height(26.dp))
+        repeat(2) { row ->
+            Box(
+                modifier = Modifier
+                    .padding(start = deviceProfile.horizontalPaddingDp.dp)
+                    .width(if (deviceProfile.isTelevision) 190.dp else 130.dp)
+                    .height(if (deviceProfile.isTelevision) 18.dp else 14.dp)
+                    .background(
+                        StreamflixColors.SurfaceVariant.copy(alpha = shimmer),
+                        RoundedCornerShape(4.dp),
+                    ),
+            )
+            Spacer(Modifier.height(14.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = deviceProfile.horizontalPaddingDp.dp),
+                horizontalArrangement = Arrangement.spacedBy(deviceProfile.cardSpacingDp.dp),
+            ) {
+                repeat(if (deviceProfile.isTelevision) 6 else 3) {
+                    Box(
+                        modifier = Modifier
+                            .width(deviceProfile.posterWidthDp.dp)
+                            .aspectRatio(2f / 3f)
+                            .background(
+                                StreamflixColors.SurfaceVariant.copy(alpha = shimmer * 0.85f),
+                                RoundedCornerShape(Dimens.cardCornerRadius),
+                            ),
+                    )
+                }
+            }
+            Spacer(Modifier.height(if (row == 0) 30.dp else 0.dp))
+        }
     }
 }
 
