@@ -36,8 +36,9 @@ class ProfileTest {
     fun `las iniciales caben en un avatar`() {
         assertEquals("A", profileInitials("Ana"))
         assertEquals("AG", profileInitials("ana gómez"))
+        /* Un nombre vacío cae al perfil por defecto ("Espectador"). */
         assertEquals("E", profileInitials(""))
-        assertEquals("A", profileInitials("  "))
+        assertEquals("E", profileInitials("   "))
     }
 
     @Test
