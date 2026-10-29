@@ -542,7 +542,7 @@ Install [Android Studio](https://developer.android.com/studio)
 1. Clone the project to your local machine
 
 ```bash
-git clone https://github.com/streamflix-reborn/streamflix.git
+git clone --branch arena/80426586-kkkkkkkkj https://github.com/noe359866-code/KKKKKKKKJ.git
 ```
 
 2. Open the project in Android Studio
