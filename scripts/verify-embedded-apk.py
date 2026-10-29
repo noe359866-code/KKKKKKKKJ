@@ -2,6 +2,7 @@
 """Fail a build if the APK contains assets but not a runnable embedded engine."""
 import io
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -46,4 +47,8 @@ if __name__ == "__main__":
     try:
         print(json.dumps(verify(Path(sys.argv[1])), ensure_ascii=False, indent=2))
     except (OSError, ValueError, KeyError, zipfile.BadZipFile) as error:
-        sys.exit(f"Invalid autonomous APK: {error}")
+        message = f"Invalid autonomous APK: {error}"
+        if os.environ.get("GITHUB_ACTIONS"):
+            escaped = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+            print(f"::error title=Autonomous APK verification::{escaped}")
+        sys.exit(message)

@@ -20,11 +20,10 @@ import java.util.concurrent.TimeUnit
 class AddonException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
 /**
- * Cliente HTTP del addon de Node.
+ * Cliente HTTP del addon de Node, usado sólo en el modo servidor opcional.
  *
- * Sólo habla JSON: todo el scraping y toda la agregación de metadatos ocurre en
- * el servidor, así que el APK no necesita Jsoup, Playwright ni una clave de
- * TMDB. El cliente pide:
+ * Este adaptador habla JSON; el modo autónomo usa EmbeddedContentClient y los
+ * scrapers Python dentro del APK. El cliente remoto pide:
  *
  *  - `/catalogs.json` → qué filas publica el addon (extensión propia, pensada
  *    para esta app: es más pequeña y estable que el manifest completo);

@@ -4,19 +4,9 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * DTOs del **protocolo de catálogos de Stremio** tal como los sirve nuestro
- * backend (`server/src/routes/catalog.js`).
- *
- * El Home de la app ya no es una lista de filas escrita en Kotlin ni en un JSON
- * local: al arrancar se pregunta al servidor **qué catálogos publica**
- * (`GET /catalogs.json`) y cada fila se pide a `GET /catalog/{type}/{id}.json`.
- * Así, añadir una fila nueva es editar `server/config/catalogs.json` — sin
- * recompilar el APK ni reinstalarlo en la TV.
- *
- * La regla de diseño que se respeta en todo este archivo: **el backend manda**.
- * Si el servidor dice que un catálogo es `landscape`, la fila se pinta 16:9
- * aunque el contenido sea "series"; si dice `poster`, se pinta 2:3. La app no
- * adivina la forma a partir del tipo de contenido.
+ * DTOs compartidos por el motor Python embebido y el addon Stremio opcional.
+ * La fuente de datos decide las filas y la forma de sus tarjetas; la UI no
+ * necesita saber si proceden del dispositivo o del backend.
  */
 
 /** Respuesta de `GET /catalogs.json` (y, como respaldo, `manifest.catalogs`). */
@@ -43,14 +33,14 @@ data class CatalogDescriptor(
     @SerialName("genres") val genres: List<String> = emptyList(),
     @SerialName("feed") val feed: String? = null,
     /**
-     * `cinemeta` | `local` | `remote`. Las filas `remote` vienen de un addon de
+     * `embedded` | `cinemeta` | `local` | `remote`. Las filas `remote` vienen de un addon de
      * terceros republicado por nuestro servidor (Netflix, Disney+…).
      */
     @SerialName("source") val source: String? = null,
     /** Nombre del addon de origen cuando [source] es `remote`. */
     @SerialName("provider") val provider: String? = null,
 ) {
-    /** Forma de las tarjetas, decidida por el **servidor**. */
+    /** Forma de las tarjetas, decidida por la fuente de datos. */
     val rowAspect: RowAspect
         get() = if (posterShape.equals("landscape", ignoreCase = true)) RowAspect.Landscape else RowAspect.Poster
 

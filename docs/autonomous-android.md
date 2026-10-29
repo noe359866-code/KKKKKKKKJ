@@ -128,7 +128,7 @@ python3 -m unittest discover -s app/src/test/python -v
 # Contrato Kotlin, ambos modos y cancelación:
 ./gradlew :app:testDebugUnitTest :app:lintDebug
 
-# Arranque del intérprete y los 12 imports dentro de Android, sin backend:
+# Intérprete, 12 imports y puente HTTP nativo con timeout, sin backend:
 ./gradlew :app:connectedDebugAndroidTest
 
 # Regresiones del servidor opcional y sus scrapers existentes:

@@ -16,7 +16,7 @@ import com.tanasi.streamflix.data.model.StreamSource
  *
  * El punto crítico son las **cabeceras HTTP**: Streamwish, Filemoon, VOE o
  * Mp4upload rechazan el `.m3u8` si falta el `Referer` del sitio que lo publica
- * (y a veces un `User-Agent` concreto). El backend ya los devuelve en
+ * (y a veces un `User-Agent` concreto). Ambos motores los devuelven en
  * `behaviorHints.requestHeaders`; aquí se inyectan en el `DataSource`.
  */
 object MediaSources {

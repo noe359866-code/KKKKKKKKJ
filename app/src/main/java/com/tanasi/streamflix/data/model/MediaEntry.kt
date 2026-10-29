@@ -29,7 +29,7 @@ enum class RowAspect {
 }
 
 /**
- * Un título del catálogo: lo que necesita una tarjeta, el hero y la hoja de
+ * Un título del catálogo local/remoto: lo que necesita una tarjeta, el hero y la hoja de
  * detalles.
  *
  * [id] es el identificador completo que espera el backend, con el proveedor
@@ -94,9 +94,8 @@ data class MediaEntry(
 /**
  * Una fila del Home, ya resuelta: Películas populares, Netflix, Anime…
  *
- * No se serializa: las filas las construye `CatalogRepository` a partir de las
- * metas que publica el servidor (`/catalogs.json` + `/catalog/...`), no de un
- * JSON embebido en el APK.
+ * No se serializa: CatalogRepository la construye con los mismos DTOs para el
+ * motor embebido y el backend opcional.
  */
 data class CatalogRow(
     val id: String,

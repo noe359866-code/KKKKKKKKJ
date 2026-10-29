@@ -475,7 +475,8 @@ boxes and on current phones.
   (`android.enableR8.fullMode=true`). `proguard-rules.pro` keeps only what is
   resolved by name (manifest components, `kotlinx.serialization` metadata and
   `$$serializer`s) plus `-assumenosideeffects` on `Log.v/d/i`, so debug logging
-  and signed URLs do not survive into the APK. No blanket
+  from Kotlin is removed. Python diagnostics retain the scrapers' existing
+  behaviour. No blanket
   `-keep class androidx.**`.
 - **Embedded runtime and real scrapers**: the Python code and native libraries
   are packaged with the application. Demo/template providers are excluded.

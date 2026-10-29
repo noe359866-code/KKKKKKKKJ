@@ -15,15 +15,9 @@ sealed interface StreamsResult {
 }
 
 /**
- * Puente entre la UI y `/stream/:type/:id.json`.
- *
- * Responsabilidad doble:
- *  1. pedir el JSON al addon,
- *  2. **normalizar y filtrar** el array: sólo URLs realmente reproducibles, sin
- *     duplicados y conservando el orden de prioridad que decidió el servidor.
- *
- * El orden no se toca: el servidor ya ordenó por prioridad de proveedor y el
- * failover del reproductor depende exactamente de ese orden.
+ * Pide fuentes al motor elegido y normaliza/filtra URLs reproducibles. El orden
+ * de prioridad se conserva para que Media3 pueda cambiar a la fuente siguiente.
+ * Sólo el modo remoto necesita una URL de backend.
  */
 class StreamsRepository(
     private val client: ContentClient,
