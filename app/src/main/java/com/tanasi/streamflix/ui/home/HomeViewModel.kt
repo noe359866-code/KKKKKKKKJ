@@ -2,7 +2,9 @@ package com.tanasi.streamflix.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.tanasi.streamflix.data.model.CatalogRow
+import com.tanasi.streamflix.data.model.HomeCatalog
+import com.tanasi.streamflix.data.model.MediaEntry
+import com.tanasi.streamflix.data.model.Spotlight
 import com.tanasi.streamflix.data.repo.CatalogRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,16 +14,18 @@ import kotlinx.coroutines.launch
 
 sealed interface HomeUiState {
     data object Loading : HomeUiState
-    data class Ready(val rows: List<CatalogRow>) : HomeUiState
+    data class Ready(val catalog: HomeCatalog) : HomeUiState
     data class Error(val message: String) : HomeUiState
 }
 
 /**
- * Estado del catálogo.
+ * Estado del Home: filas + el título que ocupa el hero.
  *
- * Sin `Flow` del repositorio a propósito: el catálogo se carga una vez por
- * proceso (las filas cambian poco) y se invalida explícitamente con [refresh]
- * cuando el usuario cambia de servidor o pulsa "reintentar".
+ * El hero se mantiene **fuera** de [HomeUiState] a propósito. En una TV, mover
+ * la flecha sobre una fila emite un evento de foco por tarjeta; si eso cambiase
+ * el estado del catálogo, la `LazyColumn` se recompondría entera decenas de veces
+ * por segundo. Aquí sólo cambia un `StateFlow` pequeño y el hero se recompone
+ * solo.
  */
 class HomeViewModel(
     private val repository: CatalogRepository,
@@ -29,6 +33,9 @@ class HomeViewModel(
 
     private val mutableState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val state: StateFlow<HomeUiState> = mutableState.asStateFlow()
+
+    private val mutableHero = MutableStateFlow<Spotlight?>(null)
+    val hero: StateFlow<Spotlight?> = mutableHero.asStateFlow()
 
     init {
         load()
@@ -38,18 +45,39 @@ class HomeViewModel(
         viewModelScope.launch {
             mutableState.value = HomeUiState.Loading
             try {
-                val rows = repository.load().filter { it.items.isNotEmpty() }
-                mutableState.value = if (rows.isEmpty()) {
-                    HomeUiState.Error("El catálogo está vacío")
-                } else {
-                    HomeUiState.Ready(rows)
+                val catalog = repository.load()
+                if (catalog.isEmpty) {
+                    mutableState.value = HomeUiState.Error("El catálogo está vacío")
+                    return@launch
                 }
+                mutableHero.value = catalog.featured
+                mutableState.value = HomeUiState.Ready(catalog)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 mutableState.value = HomeUiState.Error(error.message ?: "Error desconocido")
             }
         }
+    }
+
+    /**
+     * El usuario enfocó una tarjeta: el hero pasa a mostrarla.
+     *
+     * Se compara por `id` antes de emitir para que mantener la flecha pulsada
+     * sobre la misma tarjeta no regenere el `StateFlow` en cada frame.
+     */
+    fun onCardFocused(rowId: String, entry: MediaEntry) {
+        val catalog = (mutableState.value as? HomeUiState.Ready)?.catalog ?: return
+        val spotlight = catalog.spotlightFor(rowId, entry.id) ?: return
+        if (mutableHero.value?.entry?.id != spotlight.entry.id) {
+            mutableHero.value = spotlight
+        }
+    }
+
+    /** Vuelve al destacado por defecto (p. ej. al abrir los ajustes). */
+    fun resetHero() {
+        val catalog = (mutableState.value as? HomeUiState.Ready)?.catalog ?: return
+        mutableHero.value = catalog.featured
     }
 
     fun refresh() {

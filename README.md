@@ -170,6 +170,69 @@ for `GET /stream/{type}/{id}.json` and plays whatever ordered list comes back.
 | DI | hand-written `ServiceLocator` (no annotation processor) |
 | SDK | `minSdk 23`, `targetSdk 35`, `compileSdk 36`, JVM 17 |
 
+### Visual design
+
+Three references, each doing one job:
+
+| Reference | What is borrowed |
+| --- | --- |
+| **Apple TV+** | a cinematic hero whose backdrop follows the focus, with a slow Ken Burns drift and three actions (Reproducir / Más información / Cambiar servidor) |
+| **Netflix** | fluid horizontal carousels, 2:3 poster cards, focus scale 1.08x and a floating "Continuar viendo" row |
+| **Prime Video** | floating state badges on the artwork (EN VIVO, quality, provider) and a quick-look details panel before playback |
+
+Everything is Compose (no XML layouts): `ui/home/HeroBanner.kt`,
+`ui/components/MediaCards.kt`, `ui/components/MediaRow.kt`,
+`ui/components/Badges.kt`, `ui/details/DetailsPanel.kt`.
+
+![Home design preview: Android TV and mobile](docs/design-preview.jpg)
+
+*(Static render of the same colours, sizes and artwork the Compose code uses —
+useful as a reference while the APK cannot be built in this environment.)*
+
+**Hero geometry (TV).** Two different numbers: the backdrop box is 0.78 of the
+screen height, but the text block is anchored at a 0.62 baseline, and that is
+exactly where the first shelf starts. That leaves the CTAs clear, one full 16:9
+row visible and the next row's title peeking — the visual cue to press DOWN.
+On phones the hero is simply the first cell of the list (0.62 of the screen).
+
+**Hero.** `HomeCatalog` + `HomeViewModel` keep a `Spotlight`: the card currently
+focused (TV) or the featured title (phone). Focusing a card swaps the backdrop
+with a 420 ms crossfade, so the hero reads like it is following intent rather
+than looping slides. The backdrop is one of four 1280×720 stills shipped in
+`res/drawable-nodpi` (`art_movies`, `art_series`, `art_anime`, `art_live`), used
+when a title has no 16:9 artwork of its own — which is the normal case for
+provider catalogues (they publish 2:3 posters only).
+
+**Cards.** One shared `ContentCard` skeleton renders both proportions, and the
+row decides which one it wants (`aspect: "poster" | "landscape"` in the
+catalogue JSON):
+
+| Row | Aspect | Content |
+| --- | --- | --- |
+| Continuar viendo | 16:9 | progress bar under the artwork |
+| Películas populares | 2:3 | poster |
+| Series que enganchan | 2:3 | poster |
+| Anime en emisión | 2:3 | poster |
+| Deportes en directo | 16:9 | live channel tile |
+
+Focus in TV = scale 1.08 + elevation + the neon ring (`Modifier.tvFocusGlow`,
+cyan on purpose: red is already "live/brand"). The title under a card fades in
+with the focus, so an unfocused shelf stays clean.
+
+**Badges.** `LiveBadge` (pulsing dot), `TrendingBadge` (TOP 10),
+`QualityBadge` (4K in neon), provider chip at the bottom and a progress bar for
+resumed titles. During playback the player shows `FailoverBadge` with the source
+actually on screen ("Fuente 2 de 5"), which is where that number is truthful.
+
+**Details before playback.** Tapping a card opens `DetailsDialog`, a `Dialog`
+(its own window, so the D-Pad cannot escape to the shelf behind): backdrop
+header with rating/quality/genres, synopsis, and the **server selector** — the
+list of sources the addon returned, in its priority order, already loaded
+through `StreamsRepository`. The chosen index travels to the player as
+`PlaybackRequest.startIndex`, and the silent failover continues downward from
+there. "Cambiar servidor" in the hero opens this same panel with the focus
+already on the list.
+
 ### One APK, two form factors
 
 `core/DeviceProfile.kt` decides once (in `Application.onCreate`) whether the app
@@ -279,10 +342,15 @@ video CDNs themselves are HTTPS.
 ### Home catalogue
 
 The addon publishes no catalogs (`manifest.catalogs = []`), so the home screen
-is fed by `app/src/main/assets/catalog/seed.json`: four rows (Películas, Series,
-Anime, TV en Vivo) pointing at real provider ids. Edit that JSON to change what
-shows up — nothing is hardcoded in Kotlin. Remote catalogs are supported but
-opt-in (`Settings.remoteCatalogs`, off by default).
+is fed by `app/src/main/assets/catalog/seed.json` (schema `version: 2`): five
+curated rows — Continuar viendo, Películas populares, Series que enganchan, Anime
+en emisión and Deportes en directo — whose ids are **real** provider ids, so
+every card can be played against a running addon. Each entry carries what the
+hero and the details panel need (synopsis, genres, rating, quality, runtime,
+`art` fallback key, `trending`, `live`, `progressPercent`), which is why opening
+the details panel costs no extra request. Edit the JSON to change the shelf —
+nothing is hardcoded in Kotlin. Remote catalogs are supported but opt-in
+(`Settings.remoteCatalogs`, off by default).
 
 ### Build, run, test
 
@@ -299,9 +367,10 @@ movie: `FailoverPlannerTest` (order, one attempt per source, no wrap-around),
 mapping), `DurationsTest` (clock formatting) and `StreamsRepositoryTest` (URL
 shape, header parsing, HTTP failures via `MockWebServer`).
 
-Smoke test with the real backend: run `npm start`, point the app at it, open a
-title, then stop the first provider (or block a CDN) and watch the player hop to
-the next source without losing your position.
+Smoke test with the real backend: run `npm start`, point the app at it, move the
+D-Pad across a shelf (the hero must follow), open a card, pick the third server
+in the panel, press Reproducir, then stop that provider and watch the player hop
+to the next source without losing your position.
 
 ## Getting started
 

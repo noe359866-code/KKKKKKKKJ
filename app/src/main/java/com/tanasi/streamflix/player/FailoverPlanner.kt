@@ -56,14 +56,20 @@ class FailoverPlanner(private val sources: List<StreamSource>) {
 
     val current: StreamSource? get() = sources.getOrNull(currentIndex)
 
-    /** Primera fuente a reproducir, o `null` si el array llegó vacío. */
-    fun start(): StreamSource? {
+    /**
+     * Primera fuente a reproducir, o `null` si el array llegó vacío.
+     *
+     * @param atIndex fuente elegida por el usuario en la hoja de detalles. El
+     *   failover sigue **hacia abajo** desde ahí (nunca vuelve a las de más
+     *   prioridad que ya descartó a mano).
+     */
+    fun start(atIndex: Int = 0): StreamSource? {
         if (sources.isEmpty()) {
             currentIndex = 0
             return null
         }
-        currentIndex = 0
-        return sources[0]
+        currentIndex = atIndex.coerceIn(0, sources.lastIndex)
+        return sources[currentIndex]
     }
 
     /**

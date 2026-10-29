@@ -119,4 +119,30 @@ class FailoverPlannerTest {
         planner.fail(FailoverReason.PLAYER_ERROR)
         assertNull(planner.current)
     }
+
+    @Test
+    fun `start puede arrancar en la fuente elegida por el usuario`() {
+        val planner = FailoverPlanner(threeSources)
+
+        val chosen = planner.start(atIndex = 2)
+
+        assertEquals("https://cdn2.example/index.m3u8", chosen?.url)
+        assertEquals(3, planner.progress)
+        /* Desde la última fuente ya no hay plan B: el planificador lo dice en
+         * vez de envolver al principio de la lista. */
+        assertNull(planner.fail(FailoverReason.MANUAL))
+        assertTrue(planner.isExhausted)
+    }
+
+    @Test
+    fun `un indice fuera de rango se acota a la lista`() {
+        assertEquals(
+            "https://cdn0.example/index.m3u8",
+            FailoverPlanner(threeSources).start(atIndex = -5)?.url,
+        )
+        assertEquals(
+            "https://cdn2.example/index.m3u8",
+            FailoverPlanner(threeSources).start(atIndex = 99)?.url,
+        )
+    }
 }

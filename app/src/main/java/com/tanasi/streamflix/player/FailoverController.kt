@@ -57,10 +57,15 @@ class FailoverController(
     private var watchdog: Job? = null
     private var released = false
 
-    /** Añade el listener y arranca por la mejor fuente. */
-    fun start(startPositionMs: Long = 0L) {
+    /**
+     * Añade el listener y arranca.
+     *
+     * @param startIndex fuente elegida en la hoja de detalles (0 = máxima
+     *   prioridad). El resto de la lista queda como plan de failover.
+     */
+    fun start(startPositionMs: Long = 0L, startIndex: Int = 0) {
         player.addListener(this)
-        play(planner.start(), startPositionMs, wasPlaying = true)
+        play(planner.start(startIndex), startPositionMs, wasPlaying = true)
     }
 
     /* ---------------------------------------------------------------------- */

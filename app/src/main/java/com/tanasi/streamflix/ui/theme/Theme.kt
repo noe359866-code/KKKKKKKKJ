@@ -28,9 +28,27 @@ object StreamflixColors {
     val PrimaryVariant = Color(0xFFB71C1C)
     val OnSurface = Color(0xFFF2F2F7)
     val OnSurfaceMuted = Color(0xFF9E9EAE)
-    val FocusRing = Color(0xFFFF5252)
+
+    /**
+     * Foco del D-Pad: neón cian.
+     *
+     * El rojo ya significa "en vivo" y "marca"; si además fuese el color del
+     * foco, en una fila de deportes no se distinguiría qué está seleccionado de
+     * qué está emitiendo. El cian no aparece en ningún otro sitio de la
+     * interfaz, así que el ojo lo lee como "el cursor está aquí".
+     */
+    val FocusRing = Color(0xFF3DDCFF)
+    val Neon = Color(0xFF3DDCFF)
+
+    /** Rojo de emisión (badge EN VIVO, punto de directo). */
     val Live = Color(0xFFFF1744)
+
+    /** Fondo de tarjeta mientras carga el póster. */
     val PosterPlaceholder = Color(0xFF22222F)
+
+    /** Vidrio de las insignias (Prime): negro translúcido sobre el arte. */
+    val BadgeGlass = Color(0xCC101018)
+    val Scrim = Color(0xFF000000)
 }
 
 private val StreamflixColorScheme = darkColorScheme(

@@ -74,6 +74,7 @@ class PlayerActivity : ComponentActivity() {
             type = getStringExtra(EXTRA_TYPE) ?: "movie",
             title = getStringExtra(EXTRA_TITLE) ?: id,
             isLive = getBooleanExtra(EXTRA_IS_LIVE, false),
+            startIndex = getIntExtra(EXTRA_START_INDEX, 0).coerceAtLeast(0),
         )
     }
 
@@ -82,5 +83,6 @@ class PlayerActivity : ComponentActivity() {
         const val EXTRA_TYPE = "extra.type"
         const val EXTRA_TITLE = "extra.title"
         const val EXTRA_IS_LIVE = "extra.isLive"
+        const val EXTRA_START_INDEX = "extra.startIndex"
     }
 }

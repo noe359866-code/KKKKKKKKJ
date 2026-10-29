@@ -32,6 +32,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -171,7 +172,7 @@ private fun PlaybackSurface(
     var durationMs by remember { mutableStateOf(0L) }
 
     DisposableEffect(controller) {
-        controller.start()
+        controller.start(startIndex = request.startIndex)
         onDispose {
             controller.release()
             player.release()
@@ -179,8 +180,14 @@ private fun PlaybackSurface(
     }
 
     /* El foco del D-Pad empieza en la superficie de vídeo: si no, el mando no
-     * tiene dónde apuntar y las teclas se pierden. */
-    LaunchedEffect(Unit) { runCatching { rootFocus.requestFocus() } }
+     * tiene dónde apuntar y las teclas se pierden. Se esperan dos frames porque
+     * `LaunchedEffect` corre antes del layout y `requestFocus()` lanzaría
+     * "FocusRequester is not initialized". */
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        withFrameNanos { }
+        runCatching { rootFocus.requestFocus() }
+    }
 
     /* `ABAJO` con los controles ocultos: se muestran y el foco salta al botón
      * central en cuanto existe en la composición. */

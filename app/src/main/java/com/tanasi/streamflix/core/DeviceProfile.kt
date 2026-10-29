@@ -26,10 +26,18 @@ data class DeviceProfile(
      */
     val requiresDpadFocus: Boolean get() = isTelevision || !hasTouchScreen
 
-    /** Tarjetas más grandes y menos columnas visibles en el salón. */
-    val cardWidthDp: Int get() = if (isTelevision) 196 else 128
+    /**
+     * Ancho de una tarjeta 2:3 (pósters). El alto se deriva de la proporción,
+     * no se escribe a mano: si mañana cambia el ancho, la tarjeta sigue siendo
+     * 2:3 exacta en vez de deformarse.
+     */
+    val posterWidthDp: Int get() = if (isTelevision) 220 else 112
 
-    val cardHeightDp: Int get() = if (isTelevision) 292 else 192
+    /** Ancho de una tarjeta 16:9 (directos, deportes, continuar viendo). */
+    val landscapeWidthDp: Int get() = if (isTelevision) 400 else 208
+
+    /** Separación entre tarjetas: en el salón se agradece más aire. */
+    val cardSpacingDp: Int get() = if (isTelevision) 18 else 10
 
     /** En TV los carruseles caben justos; en móvil se ve casi una tarjeta y media. */
     val horizontalPaddingDp: Int get() = if (requiresDpadFocus) 48 else 16
