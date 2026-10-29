@@ -155,7 +155,7 @@ fun ProfileGate(
                 text = if (editing) {
                     "Elige un perfil para borrarlo."
                 } else {
-                    "Pulsa OK para entrar · perfil activo: ${profiles.firstOrNull()?.name ?: "—"}"
+                    "Pulsa OK para entrar · ${profiles.size} de $MAX_PROFILES perfiles"
                 },
                 style = MaterialTheme.typography.labelMedium,
                 color = StreamflixColors.OnSurfaceMuted.copy(alpha = 0.7f),
