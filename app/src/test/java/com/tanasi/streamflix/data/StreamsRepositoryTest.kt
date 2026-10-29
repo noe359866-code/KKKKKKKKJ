@@ -65,25 +65,30 @@ class StreamsRepositoryTest {
     }
 
     @Test
-    fun `normalize descarta URLs no reproducibles y duplicadas`() {
+    fun `normalize descarta páginas y duplicados pero conserva URLs sin extensión`() {
         val response = json.decodeFromString(
             StreamsResponse.serializer(),
             """
             {"streams":[
               {"name":"ok","url":"https://a.example/1.m3u8"},
-              {"name":"página","url":"https://a.example/embed/xyz"},
+              {"name":"página","url":"https://a.example/embed/pelicula.html"},
               {"name":"dup","url":"https://a.example/1.m3u8"},
               {"name":"vacio","url":""},
-              {"name":"mp4","url":"https://b.example/v.mp4?token=1"}
+              {"name":"mp4","url":"https://b.example/v.mp4?token=1"},
+              {"name":"cdn","url":"https://c.example/live/9f8e7d6c5b"}
             ]}
             """.trimIndent(),
         )
 
         val sources = StreamsRepository.normalize(response)
 
-        assertEquals(2, sources.size)
+        /* Una URL sin extensión puede ser HLS perfectamente válido: se
+         * conserva y el failover decide. Antes se descartaba y el panel de
+         * servidores aparecía vacío. */
+        assertEquals(3, sources.size)
         assertEquals("https://a.example/1.m3u8", sources[0].url)
         assertEquals("https://b.example/v.mp4?token=1", sources[1].url)
+        assertEquals("https://c.example/live/9f8e7d6c5b", sources[2].url)
     }
 
     @Test
