@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.Dp
 /**
  * "Selector de foco" de Android TV, en Compose.
  *
- * En una app basada en `View` esto serían dos `res/drawable/*.xml` gemelos
+ * En una app basada en `View` esto serían dos `res/drawable` gemelos
  * (`background.xml` y `background_focused.xml`) metidos en
  * `res/color/selector.xml`, más `android:focusable="true"` en cada tarjeta.
  * Compose no tiene estados XML: el foco es un dato (`onFocusChanged`) y el
