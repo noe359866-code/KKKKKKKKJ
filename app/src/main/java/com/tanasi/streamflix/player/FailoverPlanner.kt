@@ -51,8 +51,11 @@ class FailoverPlanner(private val sources: List<StreamSource>) {
     var currentIndex: Int = -1
         private set
 
-    /** Posición 1-based para etiquetas ("Fuente 2 de 5"); 0 si no empezó. */
-    val progress: Int get() = (currentIndex + 1).coerceAtLeast(0)
+    /**
+     * Posición 1-based para etiquetas ("Fuente 2 de 5"); 0 si no empezó o si la
+     * lista llegó vacía. Sin ese caso, una lista vacía reportaba "Fuente 1 de 0".
+     */
+    val progress: Int get() = if (sources.isEmpty() || currentIndex < 0) 0 else currentIndex + 1
 
     val current: StreamSource? get() = sources.getOrNull(currentIndex)
 
@@ -95,5 +98,5 @@ class FailoverPlanner(private val sources: List<StreamSource>) {
     }
 
     /** `true` mientras el siguiente salto todavía puede dar algo. */
-    fun hasNext(): Boolean = sources.isEmpty() || (currentIndex + 1) < sources.size
+    fun hasNext(): Boolean = (currentIndex + 1) < sources.size
 }
