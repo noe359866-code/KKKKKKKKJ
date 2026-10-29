@@ -184,45 +184,36 @@ class StremioAddonTest {
     fun `RoutingContentClient combina catalogos y streams de addons Stremio con el motor local`() = runBlocking {
         val serverBase = server.url("/").toString().trimEnd('/')
 
-        val addon = StremioAddon(
-            id = "test_addon",
-            name = "Test Addon",
-            version = "1.0",
-            manifestUrl = "$serverBase/manifest.json",
-            baseUrl = serverBase,
-            enabled = true,
-            resources = listOf(StremioResource("catalog"), StremioResource("stream")),
-            types = listOf("movie"),
-            catalogs = listOf(
-                StremioManifestCatalog(type = "movie", id = "popular", name = "Populares"),
-            ),
-        )
-
-        val storage = InMemoryAddonStorage()
-        val client = StremioAddonClient()
-        val manager = StremioAddonManager(storage, client)
-        manager.installAddon("$serverBase/manifest.json")
-
-        // Servidor simula catalog y stream
+        // Servidor simula manifest, catalog y stream
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val path = request.path.orEmpty()
                 return when {
-                    path.endsWith("/manifest.json") -> MockResponse().setBody(
-                        """{"id":"test_addon","name":"Test Addon","resources":["catalog","stream"],"types":["movie"],"catalogs":[{"type":"movie","id":"popular","name":"Populares"}]}""",
-                    )
-                    path.startsWith("/catalog/movie/popular") -> MockResponse().setBody(
-                        """{"metas":[{"id":"tt0001","type":"movie","name":"Película Externa"}]}""",
-                    )
-                    path.startsWith("/stream/movie/tt0001") -> MockResponse().setBody(
-                        """{"streams":[{"name":"Stream Addon","title":"1080p","url":"https://stream.invalid/1080.m3u8","provider":"Test Addon"}]}""",
-                    )
+                    path.endsWith("/manifest.json") -> MockResponse()
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                            """{"id":"test_addon","name":"Test Addon","resources":["catalog","stream"],"types":["movie"],"catalogs":[{"type":"movie","id":"popular","name":"Populares"}]}""",
+                        )
+                    path.startsWith("/catalog/movie/popular") -> MockResponse()
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                            """{"metas":[{"id":"tt0001","type":"movie","name":"Película Externa"}]}""",
+                        )
+                    path.startsWith("/stream/movie/tt0001") -> MockResponse()
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                            """{"streams":[{"name":"Stream Addon","title":"1080p","url":"https://stream.invalid/1080.m3u8","provider":"Test Addon"}]}""",
+                        )
                     else -> MockResponse().setResponseCode(404)
                 }
             }
         }
 
-        manager.installAddon("$serverBase/manifest.json")
+        val storage = InMemoryAddonStorage()
+        val client = StremioAddonClient()
+        val manager = StremioAddonManager(storage, client)
+        val installResult = manager.installAddon("$serverBase/manifest.json")
+        assertTrue("El addon debe instalarse con éxito", installResult.isSuccess)
 
         val embedded = EmbeddedContentClient(EmbeddedRuntime { op, _ ->
             when (op) {
