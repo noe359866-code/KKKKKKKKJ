@@ -8,6 +8,9 @@ import com.tanasi.streamflix.data.local.EmbeddedContentClient
 import com.tanasi.streamflix.data.remote.AddonClient
 import com.tanasi.streamflix.data.repo.CatalogRepository
 import com.tanasi.streamflix.data.repo.StreamsRepository
+import com.tanasi.streamflix.data.stremio.SharedPreferencesAddonStorage
+import com.tanasi.streamflix.data.stremio.StremioAddonClient
+import com.tanasi.streamflix.data.stremio.StremioAddonManager
 import com.tanasi.streamflix.util.Settings
 import kotlinx.serialization.json.Json
 
@@ -27,6 +30,12 @@ object ServiceLocator {
 
     @Volatile
     private var clientInstance: AddonClient? = null
+
+    @Volatile
+    private var stremioClientInstance: StremioAddonClient? = null
+
+    @Volatile
+    private var addonManagerInstance: StremioAddonManager? = null
 
     @Volatile
     private var contentInstance: ContentClient? = null
@@ -54,12 +63,29 @@ object ServiceLocator {
             clientInstance ?: AddonClient(AddonClient.defaultHttpClient(), json).also { clientInstance = it }
         }
 
+    fun stremioAddonClient(): StremioAddonClient =
+        stremioClientInstance ?: synchronized(this) {
+            stremioClientInstance ?: StremioAddonClient(AddonClient.defaultHttpClient(), json)
+                .also { stremioClientInstance = it }
+        }
+
+    fun stremioAddonManager(context: Context): StremioAddonManager =
+        addonManagerInstance ?: synchronized(this) {
+            addonManagerInstance ?: StremioAddonManager(
+                storage = SharedPreferencesAddonStorage(context),
+                client = stremioAddonClient(),
+                json = json,
+            ).also { addonManagerInstance = it }
+        }
+
     fun contentClient(context: Context): ContentClient =
         contentInstance ?: synchronized(this) {
             contentInstance ?: RoutingContentClient(
                 settings = settings(context),
                 embedded = EmbeddedContentClient(ChaquopyRuntime(context)) { settings(context).metadataCatalogs },
                 remote = addonClient(),
+                addonManager = stremioAddonManager(context),
+                stremioClient = stremioAddonClient(),
             ).also { contentInstance = it }
         }
 
@@ -69,7 +95,7 @@ object ServiceLocator {
                 .also { streamsInstance = it }
         }
 
-    /** El mismo repositorio trabaja con ambos motores. */
+    /** El mismo repositorio trabaja con ambos motores y los addons de Stremio. */
     fun catalogRepository(context: Context): CatalogRepository =
         catalogInstance ?: synchronized(this) {
             catalogInstance ?: CatalogRepository(contentClient(context), settings(context))
@@ -84,6 +110,8 @@ object ServiceLocator {
             clientInstance = null
             contentInstance = null
             settingsInstance = null
+            addonManagerInstance = null
+            stremioClientInstance = null
         }
     }
 }
