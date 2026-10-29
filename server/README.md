@@ -123,6 +123,13 @@ Modo desarrollo con recarga:
 npm run dev
 ```
 
+Vista previa en el navegador (puerto **8899**, atado a `0.0.0.0` para que el
+proxy del workspace la alcance):
+
+```bash
+npm run preview           # HOST=0.0.0.0 PORT=8899 node src/server.js
+```
+
 Instalar en Stremio / la app: usa como URL del addon
 `http://<IP-de-tu-servidor>:7000/manifest.json`
 (o `stremio://<host>:7000/manifest.json`). Desde la propia landing (`/`) puedes

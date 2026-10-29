@@ -11,6 +11,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "preview": "HOST=0.0.0.0 PORT=8899 node src/server.js",
     "test": "LOG_LEVEL=error NODE_ENV=test node --test",
     "cache:stats": "node scripts/cache-stats.js",
     "bridge:demo": "node scripts/bridge-demo.js",

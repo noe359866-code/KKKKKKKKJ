@@ -9,7 +9,7 @@ import os from 'node:os';
 import config from './config.js';
 import { createApp } from './app.js';
 import { loadProviders } from './providers/index.js';
-import { loadCatalogs } from './catalogs/registry.js';
+import { ensureCatalogs } from './catalogs/registry.js';
 import { cache } from './cache/TtlCache.js';
 import { createLogger } from './lib/logger.js';
 
@@ -28,8 +28,10 @@ function localIp() {
 async function main() {
   /* Catálogos primero: el manifest los necesita en la PRIMERA petición, y un
    * `/manifest.json` sin `catalogs` deja el Home del cliente vacío hasta que
-   * alguien reinicie. Nunca lanza: si el JSON falta se usan los defaults. */
-  await Promise.all([loadProviders(), loadCatalogs()]);
+   * alguien reinicie. Se usa `ensureCatalogs()` (memoizado) y no `loadCatalogs()`
+   * para que la primera petición no vuelva a resolver los addons remotos.
+   * Nunca lanza: si el JSON falta se usan los defaults. */
+  await Promise.all([loadProviders(), ensureCatalogs()]);
 
   const app = createApp();
   const server = app.listen(config.http.port, config.http.host, () => {
