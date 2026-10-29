@@ -60,10 +60,31 @@ jobs:
       - name: Gradle cache
         uses: gradle/actions/setup-gradle@v4
 
-      # El runner de Ubuntu no trae el SDK de Android; la action oficial lo
-      # instala y acepta las licencias (compileSdk 36).
+      # El runner de ubuntu-latest ya trae el SDK de Android; sólo hay que
+      # aceptar licencias y asegurar la plataforma que pide el build. Se evita
+      # depender de una action externa (y de su cadencia de releases).
       - name: Android SDK
-        uses: android-actions/setup-android@v3
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            echo "::error::El runner no tiene Android SDK (ANDROID_HOME vacío)."
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          ls "$SDK/platforms" 2>/dev/null || true
+          SDKMGR="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMGR" ]; then
+            SDKMGR="$(ls "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1 || true)"
+          fi
+          if [ -n "$SDKMGR" ]; then
+            yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+            "$SDKMGR" "platforms;android-36" "build-tools;35.0.0" 2>&1 | tail -3 || true
+          else
+            echo "sdkmanager no disponible; se confía en la descarga automática de AGP."
+          fi
+          ls "$SDK/platforms"
 
       - name: Resolver URL del backend
         id: url
@@ -114,13 +135,19 @@ jobs:
           fi
 
       - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
 
       - name: Lint (release)
-        run: ./gradlew :app:lintRelease --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew :app:lintRelease --no-daemon --stacktrace 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
 
       - name: Build release APK + AAB
-        run: ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace 2>&1 | tee -a "$RUNNER_TEMP/ci.log"
 
       - name: Verificar APK y calcular digests
         run: |
@@ -157,6 +184,21 @@ jobs:
             echo "# TV: adb connect <ip-del-box>:5555 && adb install -r $(basename "$APK")"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Cuando algo falla, las últimas líneas se publican como anotaciones del
+      # check-run: se leen por API (api.github.com) sin descargar el zip de logs.
+      - name: Diagnóstico
+        if: failure()
+        run: |
+          LOG="$RUNNER_TEMP/ci.log"
+          if [ ! -s "$LOG" ]; then
+            echo "::error title=sin-log::El build falló antes de ejecutar Gradle."
+            exit 0
+          fi
+          tail -n 8 "$LOG" | while IFS= read -r line; do
+            clean=$(printf '%s' "$line" | tr -d '\r' | cut -c1-900)
+            [ -n "$clean" ] && echo "::error title=gradle::$clean"
+          done
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
