@@ -45,31 +45,37 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.tanasi.streamflix.BuildConfig
 import com.tanasi.streamflix.data.model.StremioAddon
 import com.tanasi.streamflix.data.remote.Urls
 import com.tanasi.streamflix.data.stremio.StremioAddonManager
 import com.tanasi.streamflix.di.ServiceLocator
 import com.tanasi.streamflix.ui.theme.StreamflixColors
+import com.tanasi.streamflix.update.AppUpdateManager
+import com.tanasi.streamflix.update.UpdateInfo
 import com.tanasi.streamflix.util.Settings
 import kotlinx.coroutines.launch
 
-/** Diálogo de configuración: modo de conexión y administración de addons Stremio. */
+/** Diálogo de configuración: modo de conexión, addons Stremio y actualizaciones autónomas. */
 @Composable
 fun ServerSettingsDialog(
     settings: Settings,
     addonManager: StremioAddonManager? = null,
     onDismiss: () -> Unit,
     onSaved: () -> Unit,
+    onUpdateFound: ((UpdateInfo) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val manager = addonManager ?: remember { ServiceLocator.stremioAddonManager(context) }
     val scope = rememberCoroutineScope()
+    val updateManager = remember { AppUpdateManager() }
 
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Conexión, 1: Addons Stremio
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Conexión, 1: Addons, 2: Actualizaciones
 
     var autonomous by remember { mutableStateOf(settings.autonomous) }
     var metadata by remember { mutableStateOf(settings.metadataCatalogs) }
     var value by remember { mutableStateOf(settings.baseUrl) }
+    var autoUpdate by remember { mutableStateOf(settings.autoCheckUpdates) }
     val isValid = autonomous || Urls.isValidBase(value)
 
     val installedAddons by manager.addons.collectAsState()
@@ -78,6 +84,9 @@ fun ServerSettingsDialog(
     var isInstalling by remember { mutableStateOf(false) }
     var installError by remember { mutableStateOf<String?>(null) }
     var installSuccess by remember { mutableStateOf<String?>(null) }
+
+    var isCheckingUpdates by remember { mutableStateOf(false) }
+    var updateCheckMessage by remember { mutableStateOf<String?>(null) }
 
     fun tryInstall(url: String) {
         if (url.isBlank()) return
@@ -99,6 +108,25 @@ fun ServerSettingsDialog(
         }
     }
 
+    fun checkUpdatesNow() {
+        scope.launch {
+            isCheckingUpdates = true
+            updateCheckMessage = null
+            try {
+                val update = updateManager.checkForUpdate()
+                isCheckingUpdates = false
+                if (update != null) {
+                    onUpdateFound?.invoke(update)
+                } else {
+                    updateCheckMessage = "Tu aplicación está actualizada a la última versión (v${BuildConfig.VERSION_NAME})."
+                }
+            } catch (e: Exception) {
+                isCheckingUpdates = false
+                updateCheckMessage = "Error al consultar releases: ${e.message}"
+            }
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -112,154 +140,249 @@ fun ServerSettingsDialog(
                         onClick = { selectedTab = 0 },
                     )
                     TabButton(
-                        text = "Addons de Stremio (${installedAddons.size})",
+                        text = "Addons (${installedAddons.size})",
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
+                    )
+                    TabButton(
+                        text = "Actualizaciones",
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
                     )
                 }
             }
         },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (selectedTab == 0) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = autonomous, onClick = { autonomous = true })
-                        Text("Autónomo · En este dispositivo")
-                    }
-                    Text(
-                        text = "Los scrapers y Python vienen en el APK. La TV consulta los proveedores y resuelve los enlaces directamente, sin Node.js ni un servidor propio.",
-                        color = StreamflixColors.OnSurfaceMuted,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = "Necesita Internet y que las páginas de origen estén disponibles. Guarda catálogos y una caché corta de enlaces en el dispositivo; no descarga los videos.",
-                        color = StreamflixColors.OnSurfaceMuted,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    if (autonomous) {
+                when (selectedTab) {
+                    0 -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = metadata, onCheckedChange = { metadata = it })
-                            Text("Añadir catálogos de Cinemeta (opcional)", style = MaterialTheme.typography.bodyMedium)
+                            RadioButton(selected = autonomous, onClick = { autonomous = true })
+                            Text("100% Autónomo · En este dispositivo")
+                        }
+                        Text(
+                            text = "Los 12 scrapers y Python vienen en el APK. El dispositivo consulta los sitios y resuelve los enlaces directamente, sin Node.js, sin servidores propios ni intermediarios.",
+                            color = StreamflixColors.OnSurfaceMuted,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "Guarda catálogos y caché en el dispositivo; los videos se reproducen en streaming directo mediante Media3 / ExoPlayer.",
+                            color = StreamflixColors.OnSurfaceMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        if (autonomous) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = metadata, onCheckedChange = { metadata = it })
+                                Text("Añadir catálogos de Cinemeta (opcional)", style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = !autonomous, onClick = { autonomous = false })
+                            Text("Servidor externo · Opcional")
+                        }
+                        if (!autonomous) {
+                            Text(
+                                text = "Sólo para quien prefiera ejecutar el backend server/ por separado. Puedes volver al modo autónomo en cualquier momento.",
+                                color = StreamflixColors.OnSurfaceMuted,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = value,
+                                onValueChange = { value = it },
+                                singleLine = true,
+                                isError = value.isNotBlank() && !Urls.isValidBase(value),
+                                label = { Text("URL del backend") },
+                                placeholder = { Text("http://192.168.1.50:7000") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                         }
                     }
-                    Spacer(Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = !autonomous, onClick = { autonomous = false })
-                        Text("Servidor externo · Opcional")
-                    }
-                    if (!autonomous) {
+                    1 -> {
                         Text(
-                            text = "Sólo para quien prefiera ejecutar el backend server/ por separado. Puedes volver al modo autónomo en cualquier momento.",
+                            text = "Añade addons compatibles con Stremio v3 mediante su URL de manifest. Sus catálogos y streams se integrarán directamente en la app.",
                             color = StreamflixColors.OnSurfaceMuted,
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Spacer(Modifier.height(12.dp))
+
                         OutlinedTextField(
-                            value = value,
-                            onValueChange = { value = it },
+                            value = addonInputUrl,
+                            onValueChange = { addonInputUrl = it },
                             singleLine = true,
-                            isError = value.isNotBlank() && !Urls.isValidBase(value),
-                            label = { Text("URL del backend") },
-                            placeholder = { Text("http://192.168.1.50:7000") },
+                            label = { Text("URL de manifest del addon") },
+                            placeholder = { Text("https://.../manifest.json o stremio://...") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { tryInstall(addonInputUrl) }),
                             modifier = Modifier.fillMaxWidth(),
                         )
-                    }
-                } else {
-                    Text(
-                        text = "Añade addons compatibles con Stremio v3 mediante su URL de manifest. Sus catálogos y streams se integrarán directamente en la app.",
-                        color = StreamflixColors.OnSurfaceMuted,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Spacer(Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value = addonInputUrl,
-                        onValueChange = { addonInputUrl = it },
-                        singleLine = true,
-                        label = { Text("URL de manifest del addon") },
-                        placeholder = { Text("https://.../manifest.json o stremio://...") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { tryInstall(addonInputUrl) }),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (isInstalling) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp,
-                                color = StreamflixColors.Primary,
-                            )
-                            Spacer(Modifier.width(12.dp))
-                        }
-                        Button(
-                            enabled = addonInputUrl.isNotBlank() && !isInstalling,
-                            onClick = { tryInstall(addonInputUrl) },
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("Instalar addon")
+                            if (isInstalling) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp,
+                                    color = StreamflixColors.Primary,
+                                )
+                                Spacer(Modifier.width(12.dp))
+                            }
+                            Button(
+                                enabled = addonInputUrl.isNotBlank() && !isInstalling,
+                                onClick = { tryInstall(addonInputUrl) },
+                            ) {
+                                Text("Instalar addon")
+                            }
                         }
-                    }
 
-                    installError?.let { err ->
-                        Spacer(Modifier.height(6.dp))
-                        Text(text = err, color = Color(0xFFFF5252), style = MaterialTheme.typography.bodySmall)
-                    }
-                    installSuccess?.let { msg ->
-                        Spacer(Modifier.height(6.dp))
-                        Text(text = msg, color = Color(0xFF69F0AE), style = MaterialTheme.typography.bodySmall)
-                    }
+                        installError?.let { err ->
+                            Spacer(Modifier.height(6.dp))
+                            Text(text = err, color = Color(0xFFFF5252), style = MaterialTheme.typography.bodySmall)
+                        }
+                        installSuccess?.let { msg ->
+                            Spacer(Modifier.height(6.dp))
+                            Text(text = msg, color = Color(0xFF69F0AE), style = MaterialTheme.typography.bodySmall)
+                        }
 
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        text = "Addons instalados",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = StreamflixColors.OnSurface,
-                    )
-                    Spacer(Modifier.height(8.dp))
-
-                    if (installedAddons.isEmpty()) {
+                        Spacer(Modifier.height(16.dp))
                         Text(
-                            text = "No tienes addons de Stremio instalados.",
-                            color = StreamflixColors.OnSurfaceMuted,
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "Addons instalados",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = StreamflixColors.OnSurface,
                         )
-                    } else {
+                        Spacer(Modifier.height(8.dp))
+
+                        if (installedAddons.isEmpty()) {
+                            Text(
+                                text = "No tienes addons de Stremio instalados.",
+                                color = StreamflixColors.OnSurfaceMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                installedAddons.forEach { addon ->
+                                    AddonItemCard(
+                                        addon = addon,
+                                        onToggle = { enabled -> manager.setAddonEnabled(addon.id, enabled) },
+                                        onDelete = { manager.removeAddon(addon.id) },
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            text = "Addons sugeridos (1 clic)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = StreamflixColors.OnSurface,
+                        )
+                        Spacer(Modifier.height(8.dp))
+
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            installedAddons.forEach { addon ->
-                                AddonItemCard(
-                                    addon = addon,
-                                    onToggle = { enabled -> manager.setAddonEnabled(addon.id, enabled) },
-                                    onDelete = { manager.removeAddon(addon.id) },
+                            manager.presets().forEach { preset ->
+                                val alreadyInstalled = installedAddons.any {
+                                    it.manifestUrl == preset.manifestUrl || it.id.equals(preset.name, ignoreCase = true)
+                                }
+                                PresetItemCard(
+                                    preset = preset,
+                                    isInstalled = alreadyInstalled,
+                                    onInstall = { tryInstall(preset.manifestUrl) },
                                 )
                             }
                         }
                     }
+                    2 -> {
+                        Text(
+                            text = "Streamflix se actualiza de manera 100% autónoma descargando los APKs firmados directamente desde GitHub Releases.",
+                            color = StreamflixColors.OnSurfaceMuted,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Spacer(Modifier.height(12.dp))
 
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        text = "Addons sugeridos (1 clic)",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = StreamflixColors.OnSurface,
-                    )
-                    Spacer(Modifier.height(8.dp))
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        manager.presets().forEach { preset ->
-                            val alreadyInstalled = installedAddons.any {
-                                it.manifestUrl == preset.manifestUrl || it.id.equals(preset.name, ignoreCase = true)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .padding(12.dp),
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Versión instalada: v${BuildConfig.VERSION_NAME}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StreamflixColors.OnSurface,
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = "Código de versión: ${BuildConfig.VERSION_CODE} · Canal: GitHub Releases",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = StreamflixColors.OnSurfaceMuted,
+                                )
                             }
-                            PresetItemCard(
-                                preset = preset,
-                                isInstalled = alreadyInstalled,
-                                onInstall = { tryInstall(preset.manifestUrl) },
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    text = "Actualizar automáticamente",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = StreamflixColors.OnSurface,
+                                )
+                                Text(
+                                    text = "Busca nuevas versiones al abrir la app",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = StreamflixColors.OnSurfaceMuted,
+                                )
+                            }
+                            Switch(
+                                checked = autoUpdate,
+                                onCheckedChange = { autoUpdate = it },
+                            )
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedButton(
+                                enabled = !isCheckingUpdates,
+                                onClick = { checkUpdatesNow() },
+                            ) {
+                                Text("Buscar actualizaciones ahora")
+                            }
+                            if (isCheckingUpdates) {
+                                Spacer(Modifier.width(12.dp))
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = StreamflixColors.Primary,
+                                )
+                            }
+                        }
+
+                        updateCheckMessage?.let { msg ->
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = msg,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (msg.startsWith("Error")) Color(0xFFFF5252) else Color(0xFF69F0AE),
                             )
                         }
                     }
@@ -273,6 +396,7 @@ fun ServerSettingsDialog(
                     settings.baseUrl = if (value.isBlank()) "" else Urls.normalizeBase(value)
                     settings.metadataCatalogs = metadata
                     settings.autonomous = autonomous
+                    settings.autoCheckUpdates = autoUpdate
                     onSaved()
                 },
             ) { Text("Guardar") }

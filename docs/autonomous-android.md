@@ -68,6 +68,20 @@ manifest (`https://.../manifest.json` o `stremio://...`):
   catálogos populares como *Streaming Catalogs* (Netflix, Disney+, Prime Video...)
   y *Cinemeta*.
 
+### Actualizaciones automáticas y funcionamiento 100% autónomo
+
+La app integra un gestor de actualizaciones (`AppUpdateManager`) que opera de
+forma completamente autónoma:
+- **Comprobación directa:** consulta periódicamente las nuevas versiones
+  publicadas en las releases oficiales de GitHub (`https://api.github.com/repos/.../releases/latest`),
+  sin pasar por Google Play ni servidores intermedios.
+- **Descarga e instalación integrada:** al detectar una versión más reciente,
+  ofrece el changelog y permite descargar el APK directamente en el dispositivo
+  con barra de progreso, abriendo el instalador del paquete Android mediante
+  `FileProvider` al finalizar.
+- **Control en Ajustes:** permite buscar actualizaciones manualmente en
+  cualquier momento y activar o desactivar la comprobación automática al inicio.
+
 La opción **Servidor externo** conserva compatibilidad con el addon anterior.
 Sólo ese modo utiliza la URL guardada. Un fallo local no cambia automáticamente
 al servidor ni envía consultas a un backend configurado anteriormente.
