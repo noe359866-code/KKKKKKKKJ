@@ -148,6 +148,10 @@ class RoutingContentClient(
         StreamsResponse(
             streams = merged,
             cacheMaxAge = baseResponse.cacheMaxAge,
+            /* Los subtítulos son del addon propio (los de terceros se piden al
+             * recurso `subtitles`, que no usamos aquí): se conservan al fusionar
+             * o el reproductor se quedaría sin pistas al activar un addon. */
+            subtitles = baseResponse.subtitles,
         )
     }
 }

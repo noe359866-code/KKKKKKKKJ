@@ -320,9 +320,16 @@ private fun PlaybackSurface(
             positionMs = player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0L } ?: 0L
             val tracks = player.currentTracks
+            /* `TrackSelectionParameters.overrides` está indexado por
+             * `TrackGroup`: si alguno de los grupos de ese tipo tiene entrada,
+             * el usuario eligió una pista concreta y la fila
+             * "Automático"/"Desactivado" deja de ser la activa. */
             val overrides = player.trackSelectionParameters.overrides
-            textTracks = PlayerTracks.options(tracks, C.TRACK_TYPE_TEXT, overrides.keys.any { it.type == C.TRACK_TYPE_TEXT })
-            audioTracks = PlayerTracks.options(tracks, C.TRACK_TYPE_AUDIO, overrides.keys.any { it.type == C.TRACK_TYPE_AUDIO })
+            fun hasOverride(type: Int): Boolean =
+                tracks.groups.any { group -> group.type == type && overrides.containsKey(group.mediaTrackGroup) }
+
+            textTracks = PlayerTracks.options(tracks, C.TRACK_TYPE_TEXT, hasOverride(C.TRACK_TYPE_TEXT))
+            audioTracks = PlayerTracks.options(tracks, C.TRACK_TYPE_AUDIO, hasOverride(C.TRACK_TYPE_AUDIO))
             delay(if (controlsVisible) 250L else 1_000L)
         }
     }

@@ -123,11 +123,10 @@ object PlayerTracks {
         }
 
         if (rows.isEmpty()) return emptyList()
-        val automatic = when (type) {
-            C.TRACK_TYPE_AUDIO -> !hasOverride
-            else -> !anySelected || !hasOverride
-        }
-        return listOf(offOption(type, automatic)) + rows
+        /* En audio la fila "Automático" está activa mientras no haya override;
+         * en subtítulos, mientras ninguna pista esté seleccionada (apagados). */
+        val offSelected = if (type == C.TRACK_TYPE_AUDIO) !hasOverride else !anySelected
+        return listOf(offOption(type, offSelected)) + rows
     }
 
     /** Grupo de una fila, o `null` si la fila es "sin elegir". */
