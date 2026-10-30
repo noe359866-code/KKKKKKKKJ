@@ -446,12 +446,9 @@ def page_for(
                 return final_url or candidate, "direct"
 
     query = ref.get("title_hint") or " ".join(slug.split("-"))
-    hits = search_site(site, query, headers, deadline, site.get("search_hints") or ())
-    from _animekit import best_hit
-
-    hit = best_hit(query, hits)
-    if hit:
-        return hit["url"], "search"
+    found = find_by_search(site, query, headers, deadline)
+    if found:
+        return found, "search"
     return "", "not_found"
 
 
@@ -762,6 +759,33 @@ def collect_servers(
     return dedupe_servers(servers)
 
 
+#: Año "(2026)" o suelto, y paréntesis finales: los buscadores no los indexan.
+YEAR_NOISE_RE = re.compile(r"\([^)]*\)|\b(?:19|20)\d{2}\b")
+
+
+def fallback_queries(query: str, limit: int = 2) -> List[str]:
+    """Consultas alternativas cuando el título tal cual no aparece.
+
+    Muchos buscadores indexan "Spider-Man" pero no "Spider-Man: No Way Home
+    (2021)": se prueban la versión sin año/paréntesis y las primeras palabras.
+    """
+    original = " ".join((query or "").split())
+    if not original:
+        return []
+    cleaned = " ".join(YEAR_NOISE_RE.sub(" ", original).split())
+    candidates = [original]
+    if cleaned:
+        candidates.append(cleaned)
+        candidates.append(" ".join(cleaned.split()[:4]))
+    out: List[str] = []
+    for candidate in candidates:
+        if not candidate:
+            continue
+        if candidate.lower() not in {item.lower() for item in out}:
+            out.append(candidate)
+    return out[:max(1, limit)]
+
+
 def find_by_search(
     site: Dict[str, Any],
     query: str,
@@ -769,16 +793,25 @@ def find_by_search(
     deadline: Deadline,
     skip_url: str = "",
 ) -> str:
-    """URL de la ficha según el buscador del sitio (``""`` si no hay)."""
-    from _animekit import best_hit
+    """URL de la ficha según el buscador del sitio (``""`` si no hay).
 
-    if not (query or "").strip() or deadline.expired():
+    Si el título completo no da una coincidencia fuerte, se reintenta con las
+    variantes de `fallback_queries` mientras quede tiempo.
+    """
+    from _animekit import STRONG_MATCH, best_match
+
+    if not (query or "").strip():
         return ""
-    hits = search_site(site, query, headers, deadline, site.get("search_hints") or ())
-    hit = best_hit(query, hits)
-    if not hit or hit["url"] == skip_url:
-        return ""
-    return hit["url"]
+    for candidate in fallback_queries(query):
+        if deadline.expired():
+            break
+        hits = search_site(site, candidate, headers, deadline, site.get("search_hints") or ())
+        score, hit = best_match(query, hits)
+        if not hit:
+            score, hit = best_match(candidate, hits)
+        if hit and hit["url"] != skip_url and score >= STRONG_MATCH:
+            return hit["url"]
+    return ""
 
 
 

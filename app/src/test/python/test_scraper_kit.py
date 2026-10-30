@@ -317,6 +317,44 @@ class SearchContinuationTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
 
+class FallbackQueryTest(unittest.TestCase):
+    SITE = {
+        "id": "fx", "label": "Fx", "base": "https://fx/",
+        "search_paths": ["/?s={query}"],
+        "search_hints": ["/ver/"],
+    }
+
+    def test_year_and_parentheses_are_stripped(self):
+        self.assertEqual(
+            _peliskit.fallback_queries("Spider-Man: No Way Home (2021)"),
+            ["Spider-Man: No Way Home (2021)", "Spider-Man: No Way Home"],
+        )
+        self.assertEqual(
+            _peliskit.fallback_queries("Dune Parte Dos 2024"),
+            ["Dune Parte Dos 2024", "Dune Parte Dos"],
+        )
+        self.assertEqual(_peliskit.fallback_queries(""), [])
+
+    def test_search_retries_with_the_clean_title(self):
+        import urllib.parse
+
+        asked = []
+
+        def fake_fetch(url, headers, deadline):
+            query = urllib.parse.unquote(url.split("s=")[-1]).replace("+", " ")
+            asked.append(query)
+            if "2021" in query:
+                return '<a href="/ver/otra-cosa/">Otra cosa</a>', url
+            return '<a href="/ver/spider-man-no-way-home/">Spider-Man: No Way Home</a>', url
+
+        with patch.object(_peliskit, "fetch_html", side_effect=fake_fetch):
+            url = _peliskit.find_by_search(
+                self.SITE, "Spider-Man: No Way Home (2021)", {}, Deadline(4000),
+            )
+        self.assertEqual(url, "https://fx/ver/spider-man-no-way-home/")
+        self.assertEqual(asked, ["Spider-Man: No Way Home (2021)", "Spider-Man: No Way Home"])
+
+
 class SoftNotFoundTest(unittest.TestCase):
     """Un 200 con la portada (404 blando) ya no se queda en `no_servers`."""
 

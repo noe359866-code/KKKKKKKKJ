@@ -126,6 +126,10 @@ through the official Addon protocol:
   stale-while-revalidate: a cached live `.m3u8` is served in a few milliseconds.
 - Python scraper bridge (`child_process.spawn`) invoked only on cache misses.
 - Twelve real providers ship in `server/scrapers/`, ordered by priority.
+- The shared kits (`_htmlkit`, `_hosters`, `_peliskit`, `_animekit`) carry the resilience:
+  a bounded retry on 429/5xx, charset recovery, stream quality inferred from the site's own
+  labels and title matching by tokens instead of characters — one fix there improves every
+  provider at once.
 
   **Live** (`kind: "live"`, requested as `tv:<id>`):
 

@@ -73,6 +73,7 @@ para los doce. Lo que hay hoy:
 | `best_match()` | Elige la ficha correcta **por tokens**, no por caracteres: ignora `latino`, `HD`, `1080p`, `subtitulado`, el año…, exige coincidencia de palabra (`up` ya no casa con `Upload`) y desempata por el título con menos palabras de más. Devuelve la puntuación, y `search_site()` sigue probando buscadores mientras el resultado sea flojo. |
 | `resolve_all()` | Segunda pasada para los embeds que fallaron (sólo si queda tiempo) y `meta.resolved_hosts` con las familias que sí resolvieron. |
 | `resolve_signals()` | Si el sitio publica más servidores que el tope, los de familias que sabemos resolver (`streamwish`, `filemoon`, `voe`, `streamtape`…) se conservan al final como último failover en vez de perderse. |
+| `fallback_queries()` | Si el título completo no aparece en el buscador, reintenta sin año ni paréntesis ("Spider-Man: No Way Home (2021)" → "Spider-Man: No Way Home") y con las primeras palabras. |
 | `scrape_site()` | **404 blando**: si la ficha directa responde 200 pero no trae ni un reproductor, prueba el buscador del sitio y reintenta una vez (`meta.resolved_by = "search_retry"`). |
 
 Pruebas de todo esto, offline y sin tocar la red:
