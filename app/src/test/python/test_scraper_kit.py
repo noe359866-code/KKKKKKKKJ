@@ -537,6 +537,161 @@ class FallbackQueryTest(unittest.TestCase):
         self.assertEqual(asked, ["Spider-Man: No Way Home (2021)", "Spider-Man: No Way Home"])
 
 
+class EpisodeFallbackTest(unittest.TestCase):
+    """Un capítulo sin reproductores se rescata desde la ficha del anime."""
+
+    ANIME_PAGE = "https://anime.example/anime/one-piece"
+    EPISODE_PAGE = "https://anime.example/ver/one-piece-1180"
+    LATINO_PAGE = "https://anime.example/ver/one-piece-1180-latino"
+
+    def setUp(self):
+        self.addCleanup(_htmlkit.install_url_opener, None)
+
+    def install(self):
+        ficha = (
+            "<html><body><h1>One Piece</h1><ul class=\"ListEpisodios\">"
+            "<li><a href=\"/ver/one-piece-1179\">Episodio 1179</a></li>"
+            "<li><a href=\"/ver/one-piece-1180-latino\">Episodio 1180</a></li>"
+            "</ul>" + "x" * 500 + "</body></html>"
+        )
+        episode = (
+            "<html><body><h1>One Piece</h1><div class=\"player\">"
+            "<iframe src=\"/ext/streamwish\"></iframe></div>" + "y" * 500 + "</body></html>"
+        )
+        return RouteOpener({
+            self.ANIME_PAGE: FakeResponse(ficha, self.ANIME_PAGE),
+            self.LATINO_PAGE: FakeResponse(episode, self.LATINO_PAGE),
+        })
+
+    def test_the_episode_number_at_the_end_of_an_href_matches(self):
+        html = ('<a href="/ver/one-piece-1180">Episodio 1180</a>'
+                '<a href="/ver/one-piece-1">Episodio 1</a>')
+        self.assertEqual(_peliskit.candidate_episode_links(html, 1, 1180), ["/ver/one-piece-1180"])
+        # El episodio 1 no casa con `-1180`: el número lleva a la derecha un dígito.
+        self.assertEqual(_peliskit.candidate_episode_links(html, 1, 1), ["/ver/one-piece-1"])
+
+    def test_servers_are_found_on_the_anime_page_when_the_episode_has_none(self):
+        opener = self.install()
+        _htmlkit.install_url_opener(opener)
+
+        servers, page = _peliskit.fallback_episode_servers(
+            "<html><body><h1>One Piece</h1><p>Sin servidores</p></body></html>",
+            self.EPISODE_PAGE,
+            {},
+            {},
+            Deadline(8000),
+            episode=1180,
+            anime_url=self.ANIME_PAGE,
+        )
+
+        self.assertTrue(servers)
+        self.assertEqual(page, self.LATINO_PAGE)
+        self.assertEqual(servers[0]["url"], "https://anime.example/ext/streamwish")
+        # Sólo se abre la ficha y la página que sí tiene reproductores.
+        self.assertEqual(opener.requests, [self.ANIME_PAGE, self.LATINO_PAGE])
+
+    def test_the_number_of_pages_is_capped(self):
+        opener = self.install()
+        _htmlkit.install_url_opener(opener)
+
+        servers, page = _peliskit.fallback_episode_servers(
+            "<html><body>Sin nada</body></html>",
+            self.EPISODE_PAGE,
+            {},
+            {},
+            Deadline(8000),
+            episode=1180,
+            anime_url=self.ANIME_PAGE,
+            max_pages=1,
+        )
+
+        self.assertEqual((servers, page), ([], ""))
+        self.assertEqual(opener.requests, [self.ANIME_PAGE])
+
+
+class EpisodeLinkServersTest(unittest.TestCase):
+    """Ficha → página del capítulo: cinco enlaces, no sólo los tres primeros."""
+
+    def setUp(self):
+        self.addCleanup(_htmlkit.install_url_opener, None)
+
+    def test_the_fourth_episode_link_is_still_tried(self):
+        links = "".join(f'<a href="/cap/{name}/1x04">Episodio 4</a>' for name in "abcd")
+        page = "<html><body><h1>Una serie</h1>" + links + "z" * 500 + "</body></html>"
+        routes = {
+            f"https://fx/cap/{name}/1x04": FakeResponse(
+                "<html><body><h1>Otro capítulo</h1>" + "w" * 500 + "</body></html>",
+                f"https://fx/cap/{name}/1x04",
+            )
+            for name in "abc"
+        }
+        routes["https://fx/cap/d/1x04"] = FakeResponse(
+            '<html><body><h1>Episodio 4</h1><iframe src="/ext/streamwish"></iframe>'
+            + "w" * 500 + "</body></html>",
+            "https://fx/cap/d/1x04",
+        )
+        _htmlkit.install_url_opener(RouteOpener(routes))
+
+        servers, page_url = _peliskit.episode_link_servers(
+            page, "https://fx/serie/una-serie", 1, 4, {}, Deadline(8000)
+        )
+
+        self.assertEqual(page_url, "https://fx/cap/d/1x04")
+        self.assertEqual([server["url"] for server in servers],
+                         ["https://fx/ext/streamwish"])
+
+
+class PageForTest(unittest.TestCase):
+    """Elección de ficha: variantes de slug, fichas extra y tope de pedidos."""
+
+    def setUp(self):
+        self.addCleanup(_htmlkit.install_url_opener, None)
+
+    def test_slug_candidates_are_tried_after_the_first_slug_runs_out(self):
+        page = "<html><body><h1>Una serie</h1>" + "z" * 600 + "</body></html>"
+        opener = RouteOpener({
+            "https://fx/serie/una-serie-2026/1/2": FakeResponse(page, "https://fx/serie/una-serie-2026/1/2"),
+        })
+        _htmlkit.install_url_opener(opener)
+        site = {
+            "id": "fx",
+            "base": "https://fx",
+            "series_paths": ["/serie/{slug}/{season}/{episode}", "/serie/{slug}"],
+            "search_paths": [],
+            "search_hints": [],
+        }
+        ref = {"slug": "una-serie", "slug_candidates": ["una-serie-2026"], "season": 1, "episode": 2}
+
+        url, how = _peliskit.page_for(ref, site, {}, Deadline(8000))
+
+        self.assertEqual(how, "direct")
+        self.assertEqual(url, "https://fx/serie/una-serie-2026/1/2")
+
+    def test_ficha_paths_add_the_anime_page_after_the_series_one(self):
+        page = "<html><body><h1>Un anime</h1>" + "z" * 600 + "</body></html>"
+        opener = RouteOpener({
+            "https://fx/anime/un-anime": FakeResponse(page, "https://fx/anime/un-anime"),
+        })
+        _htmlkit.install_url_opener(opener)
+        site = {
+            "id": "fx",
+            "base": "https://fx",
+            "series_paths": [
+                "/serie/{slug}/temporada/{season}/capitulo/{episode}",
+                "/serie/{slug}",
+            ],
+            "ficha_paths": ["/anime/{slug}"],
+            "search_paths": [],
+            "search_hints": [],
+        }
+        ref = {"slug": "un-anime", "season": 1, "episode": 3}
+
+        url, how = _peliskit.page_for(ref, site, {}, Deadline(8000))
+
+        self.assertEqual(how, "direct")
+        self.assertEqual(url, "https://fx/anime/un-anime")
+
+
 class SoftNotFoundTest(unittest.TestCase):
     """Un 200 con la portada (404 blando) ya no se queda en `no_servers`."""
 

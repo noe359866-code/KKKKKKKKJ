@@ -43,6 +43,7 @@ before(async () => {
         const hits = [
           { _id: '65f1', slug: 'spider-man-de-regreso-a-casa', title: '<span>Spider-Man: De regreso a casa</span>', name_es: 'Spider-Man: De regreso a casa' },
           { _id: '65f2', slug: 'clayface', title: 'Clayface', name_es: 'Clayface' },
+          { _id: '65f3', slug: 'the-last-of-us', title: 'The Last of Us', name_es: 'The Last of Us' },
         ].filter((hit) => hit.slug.includes(input.split(' ')[0]));
         return {
           type: 'application/json',
@@ -68,6 +69,33 @@ before(async () => {
                   { server: 'fm', lang: '192', link: `${base}/ext/filemoon` },
                   { server: 'mg', lang: '37', link: 'https://mega.nz/file/abc123' },
                 ],
+              },
+            },
+          }),
+        };
+      }
+
+      /* Serie: la ficha de película no tiene enlaces, la de episodio sí. */
+      if (operation === 'getSerieLinks') {
+        return { type: 'application/json', body: JSON.stringify({ data: { getSerieLinks: null } }) };
+      }
+
+      if (operation === 'getEpisodeLinks') {
+        const { slug, season, episode } = request.variables || {};
+        if (slug !== 'the-last-of-us') {
+          return { type: 'application/json', body: JSON.stringify({ data: { getEpisodeLinks: null } }) };
+        }
+        return {
+          type: 'application/json',
+          body: JSON.stringify({
+            data: {
+              getEpisodeLinks: {
+                _id: '65f3',
+                slug,
+                name_es: 'The Last of Us',
+                season,
+                episode,
+                links_online: [{ server: 'fw', lang: '37', link: `${base}/ext/streamwish` }],
               },
             },
           }),
@@ -127,6 +155,19 @@ test('si la API no devuelve enlaces, el motivo es no_servers', async () => {
 
   assert.deepEqual(body.streams, []);
   assert.equal(reasonOf(body), 'no_servers');
+});
+
+test('una serie se resuelve por la ficha de episodio, con temporada y capítulo', async () => {
+  const { code, body, stderr } = await runScraper(SCRIPT, {
+    ...ask('peliculasflix:the-last-of-us:2:3'),
+    type: 'series',
+  }, env);
+
+  assert.equal(code, 0, stderr);
+  assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
+  assert.ok(hasUrl(body, 'cdn.example/sw/index.m3u8'), urlsOf(body).join(' '));
+  /* La página (y por tanto el Referer) es la del capítulo, no la de película. */
+  assert.match(body.meta.page, /\/serie\/the-last-of-us\/2x3$/);
 });
 
 test('rechaza payloads en directo', async () => {

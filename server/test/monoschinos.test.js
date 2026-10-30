@@ -96,6 +96,15 @@ function routesFor(baseUrl) {
     '/': homePage(baseUrl),
     '/ver/one-piece-episodio-1': episodePage(baseUrl),
     '/ver/one-piece-episodio-2': '<html><body><h1>Ver One piece - 2</h1><p>Sin servidores</p></body></html>',
+    /* Episodio 5 sin botones en su página: la ficha lo tiene en otra ruta. */
+    '/ver/one-piece-sub-espanol-episodio-5':
+      '<html><body><h1>Ver One piece - 5</h1><p>Sin servidores</p></body></html>',
+    '/anime/one-piece-sub-espanol': `<html><body><h1>One piece</h1><div class="episodes">
+      <a href="/ver/one-piece-sub-espanol-episodio-5-latino">Episodio 5</a>
+    </div></body></html>`,
+    '/ver/one-piece-sub-espanol-episodio-5-latino': `<html><body><h1>Ver One piece - 5</h1>
+<div class="servers"><button class="btn btn-sm" data-player="tok-voe">voe</button></div>
+</body></html>`,
     '/buscar': searchPage(baseUrl, [['one-piece-sub-espanol', 'One piece']]),
 
     '/ext/voe': sourcesPage('http://cdn.example/voe/index.m3u8?token=voe'),
@@ -277,4 +286,16 @@ test('--list --query uses the site search', async () => {
   const payload = JSON.parse(output);
   assert.equal(payload.items[0].slug, 'one-piece-sub-espanol');
   assert.equal(payload.items[0].id, 'monoschinos:one-piece-sub-espanol:1');
+});
+
+test('un episodio sin botones se rescata desde la ficha, con el lector del sitio', async () => {
+  /* El respaldo no usa iframes genéricos: lee los `data-player` de MonosChinos. */
+  const { code, body } = await runScraper(ask('monoschinos:one-piece-sub-espanol:5'));
+
+  assert.equal(code, 0);
+  assert.equal(body.meta.servers_via, 'anime_page');
+  assert.match(body.meta.servers_from, /episodio-5-latino$/);
+  assert.ok(body.streams.length >= 1);
+  assert.match(body.streams[0].url, /m3u8/);
+  assert.ok(requested.some((entry) => entry.includes('/reproductor')), requested.join(' | '));
 });

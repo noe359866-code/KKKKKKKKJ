@@ -93,9 +93,11 @@ SITE: Dict[str, Any] = {
     "series_paths": [
         "/serie/{slug}/{season}x{episode2}",
         "/serie/{slug}/temporada/{season}/capitulo/{episode}",
+        "/serie/{slug}/{season}x{episode}",
         "/serie/{slug}",
-        "/anime/{slug}",
     ],
+    # La ficha de anime es un respaldo extra, después de las de serie.
+    "ficha_paths": ["/serie/{slug}", "/anime/{slug}"],
     "search_paths": ["/buscar?q={query}", "/search?q={query}"],
     "search_hints": ["/pelicula/", "/peliculas/", "/serie/", "/anime/", "/wwe/", "/ver/"],
     "player_hints": ("embed", "player", "repro", "reproductor", "video", "stream",

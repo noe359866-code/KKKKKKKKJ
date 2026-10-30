@@ -74,11 +74,12 @@ SITE: Dict[str, Any] = {
     "movie_paths": ["/pelicula/{slug}", "/peliculas/{slug}", "/ver/{slug}"],
     "series_paths": [
         "/serie/{slug}/temporada/{season}/capitulo/{episode}",
+        "/serie/{slug}/{season}x{episode2}",
         "/serie/{slug}/{season}/{episode}",
         "/serie/{slug}",
     ],
     "search_paths": ["/search?s={query}", "/buscar?s={query}", "/search?q={query}"],
-    "search_hints": ["/pelicula/", "/peliculas/", "/serie/", "/series/"],
+    "search_hints": ["/pelicula/", "/peliculas/", "/serie/", "/series/", "/ver/"],
     "player_hints": ("embed", "player", "repro", "capitulo", "episodio"),
     "max_servers": 6,
     "parallel": 4,
@@ -87,7 +88,13 @@ SITE: Dict[str, Any] = {
 
 
 def scrape(payload: Dict[str, Any]) -> Any:
-    return scrape_site(payload, {**SITE, "base": _bases()[0], "bases": _bases()})
+    bases = _bases()
+    streams, meta = scrape_site(payload, {**SITE, "base": bases[0], "bases": bases})
+    if not streams and len(bases) == 1:
+        # El dominio por defecto está documentado como caído: si el resultado es
+        # vacío y nadie configuró un espejo, decirlo en vez de dejarlo opaco.
+        meta["hint"] = "dominio por defecto caído: define REPELIS_BASE o REPELIS_MIRRORS"
+    return streams, meta
 
 
 def main() -> None:

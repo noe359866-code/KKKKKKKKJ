@@ -73,6 +73,7 @@ from _animekit import (
 from _base import DEFAULT_USER_AGENT, default_headers, log, run
 from _hosters import resolve_all
 from _htmlkit import ANCHOR_RE, Deadline, HREF_RE, clean_title, http_get, pretty_name, unescape_markup
+from _peliskit import fallback_episode_servers
 
 # ---------------------------------------------------------------------------
 # Configuración
@@ -191,6 +192,18 @@ def episode_url(slug: str, episode: int) -> str:
     return f"{BASE_URL}{EPISODE_PATH.format(slug=slug, episode=int(episode))}"
 
 
+def series_url(slug: str) -> str:
+    return f"{BASE_URL}{ANIME_PATH.format(slug=slug)}"
+
+
+def _native_servers(
+    html: str, page_url: str, headers: Dict[str, str], deadline: Deadline
+) -> List[Dict[str, Any]]:
+    """Servidores de una página en el formato del sitio (para el respaldo)."""
+    buttons = parse_player_buttons(html)
+    return expand_servers(buttons, headers, deadline) if buttons else []
+
+
 def search_url(query: str) -> str:
     return f"{BASE_URL}{SEARCH_PATH.format(query=urllib.parse.quote_plus(query))}"
 
@@ -272,6 +285,23 @@ def scrape(payload: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any
         servers = iframe_servers(
             html, final_url, skip_hosts=("monoschinos", "google", "disqus", "facebook")
         )
+    if not servers and ref.get("slug"):
+        # Sin reproductores en el episodio: la ficha del anime los tiene (o el
+        # enlace al episodio en otra ruta).
+        servers, servers_page = fallback_episode_servers(
+            html,
+            final_url,
+            # El respaldo parsea con el lector de botones del sitio (los
+            # reproductores de MonosChinos viajan en `/reproductor?url=`).
+            {"extras": _native_servers},
+            headers,
+            deadline,
+            episode=int(ref.get("episode") or 1),
+            anime_url=series_url(ref["slug"]),
+        )
+        if servers:
+            meta["servers_from"] = servers_page
+            meta["servers_via"] = "anime_page"
     meta["servers"] = [server["name"] for server in servers]
     if not servers:
         return [], {**meta, "reason": "no_servers"}

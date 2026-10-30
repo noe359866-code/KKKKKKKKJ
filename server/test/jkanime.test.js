@@ -88,6 +88,14 @@ function routesFor(baseUrl) {
 <script>var servers = [{server: 'Desu', remote: '${b64(`${baseUrl}/ext/voe`)}', lang: 'sub'}];</script>
 </body></html>`,
     '/one-piece/1179/': '<html><body><h1>Episodio 1179 - One Piece</h1><p>Sin servidores</p></body></html>',
+    '/one-piece/1177/': '<html><body><h1>Episodio 1177 - One Piece</h1><p>Sin servidores</p></body></html>',
+    /* Ficha del anime: el 1177 está en otra ruta, con reproductor; el 1179 no. */
+    '/one-piece/': `<html><body><h1>One Piece</h1><div class="anime__row">
+      <a href="${baseUrl}/one-piece/1177-latino/">Episodio 1177</a>
+      <a href="${baseUrl}/one-piece/1179/">Episodio 1179</a>
+    </div></body></html>`,
+    '/one-piece/1177-latino/':
+      `<html><body><h1>Episodio 1177 - One Piece</h1><div class="player"><iframe src="${baseUrl}/ext/voe"></iframe></div></body></html>`,
     '/buscar/one/': searchPage(baseUrl, [['one-piece', 'One Piece']]),
 
     /* VOE: primero un redirect por JavaScript, después el player real. */
@@ -206,6 +214,17 @@ test('uses the site search when the slug does not exist', async () => {
   assert.equal(body.meta.resolved_from_search, 'one-piece');
   assert.equal(body.meta.page, `${base}/one-piece/1/`);
   assert.ok(body.streams.length >= 1);
+});
+
+test('un capítulo sin reproductores se rescata desde la ficha del anime', async () => {
+  /* /one-piece/1177/ no trae botones; la ficha apunta a 1177-latino, que sí. */
+  const { code, body } = await runScraper(ask('jkanime:one-piece:1177'));
+
+  assert.equal(code, 0);
+  assert.equal(body.meta.servers_via, 'anime_page');
+  assert.match(body.meta.servers_from, /one-piece\/1177-latino\/$/);
+  assert.ok(body.streams.length >= 1);
+  assert.match(body.streams[0].url, /m3u8/);
 });
 
 test('an episode without servers degrades to an empty result', async () => {

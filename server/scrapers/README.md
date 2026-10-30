@@ -82,6 +82,11 @@ para los doce. Lo que hay hoy:
 | `expand_player_pages()` | Cuando un "servidor" es una página del propio sitio (`/player/<id>`, `/reproductor/<hash>`), se abre una vez más y se leen los embeds de dentro: sin esto `_hosters` sólo veía una página sin `.m3u8` y la daba por irresoluble. Sólo el propio sitio, sólo las primeras páginas y con el deadline. |
 | `fill()` | Además de `{slug}`, `{season}`, `{episode}` y `{query}`, las plantillas admiten `{season2}` / `{episode2}` para los sitios que numeran con dos dígitos (`/serie/x/1x03`). |
 | `scrape_site()` | **404 blando**: si la ficha directa responde 200 pero no trae ni un reproductor, prueba el buscador del sitio y reintenta una vez (`meta.resolved_by = "search_retry"`). |
+| `page_for()` | Ordena las plantillas del sitio como *capítulos probables → ficha → fichas extra (`ficha_paths`) → variantes que quedaban fuera*, con un presupuesto de 7 pedidos. Antes el tope se agotaba con el primer slug y las variantes del id (`slug-2026`) no se probaban nunca. |
+| `ficha_paths` | Fichas adicionales del mismo sitio: PelisPlus y PelisJuanita abren también `/anime/<slug>` cuando la de serie no existe (el anime estaba en `search_hints` pero no en las plantillas). |
+| `candidate_episode_links()` | Reconoce el número **al final** del enlace (`/ver/one-piece-1180`, `episodio/1180`) con `(?![0-9])`, para que el episodio `1` no case con `1180`; además de `1x04`, `temporada/1/capitulo/4`, `Capitulo 4`… |
+| `fallback_episode_servers()` | Si la página del capítulo no trae ni un reproductor, abre la **ficha del anime** y, si ahí está el enlace bueno del capítulo, sigue hasta la página que sí lo tiene. Es lo que rescata el capítulo de anime que el sitio publica en otra ruta. Dos páginas como mucho y con el deadline. |
+| `episode_link_servers()` | Ficha de serie → página del capítulo: prueba **cinco** enlaces (antes tres) y con el `extras()` del sitio, así que los reproductores que vienen por su API también cuentan. |
 
 Pruebas de todo esto, offline y sin tocar la red:
 
@@ -568,6 +573,12 @@ Los fixtures cubren base64, literales JS con claves sin comillas, reproductores
 empaquetados, redirects por JavaScript, servidores caídos y de descarga, el
 respaldo por búsqueda y la degradación a `{"streams": []}`.
 
+Si la página del capítulo llega **sin** reproductores, los tres abren la ficha
+del anime y, cuando ahí aparece el enlace bueno del capítulo
+(`/ver/one-piece-1180-latino`, `episodio-1180`…), siguen hasta la página que sí
+lo tiene: entonces `meta.servers_via = "anime_page"` y `meta.servers_from` dice
+de dónde salieron. Es la diferencia entre `no_servers` y ver el episodio.
+
 > ⚠️ Los tres leen páginas públicas y no alojan ni redistribuyen contenido.
 > Úsalos con autorización y respetando los términos de cada sitio y la ley de
 > tu país. Los dominios y los servidores de estos sitios cambian a menudo: si un
@@ -665,16 +676,28 @@ Variante antigua: `<iframe src="…/player.php?t=<token>">`, que responde con un
 `<iframe src="…">` al embed real (se sigue un salto). Un mismo título suele tener
 varias pestañas de idioma: cada una es un servidor más.
 
+Los capítulos se prueban en las rutas que usa el sitio y sus clones:
+`/series/<slug>/season/<n>/episode/<m>`, `/series/<slug>/temporada/<n>/capitulo/<m>`,
+`/series/<slug>/<n>x<mm>`, `/series/<slug>/<n>/<m>` y `/serie/<slug>/<n>/<m>`, y
+por último la ficha de la serie (`meta.episode_page` si el capítulo salió de un
+enlace suyo).
+
 #### `pelisplushd.py` — PelisPlus / PelisPlusHD (prioridad 13)
 
 ```
-/pelicula/<slug>
-/serie/<slug>/temporada/<temporada>/capitulo/<episodio>
+/pelicula/<slug>                                   película
+/serie/<slug>/temporada/<temporada>/capitulo/<ep>   capítulo
+/anime/<slug>/temporada/<temporada>/capitulo/<ep>   anime (sección propia)
    │  <li class="player-option" data-player="https://streamwish.to/e/…">
    │  <a data-option="aHR0cHM6…">            (otras veces en base64)
    ▼
 _hosters.py
 ```
+
+El sitio tiene tres secciones y el anime usa su propio esquema de capítulos: por
+eso `movie_paths` incluye `/anime/<slug>` y `series_paths` la variante de anime.
+Antes `/anime/` sólo aparecía en `search_hints`, así que un id de anime que el
+buscador sí encontraba no abría nunca su ficha.
 
 #### `repelis.py` — Repelis (prioridad 14)
 
@@ -688,7 +711,9 @@ REPELIS_MIRRORS=https://repelis2.ejemplo,https://repelis3.ejemplo
 
 Prueba la base y luego los espejos hasta que una ficha responda, y lo anota en
 `meta.base`. Con `repelis.live` (el histórico) ya no responde: hay que poner el
-que esté vivo.
+que esté vivo. Si el resultado es vacío y no hay ningún espejo configurado, el
+`meta.hint` lo dice en vez de dejar un `not_found` opaco. Los capítulos se prueban
+en `temporada/<n>/capitulo/<m>`, `<n>x<mm>` y `<n>/<m>`.
 
 #### `peliculasflix.py` — PeliculasFlix (prioridad 15)
 
@@ -703,6 +728,14 @@ query getMovieLinks($id: MongoID!, $slug: String!) { getMovieLinks(id: $id, slug
 Subtitulado, resto Latino, y `link` puede ser directamente un
 `<iframe src="…">` en texto (se extrae el `src`). La API se puede mover con
 `PELICULASFLIX_API` y la clave `x-access-platform` con `PELICULASFLIX_ACCESS`.
+
+Las series necesitan su propia operación: si `getMovieLinks` no devuelve enlaces
+y el id trae temporada y capítulo, se prueban `getSerieLinks` y después
+`getEpisodeLinks(season, episode)`. Antes la temporada y el episodio del id no
+llegaban nunca al sitio y **toda serie** terminaba en `no_servers`. La página y
+el `Referer` también cambian: `/serie/<slug>/<n>x<mm>` en series (antes siempre
+`/pelicula/<slug>`) y el dominio sale de `PELICULASFLIX_BASE`/`_MIRRORS`, no de la
+constante (`meta.page` y el `Referer` preferían el dominio grabado a fuego).
 
 #### `pelisjuanita.py` — PelisJuanita (prioridad 16)
 
@@ -720,8 +753,8 @@ streamwish / voe / filemoon / streamtape …  → `_hosters`
 ```
 
 - Un solo pedido cuando el capítulo existe: `/serie/<slug>/1x03` (`{episode2}`).
-  Si esa ruta no está, se cae a `temporada/<n>/capitulo/<m>` y, por último, al
-  enlace del capítulo que liste la ficha (`meta.episode_page`).
+  Si esa ruta no está, se cae a `temporada/<n>/capitulo/<m>`, a `1x3` sin relleno
+  y, por último, al enlace del capítulo que liste la ficha (`meta.episode_page`).
 - Las fichas de anime y WWE no están en `/pelicula/`: sin las rutas por sección
   esos ids nunca abrían nada (era el fallo real del proveedor).
 - La página intermedia del reproductor **no** se publica como stream: se

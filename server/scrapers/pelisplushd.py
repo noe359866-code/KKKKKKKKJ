@@ -73,13 +73,20 @@ SITE: Dict[str, Any] = {
     "label": "PelisPlus",
     "base": BASE,
     "home_path": "/",
-    "movie_paths": ["/pelicula/{slug}", "/peliculas/{slug}"],
+    # El sitio también tiene sección de anime (`/anime/<slug>`), con su propio
+    # esquema de capítulos; estaba en `search_hints` pero no en las plantillas,
+    # así que un id de anime encontrado por búsqueda no abría nunca su ficha.
+    "movie_paths": ["/pelicula/{slug}", "/peliculas/{slug}", "/anime/{slug}", "/ver/{slug}"],
     "series_paths": [
         "/serie/{slug}/temporada/{season}/capitulo/{episode}",
+        "/anime/{slug}/temporada/{season}/capitulo/{episode}",
         "/serie/{slug}/temporada-{season}/capitulo-{episode}",
+        "/serie/{slug}/{season}x{episode2}",
         "/serie/{slug}/{season}/{episode}",
         "/serie/{slug}",
     ],
+    # Fichas extra (`/anime/<slug>`) sin gastar los primeros intentos.
+    "ficha_paths": ["/serie/{slug}", "/anime/{slug}"],
     "search_paths": ["/search?s={query}", "/buscar?s={query}", "/search?q={query}"],
     "search_hints": ["/pelicula/", "/serie/", "/anime/"],
     "player_hints": ("embed", "player", "repro", "capitulo", "episodio"),

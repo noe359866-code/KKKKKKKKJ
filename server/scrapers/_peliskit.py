@@ -443,14 +443,28 @@ def page_for(
 
     slugs = [slug] + [item for item in (ref.get("slug_candidates") or []) if item != slug]
     # Las plantillas de capítulo van primero, pero la ficha de la serie (la
-    # última) siempre se prueba: hay sitios que sólo tienen ficha.
-    ordered = list(dict.fromkeys(templates[:3] + templates[-1:]))
-    attempts = 0
+    # última) siempre se prueba: hay sitios que sólo tienen ficha. `ficha_paths`
+    # añade las demás fichas del sitio (p. ej. `/anime/<slug>` además de
+    # `/serie/<slug>`), sin gastar los primeros intentos en ellas.
+    #   1-3: los capítulos más probables   4: la ficha del título
+    #   5+:  las demás fichas y las variantes de capítulo que quedaban fuera
+    ordered = list(dict.fromkeys(
+        templates[:3]
+        + templates[-1:]
+        + list(site.get("ficha_paths") or [])
+        + templates[3:]
+    ))
+    # Presupuesto global de pedidos: el primer slug recorre las plantillas y,
+    # si el id traía variantes de slug (`slug-2024`, `slug-latino`), también se
+    # prueban (antes el tope se agotaba con el primer slug).
+    budget = 7
     for candidate_slug in [value for value in slugs if value][:3]:
+        if budget <= 0 or deadline.expired():
+            break
         for template in ordered:
-            attempts += 1
-            if attempts > 5:
+            if budget <= 0 or deadline.expired():
                 break
+            budget -= 1
             candidate = join(
                 site["base"],
                 fill(template, slug=candidate_slug, season=season, episode=episode),
@@ -694,15 +708,21 @@ def candidate_episode_links(html: str, season: int, episode: int) -> List[str]:
         f"t{season} e{episode}", f"t{season}e{episode}",
         f"{season}x{episode}", f"{season}x{padded}",
     ]
+    # `/[ver]/one-piece-1180` o `.../episodio/1180`: el número al final, sin
+    # que `1` case con `1180` (`(?!\d)`).
+    tail_re = re.compile(r"""(?:[-_/])(0*%d)(?!\d)""" % episode)
     links: List[str] = []
     for match in EPISODE_LINK_RE.finditer(html or ""):
         href = match.group(1).strip()
         label = " ".join(VISIBLE_RE.sub(" ", match.group(2)).split()).lower()
         haystack = f"{href.lower()} {label}"
-        if any(variant in haystack.replace(" ", "") or variant in haystack for variant in variants) \
-                or any(variant in haystack for variant in text_variants):
-            if href not in links:
-                links.append(href)
+        matched = (
+            any(variant in haystack.replace(" ", "") or variant in haystack for variant in variants)
+            or any(variant in haystack for variant in text_variants)
+            or bool(tail_re.search(href.lower()))
+        )
+        if matched and href not in links:
+            links.append(href)
     return links
 
 
@@ -720,14 +740,19 @@ def episode_link_servers(
     Muchos sitios listan los capítulos en la ficha pero sólo ponen reproductores
     en la página de cada capítulo. Devuelve `(servidores, url_del_capitulo)`.
     """
-    for href in candidate_episode_links(html, season, episode)[:3]:
+    # Cinco enlaces y no tres: las fichas largas listan el capítulo varias veces
+    # (idiomas, espejos) y el primero puede estar muerto. `collect_servers` y no
+    # `harvest_servers` para que el `extras()` del sitio (su API) también cuente.
+    for href in candidate_episode_links(html, season, episode)[:5]:
+        if deadline.expired():
+            break
         url = absolute(href, page_url)
         if not url.lower().startswith(("http://", "https://")):
             continue
         sub_html, final_url = fetch_html(url, headers, deadline)
         if not sub_html:
             continue
-        servers = harvest_servers(sub_html, final_url or url, site)
+        servers = collect_servers(sub_html, final_url or url, site or {}, headers, deadline)
         if servers:
             return servers, final_url or url
     return [], ""
@@ -786,6 +811,52 @@ def build_streams(
 # ---------------------------------------------------------------------------
 # Driver genérico
 # ---------------------------------------------------------------------------
+
+
+def fallback_episode_servers(
+    html: str,
+    page_url: str,
+    site: Dict[str, Any],
+    headers: Dict[str, str],
+    deadline: Deadline,
+    episode: int,
+    anime_url: str = "",
+    season: int = 1,
+    max_pages: int = 2,
+) -> Tuple[List[Dict[str, Any]], str]:
+    """Otra puerta al mismo episodio cuando su página no trae reproductores.
+
+    Los sitios de anime dejan episodios sin botones de servidor (o los cargan
+    sólo en la ficha del anime). Se prueba, en orden: la ficha del anime y los
+    enlaces al episodio pedido que aparezcan en ella (`/ver/one-piece-1180`,
+    `episodio-1180`, `1x1180`…), con un tope de páginas y el deadline.
+
+    Devuelve ``(servidores, url_de_la_página_que_los_tenía)``.
+    """
+    queue: List[str] = []
+    if anime_url and anime_url != page_url:
+        queue.append(anime_url)
+    for href in candidate_episode_links(html, season, episode):
+        url = absolute(href, page_url)
+        if url and url != page_url and url not in queue:
+            queue.append(url)
+
+    pages = 0
+    while queue and pages < max_pages and not deadline.expired():
+        url = queue.pop(0)
+        pages += 1
+        body, final_url = fetch_html(url, headers, deadline)
+        if not body:
+            continue
+        servers = collect_servers(body, final_url or url, site, headers, deadline)
+        if servers:
+            return servers, final_url or url
+        for href in candidate_episode_links(body, season, episode):
+            candidate = absolute(href, final_url or url)
+            if candidate and candidate != page_url and candidate not in queue:
+                queue.append(candidate)
+    return [], ""
+
 
 
 def collect_servers(

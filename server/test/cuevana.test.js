@@ -61,6 +61,16 @@ mientras su cuerpo literalmente se deshace.</p>
 
     '/series/the-last-of-us': `<html><head><title>The Last of Us</title></head><body>
 <h1>The Last of Us</h1><p>Serie de zombis y padres.</p></body></html>`,
+    /* Otra serie: sólo publica el capítulo con la ruta `1x03` del sitio. */
+    '/series/severance/1x03': `<html><head><title>Severance 1x03</title></head><body>
+<h1>Severance — Episodio 3</h1>
+<p>Mark y su equipo descubren que el pasillo del departamento de macrodatos
+guarda una puerta que no estaba en los planos ni en el reglamento interno de
+Lumon, y que detrás de ella el turno de noche lleva años haciendo un trabajo
+que nadie del piso de arriba ha firmado nunca.</p>
+<iframe src="${base}/embed-page?showEmbed=${encodeURIComponent(b64(`${base}/ext/streamwish`))}"></iframe>
+</body></html>`,
+
     '/series/the-last-of-us/1/2': `<html><head><title>The Last of Us 1x02</title></head><body>
 <h1>The Last of Us — Episodio 2</h1>
 <p>Joel, Tess y Ellie se adentran en una zona contaminada de Boston. Lo que
@@ -128,6 +138,15 @@ test('serie: la página por capítulo trae su propio showEmbed', async () => {
   assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
   assert.match(body.streams[0].name, /· T1 E2$/);
   assert.ok(fixture.requested.some((entry) => entry.includes('/series/the-last-of-us/1/2')));
+});
+
+test('serie: se prueba también la ruta `1x03` del capítulo', async () => {
+  const { body } = await runScraper(SCRIPT, ask('cuevana:severance:1:3'), env);
+
+  assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
+  assert.ok(fixture.requested.some((entry) => entry.includes('/series/severance/1x03')),
+    fixture.requested.join(' | '));
+  assert.match(body.streams[0].name, /· T1 E3$/);
 });
 
 test('un título inexistente devuelve [] con motivo', async () => {
