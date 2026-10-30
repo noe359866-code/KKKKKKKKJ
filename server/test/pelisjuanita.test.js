@@ -53,7 +53,40 @@ before(async () => {
       <h1>Reacher — Episodio 3</h1>
       <p>Sinopsis del capítulo.</p>
       <div class="player"><iframe src="${base}/ext/streamwish"></iframe></div>
-      <p>Reacher tira de la cuerda y descubre quién manda en Margrave.</p>
+      <p>Reacher tira de la cuerda y descubre quién manda en Margrave, mientras el
+      pueblo entero mira hacia otro lado y la Guardia Nacional empieza a moverse.
+      Un episodio de esos que se recuerdan.</p>
+      </body></html>`,
+    /* El capítulo 1x05 no tiene ruta directa: sólo se llega por el enlace de la ficha. */
+    '/serie/reacher-2022/1x05': `<html><head><title>Reacher 1x05</title></head><body>
+      <h1>Reacher — Episodio 5</h1>
+      <div class="player"><iframe src="${base}/ext/streamwish"></iframe></div>
+      </body></html>`,
+    /* Sección de anime: la ficha NO está en /pelicula/. */
+    '/anime/naruto-shippuden': `<html><head><title>Naruto Shippuden</title></head><body>
+      <h1>Naruto Shippuden</h1>
+      <p>Naruto vuelve a la aldea después de dos años de entrenamiento y todo ha
+      cambiado: Akatsuki se mueve, Sasuke sigue fuera y el examen de ascenso ya
+      no es lo importante. La aldea está en paz, pero nadie se fía del silencio
+      y el equipo 7 ya no existe como tal. Una etapa nueva que empieza con una
+      noticia que nadie quiere dar.</p>
+      <div class="player"><iframe src="${base}/ext/streamwish"></iframe></div>
+      </body></html>`,
+    /* Reproductor propio: la ficha sólo apunta a la página del sitio, que es la
+       que lista el embed de verdad. */
+    '/pelicula/doble-salto': `<html><head><title>Doble Salto</title></head><body>
+      <h1>Doble Salto</h1>
+      <p>Un doble de riesgo acepta el trabajo de su vida y descubre que la escena
+      que tiene que rodar es la misma en la que desapareció su hermano hace diez
+      años. Nada de lo que ocurre en el plató es casualidad.</p>
+      <div id="player"><iframe src="${base}/player/999"></iframe></div>
+      </body></html>`,
+    '/player/999': `<html><head><title>Reproductor</title></head><body>
+      <h1>Reproductor</h1>
+      <div class="servidores">
+        <iframe src="${base}/ext/streamwish"></iframe>
+      </div>
+      <p>Este reproductor sólo devuelve embeds, ningún manifiesto directo.</p>
       </body></html>`,
   }));
   env = { ...CLEAN, PELISJUANITA_BASE: fixture.base };
@@ -81,13 +114,40 @@ test('etiquetas con el sitio delante', async () => {
   assert.match(body.streams[0].title, /^PelisJuanita · Spider Man un Nuevo Dia 2026 · /);
 });
 
-test('serie: ficha → enlace del capítulo → reproductor', async () => {
+test('serie: abre la ruta del capítulo con dos dígitos', async () => {
   const { body } = await runScraper(SCRIPT, ask('pelisjuanita:reacher-2022:1:3'), env);
 
   assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
   assert.equal(body.meta.kind, 'series');
-  assert.equal(body.meta.episode_page, `${fixture.base}/serie/reacher-2022/1x03`);
+  assert.equal(body.meta.resolved_by, 'direct');
+  assert.equal(body.meta.page, `${fixture.base}/serie/reacher-2022/1x03`);
   assert.match(body.streams[0].name, /· T1 E3$/);
+});
+
+test('serie: si la ruta directa no existe, sigue el enlace de la ficha', async () => {
+  const { body } = await runScraper(SCRIPT, ask('pelisjuanita:reacher-2022:1:5'), env);
+
+  assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
+  assert.equal(body.meta.episode_page, `${fixture.base}/serie/reacher-2022/1x05`);
+  assert.match(body.streams[0].name, /· T1 E5$/);
+});
+
+test('anime: la ficha vive en /anime/, no en /pelicula/', async () => {
+  const { body } = await runScraper(SCRIPT, ask('pelisjuanita:naruto-shippuden'), env);
+
+  assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
+  assert.equal(body.meta.page, `${fixture.base}/anime/naruto-shippuden`);
+  assert.ok(hasUrl(body, 'cdn.example/sw/index.m3u8'), urlsOf(body).join(' '));
+});
+
+test('abre la página de reproductor del propio sitio y lee sus embeds', async () => {
+  const { body } = await runScraper(SCRIPT, ask('pelisjuanita:doble-salto'), env);
+
+  assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
+  assert.deepEqual(body.meta.opened_players, [`${fixture.base}/player/999`]);
+  assert.ok(hasUrl(body, 'cdn.example/sw/index.m3u8'), urlsOf(body).join(' '));
+  /* La página intermedia no se publica como stream: no es reproducible. */
+  assert.ok(!urlsOf(body).some((url) => url.includes('/player/999')));
 });
 
 test('el buscador del sitio resuelve un título escrito a mano', async () => {

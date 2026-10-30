@@ -317,6 +317,80 @@ class SearchContinuationTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
 
+class FillTemplateTest(unittest.TestCase):
+    def test_two_digit_placeholders(self):
+        self.assertEqual(
+            _peliskit.fill("/serie/{slug}/{season}x{episode2}", slug="x", season=1, episode=3),
+            "/serie/x/1x03",
+        )
+        self.assertEqual(
+            _peliskit.fill("/serie/{slug}/temporada/{season2}/capitulo/{episode2}",
+                           slug="x", season=2, episode=10),
+            "/serie/x/temporada/02/capitulo/10",
+        )
+
+    def test_season_zero_and_text_episodes_survive(self):
+        self.assertEqual(_peliskit.fill("/v/{season2}/{episode2}", season=0, episode="1"),
+                         "/v/00/01")
+        self.assertEqual(_peliskit.fill("/ver/{slug}", slug="x"), "/ver/x")
+
+
+class PlayerPageExpansionTest(unittest.TestCase):
+    SITE = {"id": "fx", "label": "Fx", "base": "https://fx/"}
+
+    def test_own_player_page_is_opened_and_replaced_by_its_embeds(self):
+        def fake_fetch(url, headers, deadline):
+            return '<html><body><iframe src="https://embed.example/e/1"></iframe></body></html>', url
+
+        with patch.object(_peliskit, "fetch_html", side_effect=fake_fetch):
+            servers, meta = _peliskit.expand_player_pages(
+                [
+                    {"name": "", "url": "https://fx/player/999"},
+                    {"name": "Streamwish", "url": "https://streamwish.example/e/2"},
+                ],
+                "https://fx/pelicula/x", self.SITE, {}, Deadline(4000),
+            )
+        self.assertEqual([server["url"] for server in servers],
+                         ["https://embed.example/e/1", "https://streamwish.example/e/2"])
+        self.assertEqual(meta["opened_players"], ["https://fx/player/999"])
+
+    def test_only_the_first_pages_are_opened(self):
+        asked = []
+
+        def fake_fetch(url, headers, deadline):
+            asked.append(url)
+            return '<html><body><iframe src="https://embed.example/e/1"></iframe></body></html>', url
+
+        with patch.object(_peliskit, "fetch_html", side_effect=fake_fetch):
+            _peliskit.expand_player_pages(
+                [{"url": f"https://fx/player/{index}"} for index in range(3)],
+                "https://fx/pelicula/x", self.SITE, {}, Deadline(4000), max_pages=1,
+            )
+        self.assertEqual(asked, ["https://fx/player/0"])
+
+    def test_failed_page_is_kept_for_the_hoster_extractors(self):
+        with patch.object(_peliskit, "fetch_html", return_value=("", "")):
+            servers, meta = _peliskit.expand_player_pages(
+                [{"name": "", "url": "https://fx/player/999"}],
+                "https://fx/pelicula/x", self.SITE, {}, Deadline(4000),
+            )
+        self.assertEqual([server["url"] for server in servers], ["https://fx/player/999"])
+        self.assertEqual(meta["opened_players"], ["https://fx/player/999"])
+
+    def test_what_we_can_already_resolve_is_not_opened(self):
+        for url, expected in [
+            ("https://fx/player/1", True),
+            ("https://player.fx/embed/1", True),
+            ("https://otro.example/reproductor/abc", True),
+            ("https://streamwish.to/e/abc", False),
+            ("https://mega.nz/file/abc", False),
+            ("https://cdn.example/x/index.m3u8", False),
+            ("https://otro.example/pelicula/spider-man", False),
+        ]:
+            with self.subTest(url=url):
+                self.assertEqual(_peliskit.looks_like_own_player(url, "https://fx/"), expected)
+
+
 class FallbackQueryTest(unittest.TestCase):
     SITE = {
         "id": "fx", "label": "Fx", "base": "https://fx/",

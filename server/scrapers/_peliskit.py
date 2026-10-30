@@ -236,13 +236,26 @@ def fetch_html(
     return body or "", final_url or url
 
 
+def _padded(value: Any) -> str:
+    """`3` → `"03"` (las rutas de capítulo suelen ir con dos dígitos)."""
+    text = str(value if value is not None else "")
+    return text.zfill(2) if text.isdigit() else text
+
+
 def fill(template: str, **values: Any) -> str:
-    """`\"/pelicula/{slug}\"` + slug → URL absoluta codificada."""
+    """`\"/pelicula/{slug}\"` + slug → URL absoluta codificada.
+
+    Además de `{slug}`, `{season}`, `{episode}` y `{query}`, las plantillas
+    pueden usar `{season2}` / `{episode2}` cuando el sitio numera con dos
+    dígitos (`/serie/x/1x03`).
+    """
     try:
         return template.format(
             slug=values.get("slug", ""),
             season=values.get("season", ""),
             episode=values.get("episode", ""),
+            season2=_padded(values.get("season")),
+            episode2=_padded(values.get("episode")),
             query=urllib.parse.quote_plus(str(values.get("query", ""))),
         )
     except (KeyError, IndexError):
@@ -759,6 +772,73 @@ def collect_servers(
     return dedupe_servers(servers)
 
 
+#: Rutas donde los sitios alojan su propio reproductor intermedio
+#: (`/player/<id>`, `/reproductor/<hash>`, `/embed/<id>`…).
+PLAYER_PAGE_HINTS = ("/player", "/reproductor", "/embed", "/ver/", "/play/", "/video/")
+
+
+def looks_like_own_player(url: str, base: str) -> bool:
+    """¿Es una página del propio sitio que puede listar los servidores?
+
+    Descarta lo que ya sabemos resolver (`_hosters` se encarga de esas familias)
+    y lo que no es una página (`mega.nz`, `.m3u8`, `.jpg`…).
+    """
+    if not url or is_media_url(url) or is_download_only(url) or is_known_good(url):
+        return False
+    host = host_of(url)
+    own = host_of(base)
+    if host and own and (
+        host == own or host.endswith("." + own) or own.endswith("." + host)
+    ):
+        return True
+    path = urllib.parse.urlparse(url).path.lower()
+    return any(hint in path for hint in PLAYER_PAGE_HINTS)
+
+
+def expand_player_pages(
+    servers: List[Dict[str, Any]],
+    page_url: str,
+    site: Dict[str, Any],
+    headers: Dict[str, str],
+    deadline: Deadline,
+    max_pages: int = 2,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Abre las páginas de reproductor del propio sitio y lee sus servidores.
+
+    Algunos sitios (PelisJuanita entre ellos) ponen un `<iframe>` a su propia
+    página `/player/<id>` que a su vez lista los embeds externos. `_hosters` vería
+    esa página, no encontraría ningún `.m3u8` y la daría por irresoluble, así que
+    aquí se abre **una** vez más —sólo para el propio sitio, sólo las primeras
+    ``max_pages`` y sólo si queda tiempo— y sus servidores se colocan justo
+    detrás, con lo que el failover sigue el orden del sitio.
+
+    Devuelve ``(servidores, meta)`` con `meta["opened_players"]` para saber qué
+    páginas se abrieron.
+    """
+    if not servers or max_pages <= 0:
+        return servers, {}
+    base = site.get("base") or page_url
+    opened: List[str] = []
+    out: List[Dict[str, Any]] = []
+    for server in servers:
+        url = server.get("url") or ""
+        if len(opened) < max_pages and not deadline.expired() and looks_like_own_player(url, base):
+            opened.append(url)
+            html, final_url = fetch_html(url, headers, deadline)
+            found = [
+                item for item in harvest_servers(html, final_url or url, site) if item.get("url")
+            ] if html else []
+            if found:
+                # La página del reproductor no es una señal: se sustituye por
+                # los embeds que contiene, en su mismo hueco del failover.
+                out.extend(found)
+                continue
+        out.append(server)
+    if not opened:
+        return servers, {}
+    return dedupe_servers(out), {"opened_players": opened}
+
+
 #: Año "(2026)" o suelto, y paréntesis finales: los buscadores no los indexan.
 YEAR_NOISE_RE = re.compile(r"\([^)]*\)|\b(?:19|20)\d{2}\b")
 
@@ -926,6 +1006,15 @@ def scrape_site(payload: Dict[str, Any], site: Dict[str, Any]) -> Tuple[List[Dic
                         log("episode link failed:", site["id"], exc)
                     if episode_url:
                         meta["episode_page"] = episode_url
+    # Algunos sitios esconden los embeds detrás de su propia página de
+    # reproductor: se abre ésa antes de dar la ficha por vacía.
+    expand = int(site.get("expand_players") or 0)
+    if servers and expand > 0:
+        servers, expand_meta = expand_player_pages(
+            servers, page_url, site, headers, deadline, max_pages=expand
+        )
+        meta.update(expand_meta)
+
     # `servers` es un contador en el meta de `_hosters`; aquí van los nombres.
     meta["server_names"] = [server.get("name") for server in servers if server.get("name")]
     if not servers:

@@ -165,7 +165,10 @@ through the official Addon protocol:
   - `peliculasflix.py` — [peliculasflix.co](https://peliculasflix.co/) (15):
     `peliculasflix:<slug>` (own GraphQL API);
   - `pelisjuanita.py` — [pelisjuanita.org](https://pelisjuanita.org/) (16):
-    `pelisjuanita:spider-man-un-nuevo-dia-2026`;
+    `pelisjuanita:spider-man-un-nuevo-dia-2026`, and its own sections
+    (`/anime/<slug>`, `/wwe/<slug>`, `/serie/<slug>/1x03`); when the ficha only
+    points at the site's own `/player/<id>` page, the scraper opens it and reads
+    the embeds inside;
 
   The anime and movie providers return **one stream per resolved server**
   (Streamwish, VOE, Filemoon, Streamtape…), in the site's order, so the

@@ -13,12 +13,24 @@ Cómo publica el sitio la señal
 
            /pelicula/<slug>      (película)
            /serie/<slug>         (serie: los capítulos cuelgan de la ficha)
+           /anime/<slug>         (anime)
+           /wwe/<slug>           (eventos WWE)
+           /ver/<slug>           (página "ver", último recurso)
+
+       Para series se prueba primero la ruta del capítulo con dos dígitos
+       (`/serie/<slug>/1x03`) y después `temporada/1/capitulo/3`.
 
     2. El reproductor se inyecta en el cliente, así que se recogen los
        `<iframe>`, los atributos `data-player`/`data-video`/`data-url`, los
        literales JS con la lista de servidores y `og:video`. Si la ficha de la
        serie no trae reproductores, se sigue el enlace del capítulo pedido
        (`1x05`, `temporada/1/capitulo/5`, `episodio-5`…) y se lee ahí.
+
+    3. El sitio suele apuntar a **su propia** página de reproductor
+       (`/player/<id>`, `/reproductor/<hash>`) y es ésa la que lista los embeds
+       externos. Por eso el proveedor activa `expand_players`: si un servidor
+       recogido es una página del propio sitio, se abre una vez más y se leen
+       los embeds de dentro (`meta.opened_players` deja constancia).
 
     …y de resolver cada servidor (Streamwish, VOE, Filemoon, Streamtape,
     Mixdrop, Mp4upload…) se encarga `_hosters.py`, que ya conoce esas cadenas.
@@ -67,15 +79,29 @@ SITE: Dict[str, Any] = {
     "label": "PelisJuanita",
     "base": BASE,
     "home_path": "/",
-    "movie_paths": ["/pelicula/{slug}", "/peliculas/{slug}"],
+    # El sitio separa el catálogo en secciones: películas, anime y WWE. Sin
+    # estas rutas, un id de anime o de un evento WWE no abría nunca su ficha.
+    "movie_paths": [
+        "/pelicula/{slug}",
+        "/anime/{slug}",
+        "/wwe/{slug}",
+        "/peliculas/{slug}",
+        "/ver/{slug}",
+    ],
+    # `{episode2}` estrena la ruta real del sitio (`/serie/x/1x03`): un solo
+    # pedido cuando el capítulo existe, y si no se cae a la ficha.
     "series_paths": [
-        "/serie/{slug}",
+        "/serie/{slug}/{season}x{episode2}",
         "/serie/{slug}/temporada/{season}/capitulo/{episode}",
-        "/serie/{slug}/{season}/{episode}",
+        "/serie/{slug}",
+        "/anime/{slug}",
     ],
     "search_paths": ["/buscar?q={query}", "/search?q={query}"],
-    "search_hints": ["/pelicula/", "/serie/", "/anime/"],
-    "player_hints": ("embed", "player", "repro", "capitulo", "episodio"),
+    "search_hints": ["/pelicula/", "/peliculas/", "/serie/", "/anime/", "/wwe/", "/ver/"],
+    "player_hints": ("embed", "player", "repro", "reproductor", "video", "stream",
+                     "capitulo", "episodio"),
+    # Abre la página de reproductor del propio sitio (una vez, como mucho dos).
+    "expand_players": 2,
     "max_servers": 6,
     "parallel": 4,
     "tmdb": True,

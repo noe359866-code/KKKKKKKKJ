@@ -74,6 +74,8 @@ para los doce. Lo que hay hoy:
 | `resolve_all()` | Segunda pasada para los embeds que fallaron (sólo si queda tiempo) y `meta.resolved_hosts` con las familias que sí resolvieron. |
 | `resolve_signals()` | Si el sitio publica más servidores que el tope, los de familias que sabemos resolver (`streamwish`, `filemoon`, `voe`, `streamtape`…) se conservan al final como último failover en vez de perderse. |
 | `fallback_queries()` | Si el título completo no aparece en el buscador, reintenta sin año ni paréntesis ("Spider-Man: No Way Home (2021)" → "Spider-Man: No Way Home") y con las primeras palabras. |
+| `expand_player_pages()` | Cuando un "servidor" es una página del propio sitio (`/player/<id>`, `/reproductor/<hash>`), se abre una vez más y se leen los embeds de dentro: sin esto `_hosters` sólo veía una página sin `.m3u8` y la daba por irresoluble. Sólo el propio sitio, sólo las primeras páginas y con el deadline. |
+| `fill()` | Además de `{slug}`, `{season}`, `{episode}` y `{query}`, las plantillas admiten `{season2}` / `{episode2}` para los sitios que numeran con dos dígitos (`/serie/x/1x03`). |
 | `scrape_site()` | **404 blando**: si la ficha directa responde 200 pero no trae ni un reproductor, prueba el buscador del sitio y reintenta una vez (`meta.resolved_by = "search_retry"`). |
 
 Pruebas de todo esto, offline y sin tocar la red:
@@ -699,11 +701,28 @@ Subtitulado, resto Latino, y `link` puede ser directamente un
 
 #### `pelisjuanita.py` — PelisJuanita (prioridad 16)
 
-Fichas `/pelicula/<slug>` y `/serie/<slug>` (catálogo con datos de TMDB). El
-reproductor se inyecta en el cliente, así que se recogen iframes, `data-*`,
-literales JS y `og:video`; si la ficha de la serie no trae reproductores, se
-sigue el enlace del capítulo pedido (`1x05`, `temporada/1/capitulo/5`,
-`episodio-5`…).
+```
+/pelicula/<slug>                  película
+/anime/<slug>                     anime (su propia sección)
+/wwe/<slug>                       eventos WWE
+/ver/<slug>                       página "ver" (último recurso)
+   │  el reproductor se inyecta en el cliente: iframes, data-*, literales JS, og:video
+   ▼
+/player/<id>  ·  /reproductor/<hash>        ← página del PROPIO sitio
+   │  `expand_players` la abre una vez (meta.opened_players)
+   ▼
+streamwish / voe / filemoon / streamtape …  → `_hosters`
+```
+
+- Un solo pedido cuando el capítulo existe: `/serie/<slug>/1x03` (`{episode2}`).
+  Si esa ruta no está, se cae a `temporada/<n>/capitulo/<m>` y, por último, al
+  enlace del capítulo que liste la ficha (`meta.episode_page`).
+- Las fichas de anime y WWE no están en `/pelicula/`: sin las rutas por sección
+  esos ids nunca abrían nada (era el fallo real del proveedor).
+- La página intermedia del reproductor **no** se publica como stream: se
+  sustituye por los embeds que contiene, en su mismo hueco del failover.
+- `PELISJUANITA_BASE` / `PELISJUANITA_MIRRORS` siguen sirviendo para dominios
+  espejo.
 
 ### TMDB (opcional)
 
