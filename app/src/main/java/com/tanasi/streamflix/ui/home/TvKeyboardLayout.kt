@@ -25,6 +25,16 @@ object TvKeyboardLayout {
         listOf("Z", "X", "C", "V", "B", "N", "M"),
     )
 
+    /**
+     * Fila de dígitos.
+     *
+     * Va siempre visible: media cartelera tiene números en el título (1917,
+     * 2001, 24, 1984) y sin teclado numérico esas búsquedas son imposibles con
+     * el mando. Una fila de diez teclas cuesta 48 dp de alto; esconderla tras un
+     * `123` cuesta una pulsación más y un estado que nadie descubre.
+     */
+    val digitRow: List<String> = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+
     /** Añade [key] al final de [text], respetando el tope y un espacio inicial. */
     fun type(text: String, key: String): String {
         if (key.isEmpty()) return text
@@ -34,8 +44,6 @@ object TvKeyboardLayout {
 
     /** Quita el último carácter. Cadena vacía si no hay nada que borrar. */
     fun backspace(text: String): String = if (text.isEmpty()) text else text.dropLast(1)
-
-    fun clear(): String = ""
 
     /** Texto listo para buscar: sin espacios sobrantes en los extremos. */
     fun normalize(text: String): String = text.trim().replace(Regex("\\s+"), " ").take(MAX_QUERY)

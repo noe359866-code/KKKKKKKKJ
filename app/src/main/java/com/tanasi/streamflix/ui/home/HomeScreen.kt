@@ -43,9 +43,11 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.core.LocalDeviceProfile
@@ -233,25 +235,46 @@ fun HomeScreen(
                             onPlay = {
                                 /* Series sin capítulo: abre la ficha para elegir
                                  * episodio. Todo lo demás reproduce directo. */
-                                spotlight?.entry?.let { entry ->
+                                spotlight?.let { focused ->
+                                    val entry = focused.entry
                                     if (!entry.isLive && !hasEpisodeNumber(entry.type, entry.id)) {
-                                        onOpenDetails(entry, emptyList())
+                                        onOpenDetails(entry, focused.siblings)
                                     } else {
-                                        onPlay(entry.playbackRequest())
+                                        onPlay(
+                                            entry.playbackRequest(
+                                                queue = focused.siblings.toChannelQueue(),
+                                            ),
+                                        )
                                     }
                                 }
                             },
                             onDetails = {
-                                spotlight?.entry?.let { onOpenDetails(it, emptyList()) }
+                                spotlight?.let { onOpenDetails(it.entry, it.siblings) }
                             },
                             modifier = modifier,
                         )
+                    }
+
+                    /* Al buscar, las filas dejan de ser el catálogo y pasan a
+                     * ser resultados: sin una cabecera, el Home parece el mismo
+                     * de siempre con títulos cambiados. */
+                    val resultHeader: (@Composable () -> Unit)? = if (query.isNotBlank()) {
+                        {
+                            SearchResultHeader(
+                                query = query,
+                                count = rows.sumOf { it.items.size },
+                                deviceProfile = deviceProfile,
+                            )
+                        }
+                    } else {
+                        null
                     }
 
                     val rowsContent: @Composable (Modifier) -> Unit = { modifier ->
                         CatalogList(
                             rows = rows,
                             deviceProfile = deviceProfile,
+                            header = resultHeader,
                             onEntryClick = { entry, siblings ->
                                 /* Un canal en directo va derecho al reproductor:
                                  * la ficha de un canal no tiene nada que elegir
@@ -330,6 +353,56 @@ fun HomeScreen(
 }
 
 /**
+ * Cabecera de resultados de búsqueda: **qué** se buscó y **cuánto** salió.
+ *
+ * Sin ella, tras buscar el Home era indistinguible del catálogo normal (mismas
+ * filas, mismos títulos de fila): el único indicio era el chip «Inicio» de la
+ * barra superior.
+ */
+@Composable
+private fun SearchResultHeader(
+    query: String,
+    count: Int,
+    deviceProfile: DeviceProfile,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = deviceProfile.horizontalPaddingDp.dp,
+                end = deviceProfile.horizontalPaddingDp.dp,
+                bottom = 14.dp,
+            ),
+    ) {
+        Text(
+            text = "RESULTADOS PARA",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 2.sp,
+            color = StreamflixColors.OnSurfaceMuted,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "«$query»",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = StreamflixColors.OnSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Spacer(Modifier.width(14.dp))
+            Text(
+                text = if (count == 1) "1 título" else "$count títulos",
+                style = MaterialTheme.typography.labelMedium,
+                color = StreamflixColors.OnSurfaceMuted,
+            )
+        }
+    }
+}
+
+/**
  * Las filas.
  *
  * En TV la lista lleva un `top` igual a la línea base del hero: la primera fila
@@ -347,6 +420,9 @@ private fun CatalogList(
     firstCardFocus: FocusRequester,
     firstRowFocusUp: FocusRequester,
     modifier: Modifier = Modifier,
+    /** Cabecera opcional («Resultados para …»); va dentro de la lista para que
+     *  se desplace con las filas y no tape el hero. */
+    header: (@Composable () -> Unit)? = null,
 ) {
     LazyColumn(
         modifier = modifier,
@@ -358,6 +434,9 @@ private fun CatalogList(
             if (deviceProfile.requiresDpadFocus) 24.dp else 18.dp,
         ),
     ) {
+        if (header != null) {
+            item(key = "list-header") { header() }
+        }
         itemsIndexed(
             items = rows,
             key = { _, row -> row.id },

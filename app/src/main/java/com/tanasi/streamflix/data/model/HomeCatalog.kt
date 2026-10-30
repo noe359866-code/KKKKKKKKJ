@@ -15,6 +15,13 @@ data class Spotlight(
     /** Posición 1-based dentro de la fila. */
     val position: Int,
     val total: Int,
+    /**
+     * Títulos de la misma fila, en su orden. Va aquí y no se busca después
+     * porque el hero también reproduce: si el título destacado es un canal,
+     * pulsar *Reproducir* desde el hero tiene que llevar la parrilla consigo o
+     * `CH+`/`CH−` se quedan sin canales a los que saltar.
+     */
+    val siblings: List<MediaEntry> = emptyList(),
 ) {
     val isLive: Boolean get() = entry.isLive
 }
@@ -47,6 +54,7 @@ class HomeCatalog(val rows: List<CatalogRow>) {
                         rowTitle = row.title,
                         position = index + 1,
                         total = row.items.size,
+                        siblings = row.items,
                     ),
                 )
             }

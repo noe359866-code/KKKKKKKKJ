@@ -41,9 +41,18 @@ class TvKeyboardLayoutTest {
     }
 
     @Test
+    fun `los titulos con numeros se pueden escribir`() {
+        var text = ""
+        "1917".forEach { text = TvKeyboardLayout.type(text, it.toString()) }
+        assertEquals("1917", text)
+        assertEquals(10, TvKeyboardLayout.digitRow.size)
+        assertEquals(listOf("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"), TvKeyboardLayout.digitRow.sorted())
+    }
+
+    @Test
     fun `todas las filas tienen teclas y no se repiten`() {
-        val keys = TvKeyboardLayout.rows.flatten()
+        val keys = TvKeyboardLayout.rows.flatten() + TvKeyboardLayout.digitRow
         assertEquals(keys.size, keys.toSet().size)
-        assertEquals(27, keys.size)
+        assertEquals(37, keys.size)
     }
 }

@@ -59,10 +59,17 @@ import com.tanasi.streamflix.ui.theme.StreamflixColors
 import com.tanasi.streamflix.ui.theme.tvFocusGlow
 import kotlinx.coroutines.delay
 
-/** Ancho de una tecla de letra. Con 10 columnas el teclado mide 690 dp. */
-private val KEY_SIZE = 60.dp
+/**
+ * Medidas del teclado.
+ *
+ * Un panel de 1080p informa **960 × 540 dp** en Android TV (densidad 2), no
+ * 1920 × 1080: el presupuesto real de alto es de ~540 dp, no de 720. Con teclas
+ * de 60 dp el teclado se salía de la pantalla y `BUSCAR` quedaba cortado, así
+ * que se calcula para 540 dp de alto: 48 dp de tecla y 6 dp de separación.
+ */
+private val KEY_SIZE = 48.dp
 
-private val KEY_GAP = 10.dp
+private val KEY_GAP = 6.dp
 
 /** Ancho total del teclado: lo comparten el campo de texto y el panel derecho. */
 private val KEYBOARD_WIDTH = KEY_SIZE * 10 + KEY_GAP * 9
@@ -165,8 +172,8 @@ fun CatalogSearchDialog(
                     .padding(
                         start = deviceProfile.horizontalPaddingDp.dp,
                         end = deviceProfile.horizontalPaddingDp.dp,
-                        top = 44.dp,
-                        bottom = 36.dp,
+                        top = 28.dp,
+                        bottom = 24.dp,
                     ),
             ) {
                 Text(
@@ -177,7 +184,7 @@ fun CatalogSearchDialog(
                     color = StreamflixColors.OnSurfaceMuted,
                 )
 
-                Spacer(Modifier.height(26.dp))
+                Spacer(Modifier.height(14.dp))
 
                 Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     /* --- teclado ------------------------------------------- */
@@ -186,8 +193,6 @@ fun CatalogSearchDialog(
                         verticalArrangement = Arrangement.spacedBy(KEY_GAP),
                     ) {
                         QueryField(value = value)
-
-                        Spacer(Modifier.height(12.dp))
 
                         TvKeyboardLayout.rows.forEachIndexed { rowIndex, keys ->
                             Row(horizontalArrangement = Arrangement.spacedBy(KEY_GAP)) {
@@ -220,15 +225,31 @@ fun CatalogSearchDialog(
                             }
                         }
 
+                        /* Dígitos siempre a la vista: 1917, 2001, 24… */
+                        Row(horizontalArrangement = Arrangement.spacedBy(KEY_GAP)) {
+                            TvKeyboardLayout.digitRow.forEachIndexed { index, key ->
+                                KeyCap(
+                                    label = key,
+                                    width = KEY_SIZE,
+                                    rightFocus = if (index == TvKeyboardLayout.digitRow.lastIndex) {
+                                        suggestionsFocus
+                                    } else {
+                                        null
+                                    },
+                                    onClick = { value = TvKeyboardLayout.type(value, key) },
+                                )
+                            }
+                        }
+
                         Row(horizontalArrangement = Arrangement.spacedBy(KEY_GAP)) {
                             KeyCap(
                                 label = "ESPACIO",
-                                width = 300.dp,
+                                width = 210.dp,
                                 onClick = { value = TvKeyboardLayout.type(value, " ") },
                             )
                             PrimaryKey(
                                 label = "BUSCAR",
-                                width = 180.dp,
+                                width = 150.dp,
                                 enabled = canSearch,
                                 rightFocus = suggestionsFocus,
                                 onClick = { submit() },
@@ -243,7 +264,7 @@ fun CatalogSearchDialog(
                             } else {
                                 "OK escribe · ◀ ▶ ▲ ▼ mueven · ATRÁS cierra"
                             },
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelSmall,
                             color = StreamflixColors.OnSurfaceMuted.copy(alpha = 0.8f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -251,7 +272,7 @@ fun CatalogSearchDialog(
                         )
                     }
 
-                    Spacer(Modifier.width(56.dp))
+                    Spacer(Modifier.width(40.dp))
 
                     /* --- recomendaciones de Cinemeta ----------------------- */
                     Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
@@ -316,7 +337,7 @@ private fun QueryField(value: String) {
     Row(
         modifier = Modifier
             .width(KEYBOARD_WIDTH)
-            .height(78.dp)
+            .height(60.dp)
             .background(StreamflixColors.Glass, RoundedCornerShape(16.dp))
             .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
             .padding(horizontal = 24.dp),
@@ -324,7 +345,7 @@ private fun QueryField(value: String) {
     ) {
         Text(
             text = value.ifEmpty { "Título o canal" },
-            style = MaterialTheme.typography.headlineSmall,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
             color = if (value.isEmpty()) {
                 StreamflixColors.OnSurfaceMuted.copy(alpha = 0.7f)
@@ -520,8 +541,8 @@ private fun SuggestionRow(
         PosterImage(
             entry = entry,
             modifier = Modifier
-                .width(56.dp)
-                .height(84.dp)
+                .width(48.dp)
+                .height(72.dp)
                 .clip(RoundedCornerShape(8.dp)),
         )
 
