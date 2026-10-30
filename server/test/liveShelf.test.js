@@ -32,7 +32,8 @@ process.env.LIVE_CATALOG_PATH = path.join(fixtures, 'live-catalog.json');
 process.env.SCRAPER_DIR = path.join(fixtures, 'scrapers');
 process.env.CATALOG_LIVE_TTL_MINUTES = '15';
 
-const { getCatalog, invalidateCatalogs, invalidateLiveShelf, loadLiveShelf } = await import('../src/services/catalogService.js');
+const { getCatalog, invalidateCatalogs, invalidateLiveShelf, liveShelfStatus, loadLiveShelf } =
+  await import('../src/services/catalogService.js');
 
 /* -------------------------------------------------------------------------- */
 /* Estantería de mentira, con la forma que devuelve _liveshelf.py             */
@@ -211,4 +212,21 @@ test('invalidar catálogos también tira la estantería de directo', async () =>
     after.channels.map((meta) => meta.name),
     before.channels.map((meta) => meta.name),
   );
+});
+
+test('liveShelfStatus cuenta por qué la agenda puede estar vacía', async () => {
+  invalidateLiveShelf();
+  const empty = liveShelfStatus();
+  assert.equal(empty.loaded, false);
+  assert.equal(empty.channels, 0);
+  assert.equal(empty.events, 0);
+  assert.equal(empty.ageMs, null);
+  assert.ok(empty.ttlMs > 0);
+
+  await loadLiveShelf();
+  const loaded = liveShelfStatus();
+  assert.equal(loaded.loaded, true);
+  assert.ok(loaded.channels > 0);
+  assert.ok(loaded.ageMs >= 0);
+  assert.equal(loaded.inflight, false);
 });

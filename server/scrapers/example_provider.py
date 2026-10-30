@@ -108,11 +108,19 @@ def scrape(payload):
         log("demo-vod skipping live id", content_id)
         return [], {"reason": "type_mismatch", "provider": provider}
 
+    # Algunos CDN firman sus .m3u8 con su propio vencimiento (`?e=<unix>`): un
+    # id que contenga "signed" simula esa respuesta para probar que el TTL de
+    # caché no sobrevive al enlace.
+    signed_until = int(time.time()) + 20 if "signed" in content_id.lower() else None
+
     streams = []
     for candidate in candidates:
+        url = candidate["url"]
+        if signed_until and not is_live:
+            url = f"{url}{'&' if '?' in url else '?'}e={signed_until}"
         streams.append(
             stream(
-                url=candidate["url"],
+                url=url,
                 name=candidate["name"],
                 title=f"{candidate['name']} · {provider} · demo",
                 quality=candidate["quality"],

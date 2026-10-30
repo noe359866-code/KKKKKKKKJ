@@ -437,7 +437,7 @@ class Engine:
         self.pool.shutdown(wait=True, cancel_futures=True)
 
     def catalogs(self, metadata_catalogs: bool = False) -> Dict[str, Any]:
-        """Filas de la Home: Cinemeta (opt-in) y canales en vivo. Nada más.
+        """Filas de la Home: Cinemeta (activado de fábrica, apagable) y canales en vivo.
 
         Los scrapers de películas/series/anime quedan fuera a propósito: son
         resuelven streams, no son catálogos. Su listado interno

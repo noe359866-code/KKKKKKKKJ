@@ -190,6 +190,26 @@ async function scrapeLiveShelf() {
   return data;
 }
 
+/**
+ * Estado de la estantería de directo, para `/health`.
+ *
+ * `tv/agenda` devuelve `[]` cuando ningún proveedor publica horarios (o cuando
+ * todos están caídos) y eso, desde fuera, parece un bug del addon. Aquí queda
+ * el porqué: si nunca cargó, cuándo se intentó y cuántos canales/eventos hay.
+ */
+export function liveShelfStatus(now = Date.now()) {
+  const data = liveShelfState.data;
+  return {
+    loaded: Boolean(data),
+    ageMs: data ? now - liveShelfState.loadedAtMs : null,
+    ttlMs: config.catalogs.liveTtlMs,
+    channels: data ? data.channels.length : 0,
+    events: data ? data.events.length : 0,
+    failedAgoMs: liveShelfState.failedAtMs ? now - liveShelfState.failedAtMs : null,
+    inflight: Boolean(liveShelfInflight),
+  };
+}
+
 /** Tira la estantería cacheada (admin y pruebas): la próxima petición raspa. */
 export function invalidateLiveShelf() {
   liveShelfState = { data: null, loadedAtMs: 0, failedAtMs: 0 };
@@ -638,5 +658,6 @@ export default {
   metaCacheKey,
   invalidateCatalogs,
   invalidateLiveShelf,
+  liveShelfStatus,
   normalizeText,
 };

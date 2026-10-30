@@ -28,9 +28,10 @@ sealed interface CatalogResult {
 }
 
 /**
- * Las filas se resuelven en paralelo. En modo autónomo salen de Cinemeta (opt-in),
- * los canales en vivo y los addons; los scrapers sólo resuelven streams. Sólo el
- * modo remoto necesita baseUrl. Una fila caída no tumba las demás.
+ * Las filas se resuelven en paralelo. En modo autónomo salen de Cinemeta
+ * (activado de fábrica; se puede apagar en Ajustes), los canales en vivo y los
+ * addons; los scrapers sólo resuelven streams. Sólo el modo remoto necesita
+ * baseUrl. Una fila caída no tumba las demás.
  */
 class CatalogRepository(
     private val client: ContentClient,

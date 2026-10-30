@@ -77,12 +77,15 @@ canales del reproductor (§18) muestra nombre y carátula, no «ahora / después
 Se podría derivar del mismo `_liveshelf` si los proveedores publican horarios;
 hoy no se intenta.
 
-### El canal actual no se recuerda
+### ✅ (hecho) El canal actual no se recuerda
 
-`PlayerActivity` reconstruye el `PlaybackRequest` del `Intent`
-(`toPlaybackRequest()`): si el sistema mata el proceso mientras se ve una
-cadena zapeada, al volver se abre el canal del `Intent`, no el que estaba
-viendo. No hay `onSaveInstanceState`.
+> **Implementado.** `PlaybackRestore` guarda en `onSaveInstanceState` la
+> petición **en curso** (con la parrilla y la fuente elegida) y el segundo
+> exacto; `PlayerActivity` restaura primero lo guardado y sólo cae al `Intent`
+> si no hay nada. El reproductor reporta el avance cada 15 s, así que la
+> posición guardada no es la de la última salida limpia. Un directo no guarda
+> posición (pediría un segmento fuera de la ventana del vivo), pero sí el
+> canal. `PlaybackRestoreTest` (5 casos) y `PlayerViewModelTest` (7).
 
 ---
 
@@ -111,24 +114,29 @@ viendo. No hay `onSaveInstanceState`.
 - **`hls_variants` sólo prueba `/m3u8/<id>`** (`server/scrapers/_hosters.py:209`
   reescribe `/play/<id>`): no prueba las variantes `/e/`, `/embed/`, `/v/` que
   usan varios hosters.
-- **TTL por proveedor para URLs firmadas por IP**: el TTL de caché es único para
-  todas las fuentes; un enlace firmado por IP caduca antes de lo que dice el TTL.
+- ✅ **TTL para URLs firmadas**: **hecho**. `server/src/lib/signedUrls.js` lee el
+  vencimiento que lleva la propia URL (`?e=`, `?expires=`, `token=…~exp=…`) y
+  `streamService` recorta el TTL al enlace más corto (con 15 s de margen, tanto
+  en el scrape como en el refresh en segundo plano). Antes un `.m3u8` firmado a
+  20 minutos se cacheaba 6 h y al reintentar daba 403: «no reproduce nada» sin
+  ningún proveedor caído. `signedUrls.test.js` (6 casos, incluido el TTL real
+  que devuelve `/stream`).
 - **`cuevana.SITE["base"]` se evalúa al importar** (`cuevana.py:150` con
   `_bases()[0]`): `scrape()` y `main()` lo sobrescriben, así que hoy no rompe,
   pero el `SITE` del módulo puede quedar con un dominio viejo si alguien lo usa
   directamente.
-- **Agenda vacía sin explicación**: `tv/agenda` devuelve `[]` a propósito cuando
-  no hay eventos (nunca se inventan partidos), y la fila desaparece del Home.
-  Correcto, pero el usuario no sabe si «no hay partidos» o «falló el proveedor»:
-  el diagnóstico sólo está en `/health`.
+- ✅ **Agenda vacía sin explicación**: **hecho**. `/health` publica
+  `liveShelf: { loaded, ageMs, ttlMs, channels, events, failedAgoMs, inflight }`,
+  así que se distingue «no hay partidos hoy» de «la estantería no cargó».
 
 ---
 
 ## P2 — Falta en pruebas
 
-- **`PlayerViewModel` sin tests**: el zapeo depende de `tune()`, `restore()` y
-  del ticket que descarta respuestas viejas; hoy sólo se prueba la aritmética
-  (`ChannelZappingTest`) y la cola (`PlaybackQueueTest`).
+- ✅ **`PlayerViewModel` sin tests**: **hecho**. `PlayerViewModelTest` cubre
+  carga, subtítulos en el mismo estado, «sin fuentes», fallo de red, zapeo con
+  la imagen anterior en pantalla (`tuning`), mismo canal sin repetir petición,
+  deshacer con `restore()` y reintento.
 - **`HomeViewModel.suggestions` sin tests** (la selección pura sí está probada en
   `CinemetaSuggestionsTest`).
 - **Nada de UI**: la guía de canales y el teclado del buscador están pensados
@@ -145,11 +153,12 @@ viendo. No hay `onSaveInstanceState`.
 - `PlaybackRequest.startIndex` sólo lo usa un test: la ficha siempre manda 0
   (no hay selección manual de servidor). O se usa para «recordar la fuente
   buena» o se borra.
-- `WatchProgressStore.remove()` existe pero ninguna pantalla lo llama: no se
-  puede quitar un título de «Seguir viendo» a mano (se cae solo al terminar).
-- `MetadataCatalogs` viene **activado de fábrica** (`Settings.kt:46`, default
-  `true`) y el docstring de `embedded_engine.catalogs()` sigue diciendo
-  «opt-in». Sólo el comentario está mal.
+- ✅ ~~`WatchProgressStore.remove()` sin pantalla~~: **hecho**. La ficha muestra
+  «Dejar de seguir viendo» cuando hay progreso y borra el título **y sus
+  episodios** (`removeTitle` + `WatchProgress.sameTitle`).
+- ✅ ~~Comentario «opt-in»~~: **hecho**. `embedded_engine.catalogs()` y
+  `CatalogRepository` dicen ahora que Cinemeta viene activado de fábrica y se
+  puede apagar en Ajustes.
 - La cola de canales que viaja al reproductor está topada en 60
   (`MAX_CHANNEL_QUEUE`): una fila de 200 canales se zapea sólo por los 60
   primeros.
