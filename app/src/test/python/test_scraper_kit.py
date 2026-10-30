@@ -317,6 +317,114 @@ class SearchContinuationTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
 
+class TypedSourceTest(unittest.TestCase):
+    """`sources: [{file, type}]`: el `type` dice que es vídeo sin extensión."""
+
+    def test_jwplayer_sources_without_extension(self):
+        html = (
+            '<script>var p = jwplayer("v").setup({sources: ['
+            '{ file: "https://cdn.example/v/abc123", type: "application/x-mpegURL" },'
+            '{ file: "https://cdn.example/v/def456", type: "video/mp4" },'
+            '{ file: "https://cdn.example/arte/poster.jpg", type: "image/jpeg" }'
+            ']});</script>'
+        )
+        self.assertEqual(
+            _htmlkit.typed_media_urls(html, "https://fx/pelicula/x"),
+            [("https://cdn.example/v/abc123", "hls"), ("https://cdn.example/v/def456", "mp4")],
+        )
+
+    def test_type_before_the_url(self):
+        html = '<video><source type="video/mp4" src="https://cdn.example/v/stream"></video>'
+        self.assertEqual(_htmlkit.typed_media_urls(html), [("https://cdn.example/v/stream", "mp4")])
+
+    def test_relative_manifests_are_resolved(self):
+        html = '<source src="/hls/master.m3u8"><script>file: "./v/clip.mp4"</script>'
+        self.assertEqual(
+            _htmlkit.relative_media_urls(html, "https://fx/pelicula/x/"),
+            ["https://fx/hls/master.m3u8", "https://fx/pelicula/x/v/clip.mp4"],
+        )
+        self.assertIn(
+            "https://fx/pelicula/x/v/clip.mp4",
+            _htmlkit.media_urls(html, "https://fx/pelicula/x/"),
+        )
+
+    def test_media_kind_parsing(self):
+        cases = [
+            ("application/x-mpegURL", "hls"),
+            ("HLS", "hls"),
+            ("application/dash+xml", "dash"),
+            ("video/mp4", "mp4"),
+            ("image/jpeg", ""),
+            ("text/html", ""),
+        ]
+        for value, expected in cases:
+            with self.subTest(value=value):
+                self.assertEqual(_htmlkit.media_kind(value), expected)
+        self.assertEqual(_htmlkit.media_kind_of_url("https://x/y.m3u8?a=1"), "hls")
+        self.assertEqual(_htmlkit.media_kind_of_url("https://x/y.mpd"), "dash")
+        self.assertEqual(_htmlkit.media_kind_of_url("https://x/y"), "")
+
+    def test_the_ficha_turns_typed_sources_into_direct_signals(self):
+        html = (
+            '<script>var p = jwplayer("v").setup({sources: ['
+            '{ file: "https://cdn.example/v/abc123", type: "application/x-mpegURL" },'
+            '{ file: "https://cdn.example/arte/poster.jpg", type: "image/jpeg" }'
+            ']});</script>'
+        )
+        servers = _peliskit.harvest_servers(html, "https://fx/pelicula/x", {})
+        self.assertEqual([server["url"] for server in servers], ["https://cdn.example/v/abc123"])
+        self.assertTrue(servers[0]["direct"])
+        self.assertEqual(servers[0]["media_type"], "hls")
+
+    def test_a_stream_carries_the_type_in_the_behavior_hints(self):
+        from _base import stream
+
+        item = stream("https://cdn.example/v/abc123", "n", media_type="hls")
+        self.assertEqual(item["behaviorHints"]["mediaType"], "hls")
+        self.assertEqual(stream("https://x/y.m3u8", "n")["behaviorHints"], {"notWebReady": False})
+
+
+class ProbeTest(unittest.TestCase):
+    def test_probe_recognises_what_it_downloads(self):
+        cases = [
+            (b"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\n/i.m3u8", "hls"),
+            (b'<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011"></MPD>', "dash"),
+            (b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00", "mp4"),
+            (b"<!DOCTYPE html><html><body>404</body></html>", "html"),
+            (b"", ""),
+        ]
+        for head, expected in cases:
+            with self.subTest(expected=expected):
+                with patch.object(_hosters, "http_peek", return_value=head):
+                    self.assertEqual(
+                        _hosters.probe_media_kind("https://cdn/v/abc", {}, Deadline(4000)),
+                        expected,
+                    )
+
+    def test_resolve_marks_the_type_and_drops_pages(self):
+        page = (
+            '<html><body><script>var p = jwplayer("v").setup({sources: ['
+            '{ file: "https://cdn.example/v/abc123", type: "application/x-mpegURL" }]});</script>'
+            '<meta property="og:video" content="https://cdn.example/v/pagina">'
+            '</body></html>'
+        )
+
+        def fake_get(url, headers, timeout, retries=1):
+            return page, url, "text/html"
+
+        def fake_peek(url, headers, timeout, size=2048):
+            return b"<html><body>no soy un video</body></html>"
+
+        with patch.object(_hosters, "http_get", side_effect=fake_get), \
+                patch.object(_hosters, "http_peek", side_effect=fake_peek):
+            signals, meta = _hosters.resolve(
+                "https://embed.example/e/1", {}, Deadline(6000), referer="https://fx/x",
+            )
+        self.assertEqual([signal["url"] for signal in signals], ["https://cdn.example/v/abc123"])
+        self.assertEqual(signals[0]["media_type"], "hls")
+        self.assertIn("not_media", meta["errors"])
+
+
 class FillTemplateTest(unittest.TestCase):
     def test_two_digit_placeholders(self):
         self.assertEqual(

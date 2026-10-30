@@ -71,6 +71,7 @@ def stream(
     user_agent: Optional[str] = None,
     not_web_ready: bool = False,
     is_live: bool = False,
+    media_type: Optional[str] = None,
     **extra: Any,
 ) -> Dict[str, Any]:
     """Builds one stream object with the shape the Node side expects."""
@@ -87,6 +88,10 @@ def stream(
         from _htmlkit import guess_quality  # import diferido: _htmlkit importa _base
 
         item["quality"] = guess_quality(quality) or str(quality).strip()
+    if media_type:
+        # `hls` / `dash` / `mp4`: el cliente lo necesita cuando la URL no tiene
+        # extensión (ExoPlayer, sin pista, intentaría abrir un HLS como MP4).
+        item["behaviorHints"]["mediaType"] = str(media_type).lower()
     if referer:
         item["referer"] = referer
     if user_agent:

@@ -75,6 +75,7 @@ from _htmlkit import (  # helpers compartidos con el resto de proveedores
     clean_title,
     guess_quality,
     http_get,
+    media_kind_of_url,
     media_urls,
     normalize,
     player_links,
@@ -574,6 +575,7 @@ def scrape(payload: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any
                 user_agent=user_agent,
                 not_web_ready=False,
                 is_live=True,
+                media_type=media_kind_of_url(url),
             )
         )
         if len(streams) >= MAX_STREAMS:

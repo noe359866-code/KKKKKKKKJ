@@ -441,6 +441,19 @@ into a `DefaultHttpDataSource.Factory` (adding a derived `Origin` and allowing
 cross-protocol redirects), and each source gets its own factory, since the
 `Referer` changes hop by hop.
 
+### HLS and MP4, even without an extension
+
+Half of the providers serve the manifest at a URL that does not say what it is
+(`https://cdn/v/abc123`), and many players declare the type in the page
+(`sources: [{file: "…", type: "application/x-mpegURL"}]`). The scrapers now
+extract those sources by their declared type, resolve relative paths, and probe
+the first bytes of anything still ambiguous; each stream then carries
+`behaviorHints.mediaType` (`hls` / `dash` / `mp4`). The in-app engine keeps
+extension-less media (it only drops pages and images) and
+`MediaSources.mediaSource()` uses the hint to build an `HlsMediaSource`,
+`DashMediaSource` or `ProgressiveMediaSource`. Without that chain, a perfectly
+good HLS link was discarded before it reached ExoPlayer.
+
 ### Autonomous mode and optional server
 
 **Ajustes → Autónomo · En este dispositivo** is the default, including after an

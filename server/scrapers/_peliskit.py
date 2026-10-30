@@ -47,7 +47,9 @@ from _htmlkit import (
     host_of,
     http_get,
     is_media_url,
+    media_kind_of_url,
     player_links,
+    typed_media_urls,
     slugify,
     unescape_markup,
     unique,
@@ -501,6 +503,19 @@ def _clean_embed(value: str, page_url: str) -> str:
     return raw
 
 
+#: Archivos que nunca son un reproductor (se colaban desde los literales JS).
+STATIC_SUFFIXES = (
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".css", ".js",
+    ".woff", ".woff2", ".ttf", ".pdf", ".zip", ".txt",
+)
+
+
+def looks_like_static(url: str) -> bool:
+    """¿Es una imagen/CSS/JS y no un reproductor? (dominio `.zip` aparte)."""
+    path = urllib.parse.urlparse(url or "").path.lower()
+    return path.endswith(STATIC_SUFFIXES)
+
+
 def harvest_servers(
     html: str,
     page_url: str,
@@ -564,11 +579,20 @@ def harvest_servers(
         if url:
             servers.append(server_entry("", url))
 
+    # 4b. Fuentes con `type` explícito: en los sitios que inyectan jwplayer en
+    #     la propia ficha, esto **ya es** el vídeo (la URL puede no tener
+    #     extensión, y antes se perdía entera).
+    for typed_url, kind in typed_media_urls(text, page_url):
+        servers.append({**server_entry("", typed_url), "media_type": kind})
+
     # 5. URLs de reproductor plausibles (última red de seguridad).
     for url in player_links(text, page_url, site.get("player_hints") or ()):
         servers.append(server_entry("", url))
 
     skip = tuple(skip_hosts) or tuple(site.get("skip_hosts") or ())
+    # `sources: [{file: "…", type: "application/x-mpegURL"}]`: la URL no tiene
+    # por qué acabar en `.m3u8`, pero el `type` dice que eso ya es el vídeo.
+    typed = dict(typed_media_urls(text, page_url))
     cleaned: List[Dict[str, Any]] = []
     for server in dedupe_servers(servers):
         url = server["url"]
@@ -576,9 +600,16 @@ def harvest_servers(
             continue
         if is_media_url(url):
             # Un .m3u8/.mp4 directo no hay que resolverlo: entra tal cual.
-            cleaned.append({**server, "direct": True})
+            kind = media_kind_of_url(url)
+            cleaned.append({**server, "direct": True, **({"media_type": kind} if kind else {})})
             continue
         if not url.lower().startswith(("http://", "https://")):
+            continue
+        kind = typed.get(url)
+        if kind:
+            cleaned.append({**server, "direct": True, "media_type": kind})
+            continue
+        if looks_like_static(url):
             continue
         cleaned.append(server)
     return cleaned
@@ -617,8 +648,12 @@ def resolve_signals(
     remote = [server for server in usable if not is_media_url(server["url"])]
     inline = [server for server in usable if is_media_url(server["url"])]
     for server in inline:
-        signals.append({"url": server["url"], "server": server.get("name") or host_of(server["url"]),
-                        "referer": page_url})
+        kind = server.get("media_type") or media_kind_of_url(server["url"])
+        signal = {"url": server["url"], "server": server.get("name") or host_of(server["url"]),
+                  "referer": page_url}
+        if kind:
+            signal["media_type"] = kind
+        signals.append(signal)
     if remote:
         found, info = resolve_all(remote, headers, deadline, page_url, parallel=parallel)
         signals.extend(found)
@@ -742,6 +777,7 @@ def build_streams(
                 not_web_ready=False,
                 is_live=False,
                 quality=guess_quality(server, signal.get("quality"), signal["url"]),
+                media_type=signal.get("media_type"),
             )
         )
     return streams
@@ -785,13 +821,9 @@ def looks_like_own_player(url: str, base: str) -> bool:
     """
     if not url or is_media_url(url) or is_download_only(url) or is_known_good(url):
         return False
-    host = host_of(url)
-    own = host_of(base)
-    if host and own and (
-        host == own or host.endswith("." + own) or own.endswith("." + host)
-    ):
-        return True
     path = urllib.parse.urlparse(url).path.lower()
+    # Hace falta que la ruta delate un reproductor: abrir "cualquier página del
+    # mismo dominio" gastaba el presupuesto en fichas y listados.
     return any(hint in path for hint in PLAYER_PAGE_HINTS)
 
 

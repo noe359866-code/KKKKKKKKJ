@@ -20,7 +20,7 @@ stdout ← {"streams":[
             {"name":"Mi Sitio · 1080p","title":"Mi Sitio · 1080p",
              "url":"https://cdn…/index.m3u8","quality":"1080p",
              "referer":"https://sitio/","userAgent":"Mozilla/5.0…",
-             "behaviorHints":{"notWebReady":false},"isLive":false}
+             "behaviorHints":{"notWebReady":false,"mediaType":"hls"},"isLive":false}
           ],
           "meta":{"cualquier":"dato de debug"}}
 ```
@@ -28,7 +28,9 @@ stdout ← {"streams":[
 Reglas:
 
 1. **Sólo JSON en stdout.** Cualquier log va a stderr con `_base.log()`.
-2. Devuelve `{"streams": []}` cuando el título no exista; no lances excepciones
+2. Si la URL no tiene extensión, manda `behaviorHints.mediaType` (`hls` /
+   `dash` / `mp4`): el cliente lo usa para elegir el `MediaSource` correcto.
+3. Devuelve `{"streams": []}` cuando el título no exista; no lances excepciones
    para casos esperados. `_base.run()` captura todo de todos modos.
 3. Respeta `timeoutMs`: el padre mata el proceso (SIGKILL al grupo) al vencer.
 4. Usa `_base.default_headers(payload)` para enviar el `Referer`/`User-Agent`
@@ -69,6 +71,9 @@ para los doce. Lo que hay hoy:
 | --- | --- |
 | `http_get()` | Descomprime gzip/deflate **aunque la cabecera mienta** o falte, resuelve la codificación con BOM → UTF-8 estricto → `charset` declarado → `<meta charset>` → cp1252 (los títulos latinos con `Ã©` rompían las búsquedas) y **reintenta una vez** los 429/5xx y los cortes de conexión. El reintento no alarga el presupuesto: si el primer intento ya gastó la mitad del `timeout`, no se repite. Los 4xx de verdad y los timeouts no se reintentan. |
 | `is_media_url()` | Acepta manifiestos que viajan en la consulta (`/player.php?id=7&file=master.m3u8`), no sólo rutas que acaban en `.m3u8`. |
+| `typed_media_urls()` | Lee las fuentes que declaran su tipo (`sources: [{file: "…", type: "application/x-mpegURL"}]`, `<source type="video/mp4" src="…">`) **aunque la URL no tenga extensión**, y `relative_media_urls()` resuelve las rutas relativas (`/hls/master.m3u8`). Antes, jwplayer sin extensión = "sin fuentes". |
+| `probe_media_kind()` | Para las URL que no delatan el tipo, lee los primeros 2 KB (`Range`) y devuelve `hls` / `dash` / `mp4`; si lo que hay es una página HTML, descarta el candidato en vez de ofrecerlo. Máximo dos sondas por servidor y con el deadline. |
+| `behaviorHints.mediaType` | Cada stream sale con `hls`, `dash` o `mp4` cuando se sabe: es la única pista que permite a ExoPlayer reproducir un manifiesto en `https://cdn/v/abc123`. |
 | `guess_quality()` + `stream()` | Deduce `4K` / `1440p` / `1080p` / `720p` / `480p` / `SD` / `CAM` de la etiqueta del servidor y de la URL, y `stream()` normaliza lo que mande el proveedor (`FullHD` → `1080p`). Si no hay pista, el campo se omite: el cliente prefiere "sin dato" a una etiqueta falsa. |
 | `best_match()` | Elige la ficha correcta **por tokens**, no por caracteres: ignora `latino`, `HD`, `1080p`, `subtitulado`, el año…, exige coincidencia de palabra (`up` ya no casa con `Upload`) y desempata por el título con menos palabras de más. Devuelve la puntuación, y `search_site()` sigue probando buscadores mientras el resultado sea flojo. |
 | `resolve_all()` | Segunda pasada para los embeds que fallaron (sólo si queda tiempo) y `meta.resolved_hosts` con las familias que sí resolvieron. |

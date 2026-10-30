@@ -341,6 +341,29 @@ class EngineTests(unittest.TestCase):
         for url in ("file:///test.mp4", "magnet:test", "https://site.invalid/embed/1", "https://site.invalid/a.mp4?e=1000000000"):
             self.assertIsNone(embedded.normalize_stream({"url": url}, provider, True))
 
+    def test_extensionless_media_survives_the_playable_filter(self):
+        """Un HLS en `/v/abc123` es una fuente válida: antes se tiraba."""
+        provider = self.engine.providers["pelisjuanita"]
+
+        typed = embedded.normalize_stream({
+            "url": "https://cdn.invalid/v/abc123",
+            "behaviorHints": {"mediaType": "hls"},
+        }, provider, False)
+        self.assertEqual("hls", typed["behaviorHints"]["mediaType"])
+        self.assertEqual("https://cdn.invalid/v/abc123", typed["url"])
+
+        # Sin pista explícita también se acepta: el failover decide.
+        self.assertIsNotNone(embedded.normalize_stream({"url": "https://cdn.invalid/v/def456"}, provider, False))
+        # Manifiesto dentro de la consulta del reproductor.
+        self.assertIsNotNone(embedded.normalize_stream(
+            {"url": "https://cdn.invalid/player.php?id=7&file=master.m3u8"}, provider, False))
+        # Lo que es una página o una imagen se sigue rechazando.
+        for url in ("https://cdn.invalid/embed/1", "https://cdn.invalid/pelicula/x",
+                    "https://cdn.invalid/a.html", "https://cdn.invalid/poster.jpg",
+                    "https://cdn.invalid/serie/x/1x03"):
+            self.assertIsNone(embedded.normalize_stream({"url": url}, provider, False), url)
+            self.assertFalse(embedded.is_playable_stream(url, {"mediaType": "hls"}), url)
+
     def test_invalid_requests_cannot_import_arbitrary_scripts(self):
         for name in ("../../outside", "template_provider", "example_provider", "os"):
             with self.assertRaises(ValueError):

@@ -70,6 +70,49 @@ class StreamSourceFilterTest {
     }
 
     /**
+     * `behaviorHints.mediaType` es la pista que manda el scraper cuando la URL
+     * no tiene extensión: sin ella ExoPlayer abriría un HLS como progresivo y el
+     * resultado sería "no reproduce nada" aunque la fuente fuera buena.
+     */
+    @Test
+    fun theScraperMediaTypeDecidesHowTheUrlIsPlayed() {
+        val hints = com.tanasi.streamflix.data.model.BehaviorHints(mediaType = "hls")
+        val hls = StreamDto(
+            name = "PelisJuanita",
+            title = "Película",
+            url = "https://cdn.example.com/v/abc123",
+            quality = "1080p",
+            behaviorHints = hints,
+        ).toSource(index = 0)
+
+        assertEquals(StreamSource.MEDIA_TYPE_HLS, hls?.mediaType)
+        assertTrue(hls?.isHls == true)
+        assertEquals("HLS · 1080p", hls?.formatLine)
+
+        val mp4 = StreamDto(
+            name = "PelisJuanita",
+            title = "Película",
+            url = "https://cdn.example.com/v/def456",
+            behaviorHints = com.tanasi.streamflix.data.model.BehaviorHints(mediaType = "video/mp4"),
+        ).toSource(index = 0)
+
+        assertEquals(StreamSource.MEDIA_TYPE_MP4, mp4?.mediaType)
+        assertFalse(mp4?.isHls == true)
+        assertEquals("MP4", mp4?.formatLine)
+    }
+
+    @Test
+    fun anUnknownMediaTypeFallsBackToTheExtension() {
+        assertNull(StreamSource.parseMediaType(null))
+        assertNull(StreamSource.parseMediaType("  "))
+        assertNull(StreamSource.parseMediaType("text/html"))
+        assertEquals(StreamSource.MEDIA_TYPE_HLS, StreamSource.parseMediaType("application/x-mpegURL"))
+        assertEquals(StreamSource.MEDIA_TYPE_DASH, StreamSource.parseMediaType("DASH"))
+        assertEquals(StreamSource.MEDIA_TYPE_MP4, StreamSource.parseMediaType("mp4"))
+        assertTrue(StreamSource(url = "https://cdn.example.com/master.m3u8", name = "n", title = "t").isHls)
+    }
+
+    /**
      * Línea técnica que enseña el selector de fuentes del reproductor: el
      * formato real del enlace y la calidad anunciada, nunca una calidad
      * inventada.

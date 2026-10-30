@@ -102,6 +102,40 @@ SCRIPT_SRC_RE = re.compile(r"""<script[^>]+?src\s*=\s*["']([^"']+)["']""", re.IG
 TAG_RE = re.compile(r"<[^>]+>")
 H_TAG_RE = re.compile(r"<h[1-4][^>]*>(.*?)</h[1-4]>", re.IGNORECASE | re.DOTALL)
 
+#: `file: "…"` y su `type` en el mismo objeto (jwplayer y sus clones). La URL
+#: puede no tener extensión: el `type` es lo que dice que es HLS o MP4.
+TYPED_SOURCE_RE = re.compile(
+    r"""(?:file|src|source|url|hls|mp4|video_url|videourl|media)\s*[:=]\s*["']([^"']{4,})["']"""
+    r"""[^{}]{0,150}?type\s*[:=]\s*["']([^"']{3,})["']""",
+    re.IGNORECASE,
+)
+#: Lo mismo con el `type` delante de la URL.
+TYPE_FIRST_RE = re.compile(
+    r"""type\s*[:=]\s*["']([^"']{3,})["']"""
+    r"""[^{}]{0,150}?(?:file|src|source|url|hls|mp4)\s*[:=]\s*["']([^"']{4,})["']""",
+    re.IGNORECASE,
+)
+
+#: Subcadena del MIME/tipo → tipo canónico de medio.
+MEDIA_TYPE_HINTS: Tuple[Tuple[str, str], ...] = (
+    ("mpegurl", "hls"),
+    ("m3u8", "hls"),
+    ("m3u", "hls"),
+    ("hls", "hls"),
+    ("mpeg-dash", "dash"),
+    ("mpd", "dash"),
+    ("dash", "dash"),
+    ("mp4", "mp4"),
+    ("m4v", "mp4"),
+    ("quicktime", "mp4"),
+)
+
+#: `src="/hls/x.m3u8"`: medios con ruta relativa (los CDN del propio sitio).
+RELATIVE_MEDIA_RE = re.compile(
+    r"""["']((?:/|\.{1,2}/)[^"'\s<>]{2,}?\.(?:m3u8|mpd|mp4|m4v|m3u)(?:\?[^"'\s<>]*)?)["']""",
+    re.IGNORECASE,
+)
+
 #: `?file=master.m3u8`: manifiestos que viajan en la consulta del reproductor.
 MEDIA_QUERY_RE = re.compile(
     r"""[?&][^=&\s]*=[^&\s]*\.(?:m3u8|mpd|mp4|m4v)(?:[&#\s]|$)""", re.IGNORECASE
@@ -448,6 +482,27 @@ def http_get(url: str, headers: Dict[str, str], timeout: float,
     return text, final_url or url, content_type
 
 
+def http_peek(url: str, headers: Dict[str, str], timeout: float, size: int = 2048) -> bytes:
+    """Primeros bytes de una URL, para saber **qué** es (HLS, MP4, HTML…).
+
+    Pide `Range: bytes=0-<size>` y lee como mucho `size`, así que no descarga el
+    vídeo. Devuelve ``b""`` ante cualquier error: quien llama decide.
+    """
+    if size <= 0:
+        return b""
+    request_headers = {"Range": f"bytes=0-{max_size(size)}", **headers}
+    try:
+        with open_url(urllib.request.Request(url, headers=request_headers),
+                      timeout=max(0.5, float(timeout))) as response:
+            return response.read(size)
+    except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
+        return b""
+
+
+def max_size(value: int) -> int:
+    return max(1, int(value)) - 1
+
+
 def http_get_json(url: str, headers: Dict[str, str], timeout: float) -> Any:
     """GET + JSON. Devuelve ``None`` si el cuerpo no es JSON válido."""
     import json
@@ -507,6 +562,71 @@ def host_of(url: str) -> str:
 def is_blocked(url: str) -> bool:
     host = host_of(url)
     return any(hint in host for hint in BLOCKED_HOST_HINTS)
+
+
+def media_kind(value: str) -> str:
+    """`"application/x-mpegURL"`, `"video/mp4"`, `"hls"` → `"hls"`/`"dash"`/`"mp4"`."""
+    text = (value or "").strip().lower()
+    if not text or len(text) > 60:
+        return ""
+    for hint, kind in MEDIA_TYPE_HINTS:
+        if hint in text:
+            return kind
+    return ""
+
+
+def media_kind_of_url(url: str) -> str:
+    """Tipo deducido de la extensión de la URL (``""`` si no hay ninguna)."""
+    path = urllib.parse.urlparse(url or "").path.lower()
+    if path.endswith((".m3u8", ".m3u")):
+        return "hls"
+    if path.endswith(".mpd"):
+        return "dash"
+    if path.endswith((".mp4", ".m4v")):
+        return "mp4"
+    return ""
+
+
+def typed_media_urls(html: str, page_url: str = "") -> List[Tuple[str, str]]:
+    """``[(url, tipo)]`` de las fuentes que declaran su `type`.
+
+    Es la mitad de los reproductores (jwplayer y sus clones:
+    `sources: [{file: "…", type: "application/x-mpegURL"}]`) y la URL no
+    siempre acaba en `.m3u8`/`.mp4`; antes todo eso se perdía y el resultado era
+    "sin fuentes" aunque el vídeo estuviera ahí.
+    """
+    if not html:
+        return []
+    text = searchable(html)
+    pairs: List[Tuple[str, str]] = []
+    for match in TYPED_SOURCE_RE.finditer(text):
+        pairs.append((match.group(1), match.group(2)))
+    for match in TYPE_FIRST_RE.finditer(text):
+        pairs.append((match.group(2), match.group(1)))
+    out: List[Tuple[str, str]] = []
+    seen = set()
+    for raw_url, raw_type in pairs:
+        kind = media_kind(raw_type)
+        if not kind:
+            continue
+        url = absolute(raw_url.strip(), page_url)
+        if not url or is_blocked(url) or url in seen:
+            continue
+        seen.add(url)
+        out.append((url, kind))
+    return out
+
+
+def relative_media_urls(html: str, page_url: str = "") -> List[str]:
+    """Manifiestos con ruta relativa (`src="/hls/master.m3u8"`)."""
+    if not html:
+        return []
+    out: List[str] = []
+    for match in RELATIVE_MEDIA_RE.finditer(searchable(html)):
+        url = absolute(match.group(1), page_url)
+        if url and is_media_url(url):
+            out.append(url)
+    return unique(out)
 
 
 def is_media_url(url: str) -> bool:
@@ -649,6 +769,8 @@ def media_urls(html: str, page_url: str = "", drop_params: Iterable[str] = ()) -
         if drop_params:
             url = strip_query_params(url, drop_params)
         out.append(url)
+    for url in relative_media_urls(html, page_url):
+        out.append(strip_query_params(url, drop_params) if drop_params else url)
     return unique(out)
 
 

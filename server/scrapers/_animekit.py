@@ -545,6 +545,7 @@ def build_streams(
                 # El addon ordena y muestra la calidad; si el sitio no la dice,
                 # se deduce de la etiqueta del servidor y de la URL.
                 quality=guess_quality(server, signal.get("quality"), signal["url"]),
+                media_type=signal.get("media_type"),
             )
         )
     return streams

@@ -64,6 +64,11 @@ object MediaSources {
      */
     fun mediaSource(context: Context, source: StreamSource): MediaSource {
         val mimeType = when {
+            /* La pista del scraper manda: es lo único que distingue un HLS de un
+             * MP4 cuando la URL no tiene extensión (`https://cdn/v/abc123`). */
+            source.mediaType == StreamSource.MEDIA_TYPE_HLS -> MimeTypes.APPLICATION_M3U8
+            source.mediaType == StreamSource.MEDIA_TYPE_DASH -> MimeTypes.APPLICATION_MPD
+            source.mediaType == StreamSource.MEDIA_TYPE_MP4 -> MimeTypes.VIDEO_MP4
             source.isHls -> MimeTypes.APPLICATION_M3U8
             source.isDash -> MimeTypes.APPLICATION_MPD
             source.url.substringBefore('?').endsWith(".mp4", true) -> MimeTypes.VIDEO_MP4

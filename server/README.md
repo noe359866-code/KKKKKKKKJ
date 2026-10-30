@@ -339,7 +339,8 @@ curl -s "http://localhost:7000/stream/tv/demo-live.json" | jq
           "Referer": "https://demo.local/",
           "User-Agent": "Mozilla/5.0 (Linux; Android 12; Android TV) …"
         },
-        "isLive": true
+        "isLive": true,
+        "mediaType": "hls"
       }
     }
   ],
@@ -359,6 +360,10 @@ Ida y vuelta con la app Android:
 - `behaviorHints.requestHeaders` → ExoPlayer los aplica vía
   `DefaultHttpDataSource`/`OkHttpDataSource` (necesario para providers con
   *hotlink protection*).
+- `behaviorHints.mediaType` (`hls` / `dash` / `mp4`) → cuando la URL no tiene
+  extensión, es lo que decide si se abre como `HlsMediaSource`,
+  `DashMediaSource` o `ProgressiveMediaSource`. Sin esa pista un `.m3u8` en
+  `/v/abc123` se intentaría reproducir como MP4 y no se vería nada.
 - El **orden del array es la lista de failover**: el cliente intenta
   `streams[0]`, y si falla pasa a `streams[1]`, etc.
 - Cabeceras útiles de diagnóstico: `X-Cache: HIT|STALE|MISS|COALESCED`,

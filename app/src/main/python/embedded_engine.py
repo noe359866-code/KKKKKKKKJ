@@ -27,6 +27,24 @@ from _htmlkit import http_get, http_get_json, install_url_opener, normalize, tok
 
 TYPES = frozenset(("movie", "series", "anime", "tv"))
 PLAYABLE = (".m3u8", ".mpd", ".mp4", ".m4v", ".webm", ".mkv", ".ts")
+
+#: Lo que **nunca** es un vídeo: páginas, imágenes y datos.
+NOT_PLAYABLE = (
+    ".html", ".htm", ".php", ".asp", ".aspx", ".jsp", ".json", ".txt", ".css",
+    ".js", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".xml",
+)
+
+#: Rutas de ficha/embed: son páginas, no medios (aunque no tengan extensión).
+NOT_PLAYABLE_HINTS = (
+    "/embed/", "/player/", "/reproductor/", "/pelicula/", "/peliculas/",
+    "/serie/", "/anime/", "/ver/",
+)
+
+#: Manifiesto o archivo de vídeo declarado dentro de la consulta.
+MEDIA_QUERY_RE = re.compile(r"\.(?:m3u8|mpd|mp4|m4v)(?:[&#]|$)", re.IGNORECASE)
+
+#: `behaviorHints.mediaType` que manda el scraper cuando la URL no lo dice.
+MEDIA_TYPES = frozenset(("hls", "dash", "mp4"))
 CINEMETA = "https://v3-cinemeta.strem.io"
 
 # Filas de Cinemeta (tipo publicado, id del catálogo upstream, título en la app).
@@ -267,15 +285,41 @@ def declared_expiry(url: str) -> Optional[int]:
     return min((value for value in values if value is not None), default=None)
 
 
+def is_playable_stream(url: str, hints: Optional[Dict[str, Any]] = None) -> bool:
+    """¿ExoPlayer puede abrir esta URL?
+
+    Antes se exigía una extensión de vídeo, y eso borraba la mitad de las
+    fuentes reales: los CDN que sirven HLS en `/v/abc123` y los reproductores
+    que declaran el tipo con `type: "application/x-mpegURL"`. Ahora se acepta
+    lo que no es claramente una página, con la pista `mediaType` del scraper por
+    delante.
+    """
+    parsed = urllib.parse.urlparse(url or "")
+    if parsed.scheme not in ("https", "http") or not parsed.netloc:
+        return False
+    path = parsed.path.lower()
+    if path.endswith(PLAYABLE):
+        return True
+    # `/player.php?id=7&file=master.m3u8`: el manifiesto viaja en la consulta.
+    if MEDIA_QUERY_RE.search(parsed.query or ""):
+        return True
+    hint = str((hints or {}).get("mediaType") or "").strip().lower()
+    if hint in MEDIA_TYPES and not path.endswith(NOT_PLAYABLE) \
+            and not any(marker in path for marker in NOT_PLAYABLE_HINTS):
+        return True
+    if path.endswith(NOT_PLAYABLE):
+        return False
+    return not any(marker in path for marker in NOT_PLAYABLE_HINTS)
+
+
 def normalize_stream(raw: Dict[str, Any], provider: Dict[str, Any], is_live: bool) -> Optional[Dict[str, Any]]:
     url = str(raw.get("url") or "").strip()
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in ("https", "http") or not parsed.netloc or not parsed.path.lower().endswith(PLAYABLE):
+    hints = dict(raw.get("behaviorHints") or {})
+    if not is_playable_stream(url, hints):
         return None
     expiry = declared_expiry(url)
     if expiry is not None and expiry <= time.time() + 5:
         return None
-    hints = dict(raw.get("behaviorHints") or {})
     headers = {"Referer": raw.get("referer") or provider.get("referer") or "",
                "User-Agent": raw.get("userAgent") or provider.get("userAgent") or DEFAULT_USER_AGENT,
                **(hints.get("requestHeaders") or {})}
