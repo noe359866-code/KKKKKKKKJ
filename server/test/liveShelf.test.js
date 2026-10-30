@@ -32,7 +32,7 @@ process.env.LIVE_CATALOG_PATH = path.join(fixtures, 'live-catalog.json');
 process.env.SCRAPER_DIR = path.join(fixtures, 'scrapers');
 process.env.CATALOG_LIVE_TTL_MINUTES = '15';
 
-const { getCatalog, invalidateCatalogs, loadLiveShelf } = await import('../src/services/catalogService.js');
+const { getCatalog, invalidateCatalogs, invalidateLiveShelf, loadLiveShelf } = await import('../src/services/catalogService.js');
 
 /* -------------------------------------------------------------------------- */
 /* Estantería de mentira, con la forma que devuelve _liveshelf.py             */
@@ -181,4 +181,34 @@ test('a broken scrape never throws: the row degrades and the curated list answer
   );
   assert.ok(Array.isArray(result.metas));
   delete process.env.LIVESHELF_FIXTURE;
+});
+
+/* -------------------------------------------------------------------------- */
+/* Una sola corrida por vez                                                   */
+/* -------------------------------------------------------------------------- */
+
+test('dos peticiones simultáneas comparten una sola corrida de la estantería', async () => {
+  invalidateLiveShelf();
+
+  /* El Home pide canales y agenda en paralelo: si cada una lanzara su propio
+   * proceso de Python, tres televisiones abriendo la app golpearían los sitios
+   * tres veces para traer el mismo JSON. */
+  const [first, second] = await Promise.all([loadLiveShelf(), loadLiveShelf()]);
+  assert.equal(first, second, 'la segunda petición se cuelga de la misma corrida');
+  assert.ok(first.channels.length > 0);
+
+  const cached = await loadLiveShelf();
+  assert.equal(cached, first, 'y después sale de la caché sin volver a raspar');
+});
+
+test('invalidar catálogos también tira la estantería de directo', async () => {
+  const before = await loadLiveShelf();
+  invalidateCatalogs();
+
+  const after = await loadLiveShelf();
+  assert.notEqual(after, before, 'la siguiente petición vuelve a raspar');
+  assert.deepEqual(
+    after.channels.map((meta) => meta.name),
+    before.channels.map((meta) => meta.name),
+  );
 });

@@ -118,6 +118,12 @@ export async function loadLiveCatalog({ force = false, path = config.catalogs.li
  * castigar a los proveedores y a la vez al usuario. */
 let liveShelfState = { data: null, loadedAtMs: 0, failedAtMs: 0 };
 
+/* Una sola corrida a la vez. El Home pide canales y agenda a la vez (y varias
+ * TV pueden abrir la app al mismo tiempo): sin esto, tres peticiones
+ * simultáneas levantan tres procesos de Python y golpean tres veces los sitios
+ * de origen para traer exactamente el mismo JSON. */
+let liveShelfInflight = null;
+
 /**
  * Canales y agenda que publican los proveedores de directo.
  *
@@ -139,7 +145,23 @@ export async function loadLiveShelf(options = {}) {
   if (!liveShelfState.data && now - liveShelfState.failedAtMs < 60_000) {
     return { channels: [], events: [] };
   }
+  /* Petición en vuelo: se comparte en vez de lanzar otra corrida. */
+  if (liveShelfInflight) return liveShelfInflight;
 
+  const run = scrapeLiveShelf();
+  liveShelfInflight = run;
+  const clear = () => {
+    if (liveShelfInflight === run) liveShelfInflight = null;
+  };
+  run.then(clear, clear);
+  return run;
+}
+
+/**
+ * Corre `_liveshelf.py` y guarda el resultado. Nunca lanza: un proveedor caído
+ * deja la estantería vacía (y el Home cae al JSON curado), no un 500.
+ */
+async function scrapeLiveShelf() {
   const providers = getProvidersFor(true)
     .map(({ id, label, referer, userAgent }) => ({ id, label, referer, userAgent }));
 
@@ -166,6 +188,12 @@ export async function loadLiveShelf(options = {}) {
   liveShelfState = { data, loadedAtMs: Date.now(), failedAtMs: 0 };
   log.debug('live shelf loaded', { channels: data.channels.length, events: data.events.length });
   return data;
+}
+
+/** Tira la estantería cacheada (admin y pruebas): la próxima petición raspa. */
+export function invalidateLiveShelf() {
+  liveShelfState = { data: null, loadedAtMs: 0, failedAtMs: 0 };
+  liveShelfInflight = null;
 }
 
 /** Fila `live`: canales o agenda, con los filtros de Stremio y respaldo curado. */
@@ -582,6 +610,7 @@ export function invalidateCatalogs() {
     }
   }
   liveState = { items: [], loadedAtMs: 0 };
+  invalidateLiveShelf();
   return removed;
 }
 
@@ -608,5 +637,6 @@ export default {
   catalogCacheKey,
   metaCacheKey,
   invalidateCatalogs,
+  invalidateLiveShelf,
   normalizeText,
 };

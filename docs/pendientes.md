@@ -10,7 +10,8 @@ Estado: CI verde (`testDebugUnitTest`, `lintDebug`, `lintRelease`,
 **272/272**, Python **105**, 19 clases de test en JVM.
 
 > **Actualización (§21):** los dos primeros puntos de P1 —subtítulos y pista de
-> audio— ya están implementados. Lo que sigue se conserva tal como se escribió
+> audio— ya están implementados, y `loadLiveShelf` ya comparte una sola corrida
+> entre peticiones simultáneas. Lo que sigue se conserva tal como se escribió
 > en la auditoría, con la nota de qué quedó hecho.
 
 ---
@@ -102,11 +103,11 @@ viendo. No hay `onSaveInstanceState`.
 
 ## P2 — Falta en el servidor
 
-- **`loadLiveShelf` sin single-flight** (`server/src/services/catalogService.js:131`):
-  tiene TTL y 60 s de calma tras un fallo, pero si `tv/canales` y `tv/agenda`
-  se piden a la vez con la caché fría se lanzan **dos** `_liveshelf.py`. Los
-  streams ya se coalescen (`streamService`, `result.coalesced`); la estantería de
-  directo no.
+- ✅ **`loadLiveShelf` sin single-flight** (antes en
+  `server/src/services/catalogService.js:131`): **hecho**. `scrapeLiveShelf()`
+  se comparte entre peticiones simultáneas (`liveShelfInflight`) e
+  `invalidateCatalogs()` tira también la estantería. Dos pruebas nuevas en
+  `server/test/liveShelf.test.js`.
 - **`hls_variants` sólo prueba `/m3u8/<id>`** (`server/scrapers/_hosters.py:209`
   reescribe `/play/<id>`): no prueba las variantes `/e/`, `/embed/`, `/v/` que
   usan varios hosters.
