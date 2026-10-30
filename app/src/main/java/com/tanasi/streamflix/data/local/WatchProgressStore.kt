@@ -55,6 +55,17 @@ class WatchProgressStore(context: Context) {
         write(profileId, read(profileId).filterNot { it.id == contentId })
     }
 
+    /**
+     * Quita un título **y sus episodios** ("Dejar de seguir viendo").
+     *
+     * `remove` borra una entrada exacta; desde la ficha de una serie el usuario
+     * espera que desaparezca la serie entera, no sólo el capítulo que dejó a
+     * medias.
+     */
+    fun removeTitle(profileId: String, contentId: String) = synchronized(lock) {
+        write(profileId, read(profileId).filterNot { it.belongsTo(contentId) })
+    }
+
     fun clear(profileId: String) = synchronized(lock) { write(profileId, emptyList()) }
 
     // ------------------------------------------------------------------ //

@@ -6,13 +6,17 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tanasi.streamflix.core.DeviceDetector
 import com.tanasi.streamflix.core.DpadKeys
 import com.tanasi.streamflix.data.model.PlaybackQueueCodec
+import com.tanasi.streamflix.data.model.PlaybackRestore
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.WatchProgress
 import com.tanasi.streamflix.di.ServiceLocator
@@ -31,15 +35,30 @@ import com.tanasi.streamflix.ui.theme.StreamflixTheme
  */
 class PlayerActivity : ComponentActivity() {
 
+    /**
+     * Petición en curso y segundo en el que va, para [onSaveInstanceState].
+     *
+     * El `ViewModel` es la fuente de verdad (zapear cambia de canal sin tocar
+     * el `Intent`); aquí sólo se copia lo último visto para poder reconstruir
+     * la sesión si el sistema mata el proceso.
+     */
+    private var latestRequest: PlaybackRequest? = null
+    private var latestPositionMs = 0L
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        val request = intent.toPlaybackRequest() ?: run {
+        /* Primero lo guardado por el sistema (muerte de proceso o vuelta de
+         * segundo plano), después el `Intent` que abrió la pantalla. */
+        val restored = PlaybackRestore.decode(savedInstanceState?.getString(STATE_PLAYBACK))
+        val request = restored?.request ?: intent.toPlaybackRequest() ?: run {
             finish()
             return
         }
+        latestRequest = request
+        latestPositionMs = restored?.positionMs ?: 0L
 
         val profileId = intent.getStringExtra(EXTRA_PROFILE_ID)
         val poster = intent.getStringExtra(EXTRA_POSTER)
@@ -65,19 +84,26 @@ class PlayerActivity : ComponentActivity() {
                 }
                 val playerViewModel: PlayerViewModel = viewModel(factory = factory)
 
+                /* Zapear cambia de canal dentro del `ViewModel`: se sigue aquí
+                 * para guardar el canal correcto, no el del `Intent`. */
+                val currentRequest by playerViewModel.current.collectAsStateWithLifecycle()
+                LaunchedEffect(currentRequest) { latestRequest = currentRequest }
+
                 PlayerScreen(
                     viewModel = playerViewModel,
                     onBack = { finish() },
                     onProgress = { positionMs, durationMs ->
+                        latestPositionMs = positionMs
+                        val current = latestRequest ?: request
                         /* Un directo no se "continúa": no hay posición que
                          * guardar. Sin perfil (lanzado desde fuera) tampoco. */
-                        if (!profileId.isNullOrBlank() && !request.isLive) {
+                        if (!profileId.isNullOrBlank() && !current.isLive) {
                             progressStore.save(
                                 profileId,
                                 WatchProgress(
-                                    id = request.id,
-                                    type = request.type,
-                                    title = request.title,
+                                    id = current.id,
+                                    type = current.type,
+                                    title = current.title,
                                     poster = poster,
                                     backdrop = backdrop,
                                     positionMs = positionMs,
@@ -90,6 +116,19 @@ class PlayerActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    /**
+     * Guarda la sesión para poder volver a ella.
+     *
+     * Se llama también al pasar a segundo plano (no sólo al morir el proceso):
+     * así el regreso es instantáneo y en el mismo segundo, sin depender de que
+     * el sistema llegue a matar la actividad.
+     */
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        val request = latestRequest ?: return
+        outState.putString(STATE_PLAYBACK, PlaybackRestore.encode(request, latestPositionMs))
     }
 
     private fun Intent.toPlaybackRequest(): PlaybackRequest? {
@@ -119,5 +158,8 @@ class PlayerActivity : ComponentActivity() {
         const val EXTRA_POSTER = "extra.poster"
         const val EXTRA_BACKDROP = "extra.backdrop"
         const val EXTRA_QUEUE = "extra.queue"
+
+        /** Estado de sesión (no es un extra del `Intent`). */
+        private const val STATE_PLAYBACK = "state.playback"
     }
 }

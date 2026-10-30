@@ -106,6 +106,10 @@ fun DetailsDialog(
     viewModel: DetailsViewModel,
     onDismiss: () -> Unit,
     onPlay: () -> Unit,
+    /** Hay progreso guardado de este título (o de alguno de sus episodios). */
+    hasProgress: Boolean = false,
+    /** "Dejar de seguir viendo": borra el título y sus episodios del perfil. */
+    onRemoveProgress: (() -> Unit)? = null,
 ) {
     val deviceProfile = LocalDeviceProfile.current
     val isTv = deviceProfile.requiresDpadFocus
@@ -145,6 +149,8 @@ fun DetailsDialog(
                         episodeLabel = viewModel.episodeLabel(),
                         onPlay = onPlay,
                         onDismiss = onDismiss,
+                        hasProgress = hasProgress,
+                        onRemoveProgress = onRemoveProgress,
                     )
                 }
 
@@ -174,6 +180,8 @@ private fun DetailsHero(
     episodeLabel: String?,
     onPlay: () -> Unit,
     onDismiss: () -> Unit,
+    hasProgress: Boolean = false,
+    onRemoveProgress: (() -> Unit)? = null,
 ) {
     val isTv = deviceProfile.requiresDpadFocus
     val playFocus = remember { FocusRequester() }
@@ -289,6 +297,11 @@ private fun DetailsHero(
                     onClick = onPlay,
                 )
                 GhostCapsule(text = "Cerrar", onClick = onDismiss)
+                /* Sólo aparece si hay algo que borrar: un botón de "quitar" en
+                 * un título que nunca se ha visto es ruido. */
+                if (hasProgress && onRemoveProgress != null) {
+                    GhostCapsule(text = "Dejar de seguir viendo", onClick = onRemoveProgress)
+                }
             }
 
             Spacer(Modifier.height(if (isTv) 12.dp else 8.dp))

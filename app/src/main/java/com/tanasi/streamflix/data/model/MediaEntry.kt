@@ -170,7 +170,14 @@ fun MediaEntry.playbackRequest(
     queue = queue,
 )
 
-/** Lo que el reproductor necesita saber para abrir un título. */
+/**
+ * Lo que el reproductor necesita saber para abrir un título.
+ *
+ * `@Serializable` por [PlaybackRestore]: es lo que se guarda en
+ * `onSaveInstanceState` para volver al mismo canal y al mismo segundo si el
+ * sistema mata el proceso mientras se ve algo.
+ */
+@Serializable
 data class PlaybackRequest(
     val id: String,
     val type: String,

@@ -90,6 +90,16 @@ import kotlin.math.max
 private const val CONTROLS_AUTO_HIDE_MS = 4_000L
 
 /**
+ * Cada cuánto se reporta el avance (y se guarda la posición del perfil).
+ *
+ * Antes sólo se guardaba al cerrar el reproductor: si el sistema mataba el
+ * proceso (una TV box con poca memoria lo hace), "Seguir viendo" y la
+ * restauración de la sesión se quedaban con la posición de la última salida
+ * limpia. 15 s es barato en disco y suficiente para no perder el hilo.
+ */
+private const val PROGRESS_REPORT_MS = 15_000L
+
+/**
  * Pantalla de reproducción.
  *
  * Tres estados: cargando fuentes, reproduciendo con failover, o "sin fuentes".
@@ -332,6 +342,20 @@ private fun PlaybackSurface(
             textTracks = PlayerTracks.options(tracks, C.TRACK_TYPE_TEXT, hasOverride(C.TRACK_TYPE_TEXT))
             audioTracks = PlayerTracks.options(tracks, C.TRACK_TYPE_AUDIO, hasOverride(C.TRACK_TYPE_AUDIO))
             delay(if (controlsVisible) 250L else 1_000L)
+        }
+    }
+
+    /* Avance periódico: mantiene al día "Seguir viendo" y el estado que se
+     * guarda en `onSaveInstanceState`. Sólo con duración conocida: guardar con
+     * `durationMs = 0` haría que el título se considerara no continuable y
+     * desapareciera de la fila. */
+    LaunchedEffect(player) {
+        while (true) {
+            delay(PROGRESS_REPORT_MS)
+            val duration = player.duration
+            if (player.isPlaying && duration > 0L) {
+                onProgress(player.currentPosition.coerceAtLeast(0L), duration)
+            }
         }
     }
 

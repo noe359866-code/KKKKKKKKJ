@@ -20,6 +20,7 @@ import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.toChannelQueue
 import com.tanasi.streamflix.data.model.PlaybackQueueCodec
 import com.tanasi.streamflix.data.model.PlaybackRequest
+import com.tanasi.streamflix.data.model.WatchProgress
 import com.tanasi.streamflix.data.model.Profile
 import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.di.ServiceLocator
@@ -238,9 +239,18 @@ class MainActivity : ComponentActivity() {
                 factory = factory,
             )
 
+            /* Progreso guardado del título o de cualquiera de sus episodios:
+             * es lo que decide si la ficha ofrece "Dejar de seguir viendo". */
+            val hasProgress = continueWatching.any { item -> WatchProgress.sameTitle(item.id, entry.id) }
+
             DetailsDialog(
                 entry = entry,
                 viewModel = detailsViewModel,
+                hasProgress = hasProgress,
+                onRemoveProgress = {
+                    progressStore.removeTitle(profile.id, entry.id)
+                    continueWatching = progressStore.entriesFor(profile.id)
+                },
                 onDismiss = {
                     details = null
                     detailsQueue = emptyList()

@@ -42,6 +42,16 @@ data class WatchProgress(
         else -> true
     }
 
+    /**
+     * ¿Esta entrada es del título [contentId]?
+     *
+     * Un episodio se guarda con el id completo (`serie:slug:1:3`): borrar
+     * "la serie" tiene que borrar también sus capítulos, y por eso se compara
+     * el prefijo con dos puntos de separación, no con un `startsWith` a secas
+     * (`serie:slug` no debe arrastrar `serie:slug-2`).
+     */
+    fun belongsTo(contentId: String): Boolean = sameTitle(id, contentId)
+
     /** "2 h 05 min restantes" (o "12 min restantes"). */
     fun remainingLabel(): String {
         val leftMs = (durationMs - positionMs).coerceAtLeast(0L)
@@ -75,5 +85,15 @@ data class WatchProgress(
 
         /** A falta de 90 s se considera terminado. */
         const val END_MARGIN_MS = 90_000L
+
+        /**
+         * ¿[entryId] es el título [contentId] o uno de sus episodios?
+         *
+         * La misma regla la usan el borrado (`WatchProgressStore.removeTitle`)
+         * y la ficha (`MainActivity`), para que el botón aparezca exactamente
+         * cuando hay algo que borrar.
+         */
+        fun sameTitle(entryId: String, contentId: String): Boolean =
+            contentId.isNotBlank() && (entryId == contentId || entryId.startsWith("$contentId:"))
     }
 }
