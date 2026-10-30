@@ -95,12 +95,14 @@ scrapers, sin necesitar una clave privada de TMDB.
 
 ### Deportes (área propia)
 
-La última fila del Home es **Deportes en vivo**, con el dibujo del Sports de
-Apple TV: no son pósters 2:3 sino marcadores.
+La última fila del Home es **Agenda deportiva**, con el dibujo del Sports de
+Apple TV: no son pósters 2:3 sino marcadores. Justo encima, **TV en vivo ·
+Canales** recoge los canales de todos los proveedores de directo.
 
-- **Datos reales, no inventados**: se leen de la agenda del día que ya publican
-  los scrapers en vivo (`futbolibre`), con título, competición, hora y estado.
-  `"Liga 1: Cienciano vs Atlético Grau"` se parte en liga y equipos.
+- **Datos reales, no inventados**: se leen de la agenda del día que publican los
+  scrapers en vivo (`futbolibre` y `damitv`, vía `_liveshelf.py`), con título,
+  competición, hora y estado. `"Liga 1: Cienciano vs Atlético Grau"` se parte en
+  liga y equipos, y un registro sin equipos ni hora se trata como canal.
 - Cada tarjeta enseña la competición en mayúsculas, los dos equipos con sus
   iniciales, la hora y, si el partido ya empezó, el chip **EN VIVO**.
 - Los partidos programados **no** se marcan como directos: la meta viaja con

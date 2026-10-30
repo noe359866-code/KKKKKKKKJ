@@ -1,0 +1,33 @@
+{
+  "$comment": "Fila de TV curada + las dos filas vivas (canales y agenda) para las pruebas.",
+  "catalogs": [
+    {
+      "type": "tv",
+      "id": "live",
+      "name": "TV en Vivo y Deportes",
+      "posterShape": "landscape",
+      "order": 1,
+      "genres": ["Deportes", "Canales", "Eventos"],
+      "source": { "kind": "local" }
+    },
+    {
+      "type": "tv",
+      "id": "canales",
+      "name": "TV en vivo · Canales",
+      "posterShape": "landscape",
+      "order": 2,
+      "genres": ["Deportes", "Canales"],
+      "source": { "kind": "live", "section": "channels" }
+    },
+    {
+      "type": "tv",
+      "id": "agenda",
+      "name": "Agenda deportiva",
+      "posterShape": "landscape",
+      "order": 3,
+      "genres": ["Deportes", "Eventos"],
+      "source": { "kind": "live", "section": "events" }
+    }
+  ],
+  "addons": []
+}

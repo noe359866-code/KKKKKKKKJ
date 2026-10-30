@@ -27,6 +27,8 @@ import { readFile } from 'node:fs/promises';
 
 import config from '../config.js';
 import { cache } from '../cache/TtlCache.js';
+import { runScript } from '../bridge/pythonBridge.js';
+import { getProvidersFor } from '../providers/index.js';
 import { ensureCatalogs, findCatalog } from '../catalogs/registry.js';
 import {
   buildCatalogPath,
@@ -107,6 +109,117 @@ export async function loadLiveCatalog({ force = false, path = config.catalogs.li
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* Canales y agenda recogidos de los proveedores de directo                   */
+/* -------------------------------------------------------------------------- */
+
+/* Un scrape cada `CATALOG_LIVE_TTL_MINUTES` para las dos filas: los canales de
+ * los sitios cambian poco y la agenda, cada hora. Pedirlo por request sería
+ * castigar a los proveedores y a la vez al usuario. */
+let liveShelfState = { data: null, loadedAtMs: 0, failedAtMs: 0 };
+
+/**
+ * Canales y agenda que publican los proveedores de directo.
+ *
+ * Se delega en `scrapers/_liveshelf.py` (el mismo constructor que usa el motor
+ * del APK) para no tener dos listas distintas en el servidor y en la app.
+ *
+ * @param {object} [options]
+ * @param {object} [options.liveShelf] - inyección para las pruebas
+ * @returns {Promise<{channels: object[], events: object[]}>}
+ */
+export async function loadLiveShelf(options = {}) {
+  if (options.liveShelf) return options.liveShelf;
+
+  const now = Date.now();
+  if (liveShelfState.data && now - liveShelfState.loadedAtMs < config.catalogs.liveTtlMs) {
+    return liveShelfState.data;
+  }
+  /* Tras un fallo no se reintenta en cada request: 1 minuto de calma. */
+  if (!liveShelfState.data && now - liveShelfState.failedAtMs < 60_000) {
+    return { channels: [], events: [] };
+  }
+
+  const providers = getProvidersFor(true)
+    .map(({ id, label, referer, userAgent }) => ({ id, label, referer, userAgent }));
+
+  const result = await runScript('_liveshelf.py', {
+    providers,
+    channelLimit: config.catalogs.pageSize,
+    eventLimit: config.catalogs.pageSize,
+    timeoutMs: config.catalogs.liveTimeoutMs,
+  }, { timeoutMs: config.catalogs.liveTimeoutMs * 2 + 4_000 });
+
+  const data = result.ok && result.data && typeof result.data === 'object'
+    ? {
+        channels: Array.isArray(result.data.channels) ? result.data.channels : [],
+        events: Array.isArray(result.data.events) ? result.data.events : [],
+      }
+    : { channels: [], events: [] };
+
+  if (data.channels.length === 0 && data.events.length === 0) {
+    liveShelfState = { ...liveShelfState, failedAtMs: Date.now() };
+    log.warn('live shelf came back empty', { providers: providers.length, reason: result.meta?.reason });
+    return { channels: [], events: [] };
+  }
+
+  liveShelfState = { data, loadedAtMs: Date.now(), failedAtMs: 0 };
+  log.debug('live shelf loaded', { channels: data.channels.length, events: data.events.length });
+  return data;
+}
+
+/** Fila `live`: canales o agenda, con los filtros de Stremio y respaldo curado. */
+async function liveMetas(definition, extra, options) {
+  const section = definition.source.section === 'events' ? 'events' : 'channels';
+  let metas = [];
+  try {
+    const shelf = await loadLiveShelf(options);
+    metas = Array.isArray(shelf[section]) ? shelf[section] : [];
+  } catch (error) {
+    log.warn('live shelf unavailable', { error: error.message });
+  }
+
+  /* Si el scrape no trae nada, la fila curada sigue en pie: una Home sin
+   * canales sería peor que una con los de siempre. La agenda es distinto: un
+   * partido de ayer pintado como "Hoy" es una tarjeta muerta, así que se queda
+   * vacía en vez de mentir. */
+  if (metas.length === 0) {
+    if (section === 'events') return [];
+    return localMetas(definition, extra);
+  }
+
+  metas = metas.map((meta) => ({
+    ...meta,
+    type: definition.type,
+    posterShape: 'landscape',
+  }));
+  return filterLiveMetas(metas, extra);
+}
+
+/** Género, búsqueda y `skip` sobre las tarjetas de la estantería. */
+function filterLiveMetas(metas, extra) {
+  let result = metas;
+
+  if (extra.genre) {
+    const wanted = normalizeText(extra.genre);
+    result = result.filter((meta) =>
+      (meta.genres || []).some((genre) => normalizeText(genre) === wanted));
+  }
+
+  if (extra.search) {
+    const query = normalizeText(extra.search);
+    result = result.filter((meta) =>
+      normalizeText(meta.name).includes(query) ||
+      normalizeText(meta.league || '').includes(query) ||
+      normalizeText(meta.description || '').includes(query) ||
+      (meta.genres || []).some((genre) => normalizeText(genre).includes(query)));
+  }
+
+  const skip = Number(extra.skip);
+  if (Number.isInteger(skip) && skip > 0) result = result.slice(skip);
+  return result;
+}
+
 /**
  * Un canal del JSON local → meta Stremio.
  *
@@ -164,7 +277,13 @@ export async function getCatalog({ type, id, extra = {} }, options = {}) {
   if (!definition) return null;
 
   const key = catalogCacheKey({ type, id, extra });
-  const ttlMs = extra.search ? config.catalogs.searchTtlMs : config.catalogs.ttlMs;
+  /* Los canales y la agenda se recogen con su propia ventana: cachear 30 min una
+   * agenda que cambia cada hora dejaría partidos ya jugados en la fila. */
+  const ttlMs = extra.search
+    ? config.catalogs.searchTtlMs
+    : definition.source.kind === 'live'
+      ? config.catalogs.liveTtlMs
+      : config.catalogs.ttlMs;
 
   const { value, source, coalesced } = await cache.fetch(
     key,
@@ -213,6 +332,8 @@ function metasFor(definition, extra, options) {
       return cinemetaMetas(definition, extra, options);
     case 'remote':
       return remoteMetas(definition, extra, options);
+    case 'live':
+      return liveMetas(definition, extra, options);
     default:
       return localMetas(definition, extra);
   }
@@ -482,6 +603,7 @@ export default {
   getMeta,
   resolveTitle,
   loadLiveCatalog,
+  loadLiveShelf,
   liveItemToMeta,
   catalogCacheKey,
   metaCacheKey,

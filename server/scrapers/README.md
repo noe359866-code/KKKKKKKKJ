@@ -48,6 +48,7 @@ Reglas:
 | `tvenvivo.py` | **Proveedor real** de `www.tvenvivo.org` (TV/deportes en directo, LATAM). Ver la sección siguiente. |
 | `deportelibre.py` | **Proveedor real** de `deportelibre.top` (agenda deportiva + canales 24/7). Ver su sección. |
 | `futbolibre.py` | **Proveedor real** de `futbolibre.live` (canales 24/7 de México + agenda de partidos con varias señales). Ver su sección. |
+| `_liveshelf.py` | **Canales y agenda** para las filas de TV: recoge `load_index` / `load_channels` / `load_agenda` de todos los proveedores de directo, normaliza, deduplica y ordena. No es un proveedor: no resuelve streams. |
 | `_livekit.py` | Plomería compartida de los proveedores de **directo**: `harvest()` (página → reproductores → `.m3u8`), `media_candidates()`, `anchor_entries()`, `build_live_streams()`, `decode_embedded_url()`. Sin catálogo propio. |
 | `livelive24.py` | **Proveedor real** de `livelive24.com` (índice Live Sport + Live TV). Ver la sección de directo. |
 | `damitv.py` | **Proveedor real** de `damitv.st` (API pública `/papi/`: partidos + canales 24/7). Ver la sección de directo. |
@@ -139,6 +140,43 @@ Prueba sin arrancar el servidor:
 ```bash
 node scripts/bridge-demo.js mi_sitio.py '{"type":"movie","id":"tt0133093","provider":"mi-sitio"}'
 ```
+
+## TV y agenda deportiva: `_liveshelf.py`
+
+Las filas de TV del addon ya no se escriben a mano. `_liveshelf.py` junta lo que
+cada proveedor de directo ya sabe enumerar y lo deja en dos listas:
+
+```
+futbolibre      load_channels → canales      load_agenda → partidos del día
+damitv          load_index    → partidos (y canales 24 h, que se separan solos)
+ntv · streamcorner · tvenvivo · deportelibre · livelive24   load_index → canales
+             │
+             ▼
+    {"channels": [...], "events": [...]}
+```
+
+- **Deduplicado por id y por nombre**: el mismo canal en dos sitios es una sola
+  tarjeta, y manda el proveedor que va antes en `providers.json`.
+- **Lo curado va primero**: los ids de `config/live-catalog.json` entran delante
+  y bloquean duplicados. Ese JSON ya no hace falta para "tener canales": es el
+  subconjunto que debe salir siempre (y el respaldo si ningún sitio responde).
+- **La agenda no se siembra a mano**: los partidos salen sólo de la agenda real.
+  `"Liga 1: Cienciano vs Atlético Grau"` → liga + equipos; un registro sin
+  equipos ni hora se considera canal.
+- **Un proveedor roto no vacía la fila**: cada uno se llama con su propio
+  `Deadline` y sus fallos se anotan en `meta.errors`.
+
+```bash
+python3 scrapers/_liveshelf.py --json                     # las dos listas
+python3 scrapers/_liveshelf.py --json --section events     # sólo la agenda
+python3 scrapers/_liveshelf.py --json --section channels --limit 40
+echo '{"section":"events","providers":[{"id":"futbolibre","label":"Fútbol Libre"}]}' \
+  | python3 scrapers/_liveshelf.py
+```
+
+Variables: `LIVESHELF_TIMEOUT_MS` (6000 por proveedor), `LIVESHELF_CHANNELS`
+(120), `LIVESHELF_EVENTS` (60). Pruebas: `app/src/test/python/test_live_shelf.py`
+(constructor) y `server/test/liveShelf.test.js` (filas del servidor).
 
 ## Directo: `_livekit.py` y los cuatro proveedores nuevos
 

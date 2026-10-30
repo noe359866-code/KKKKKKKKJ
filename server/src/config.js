@@ -163,6 +163,12 @@ export const config = {
     configPath: process.env.CATALOGS_CONFIG || path.join(ROOT, 'config', 'catalogs.json'),
     /* Curated live TV / sports channels: the "local" half of the home screen. */
     liveCatalogPath: process.env.LIVE_CATALOG_PATH || path.join(ROOT, 'config', 'live-catalog.json'),
+    /* Channels and the sports agenda are collected from the live providers
+     * (`scrapers/_liveshelf.py`). That is a scrape per window, not per request:
+     * 15 min for both, and a per-provider budget so a slow site cannot hold
+     * the row. If every provider fails, the curated JSON is still served. */
+    liveTtlMs: envInt('CATALOG_LIVE_TTL_MINUTES', 15, { min: 1, max: 1440 }) * 60_000,
+    liveTimeoutMs: envInt('CATALOG_LIVE_TIMEOUT_MS', 2_500, { min: 500, max: 30_000 }),
     /* Third-party Stremio addons whose *catalogs* we republish (see the
      * `addons` block in config/catalogs.json). Their manifest is fetched once
      * per boot and cached on disk, so a cold start behind a broken WAN still

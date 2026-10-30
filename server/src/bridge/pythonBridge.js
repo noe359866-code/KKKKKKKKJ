@@ -80,21 +80,25 @@ async function resolveScript(scriptName) {
 }
 
 /**
- * Runs a Python scraper and resolves with its parsed JSON output.
+ * Runs a Python script of the scraper directory and resolves with its raw JSON.
+ *
+ * `runScraper` is the stream-shaped adapter on top of this: some scripts answer
+ * with `{streams, meta}`, others (like the live shelf builder) with their own
+ * document. Both share the spawn/timeout/kill behaviour.
  *
  * @param {string} scriptName  file name inside SCRAPER_DIR, e.g. "demo_provider.py"
  * @param {object} payload     JSON-serialisable input for the script
  * @param {object} [options]
  * @param {number} [options.timeoutMs]
- * @returns {Promise<{ ok: boolean, streams: object[], meta: object }>}
+ * @returns {Promise<{ ok: boolean, data: any, meta: object }>}
  */
-export async function runScraper(scriptName, payload = {}, options = {}) {
+export async function runScript(scriptName, payload = {}, options = {}) {
   const timeoutMs = options.timeoutMs ?? config.scrapers.timeoutMs;
   const scriptPath = await resolveScript(scriptName);
 
   if (!scriptPath) {
     log.warn('scraper script not found', { scriptName, dir: config.scrapers.dir });
-    return { ok: false, streams: [], meta: { reason: 'script_not_found' } };
+    return { ok: false, data: null, meta: { reason: 'script_not_found' } };
   }
 
   await semaphore.acquire();
@@ -129,7 +133,7 @@ export async function runScraper(scriptName, payload = {}, options = {}) {
           scriptName,
           durationMs: Number(durationMs.toFixed(1)),
           ok: result.ok,
-          streams: result.streams?.length ?? 0,
+          streams: result.data?.streams?.length ?? result.data?.length ?? 0,
           ...(result.meta || {}),
         });
         resolve(result);
@@ -160,27 +164,24 @@ export async function runScraper(scriptName, payload = {}, options = {}) {
       });
 
       child.on('error', (error) => {
-        finish({ ok: false, streams: [], meta: { reason: 'spawn_error', error: error.message } });
+        finish({ ok: false, data: null, meta: { reason: 'spawn_error', error: error.message } });
       });
 
       child.on('close', (code, signal) => {
         if (killedByTimeout) {
-          return finish({ ok: false, streams: [], meta: { reason: 'timeout', timeoutMs } });
+          return finish({ ok: false, data: null, meta: { reason: 'timeout', timeoutMs } });
         }
         if (code !== 0) {
           log.warn('scraper exited with error', { scriptName, code, signal, stderr: stderr.slice(0, 500) });
-          return finish({ ok: false, streams: [], meta: { reason: 'exit_error', code, stderr: stderr.slice(-500) } });
+          return finish({ ok: false, data: null, meta: { reason: 'exit_error', code, stderr: stderr.slice(-500) } });
         }
 
         try {
           const parsed = JSON.parse(stdout);
-          /* The script may return either { streams: [...] } or [...] */
-          const streams = Array.isArray(parsed) ? parsed : parsed.streams || [];
-          if (!Array.isArray(streams)) throw new Error('"streams" is not an array');
-          finish({ ok: true, streams, meta: parsed.meta || {} });
+          finish({ ok: true, data: parsed, meta: parsed?.meta || {} });
         } catch (error) {
           log.warn('invalid JSON from scraper', { scriptName, error: error.message, sample: stdout.slice(0, 300) });
-          finish({ ok: false, streams: [], meta: { reason: 'invalid_json', error: error.message } });
+          finish({ ok: false, data: null, meta: { reason: 'invalid_json', error: error.message } });
         }
       });
 
@@ -193,4 +194,24 @@ export async function runScraper(scriptName, payload = {}, options = {}) {
   }
 }
 
-export default { runScraper };
+/**
+ * Stream-shaped adapter: `{ streams, meta }` or a bare array.
+ *
+ * @returns {Promise<{ ok: boolean, streams: object[], meta: object }>}
+ */
+export async function runScraper(scriptName, payload = {}, options = {}) {
+  const result = await runScript(scriptName, payload, options);
+  if (!result.ok) return { ok: false, streams: [], meta: result.meta };
+  const parsed = result.data;
+  try {
+    /* The script may return either { streams: [...] } or [...] */
+    const streams = Array.isArray(parsed) ? parsed : parsed.streams || [];
+    if (!Array.isArray(streams)) throw new Error('"streams" is not an array');
+    return { ok: true, streams, meta: result.meta };
+  } catch (error) {
+    log.warn('invalid scraper payload', { scriptName, error: error.message });
+    return { ok: false, streams: [], meta: { reason: 'invalid_json', error: error.message } };
+  }
+}
+
+export default { runScraper, runScript };

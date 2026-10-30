@@ -356,7 +356,8 @@ sincroniza la lista pública [iptv-org/iptv](https://github.com/iptv-org/iptv)
 (emisión libre, HLS) desde el motor Python:
 
 - Filas: `iptvorg` (abiertos del mundo + México/España/Argentina/Colombia/Chile/
-  Perú) y, debajo, `bundled_live` con los canales guardados del servidor.
+  Perú), `bundled_live` con los canales fijados a mano y `canales` con **todos**
+  los que publican los proveedores de directo (ver abajo).
 - Ids `iptvorg:<base64url de la URL>`: `streams()` los decodifica y devuelve la
   URL tal cual, con `isLive` y el `User-Agent` del reproductor. **No pasan por
   ningún proveedor ni scraper**, así que no dependen de una web caída.
@@ -365,6 +366,38 @@ sincroniza la lista pública [iptv-org/iptv](https://github.com/iptv-org/iptv)
 - Si la red del televisor no alcanza `api.github.com`, quedan siete canales
   empaquetados (ADN 40, Azteca Internacional, Imagen TV, Las Estrellas,
   TeleFormula, Teleritmo, Popcorn Central) con su URL de HLS verificada.
+
+### TV y agenda deportiva con canales (sin tocar JSON)
+
+La TV no se llena a mano: `server/scrapers/_liveshelf.py` pregunta a cada
+proveedor de directo por su índice (`load_index` / `load_channels` / `load_agenda`),
+normaliza lo que devuelve y deduplica. El mismo constructor lo usan el motor del
+APK (fila `canales` y `deportes`) y el servidor (`/catalog/tv/canales.json` y
+`/catalog/tv/agenda.json`), así que las dos mitades del proyecto enseñan la misma
+lista.
+
+```
+proveedor            qué aporta
+──────────────────   ─────────────────────────────────────────────
+futbolibre           canales del sitio + agenda del día (liga, hora, estado)
+damitv               índice de eventos: partidos con equipos y liga
+ntv · streamcorner   canales/eventos del índice (`/watch/…`, `/stream/…`)
+tvenvivo · deportelibre · livelive24   canales
+```
+
+- **Canales**: se publican todos, con su proveedor en la tarjeta y sin repetir
+  el mismo nombre dos veces (`ESPN 1` de Fútbol Libre y de DAMITV es una sola
+  tarjeta). Los canales de `live-catalog.json` van **primero** y bloquean
+  duplicados: son el subconjunto que debe salir siempre, aunque un sitio caiga.
+- **Agenda deportiva**: partidos de todos los proveedores con programación, en
+  directo primero y luego por hora. Cada tarjeta lleva liga, equipos, hora,
+  estado y el proveedor que la sirve. **No** se siembra con partidos del JSON:
+  un partido caducado sería un Play muerto.
+- Si el scrape no trae nada, la fila de canales cae a la lista curada (servidor)
+  o a la última copia buena de canales (app) y la de agenda se queda vacía:
+  mejor vacía que con el partido de ayer.
+- Caché: 20 min en el motor del APK y 15 min en el servidor (`CATALOG_LIVE_TTL_MINUTES`),
+  con 2,5 s de presupuesto por proveedor (`CATALOG_LIVE_TIMEOUT_MS`).
 
 ### Player and automatic failover
 

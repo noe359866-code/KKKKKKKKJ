@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import _embedded_catalogs as providers
+import _liveshelf
 from _base import DEFAULT_USER_AGENT, log
 from _embedded_cache import JsonCache
 from _htmlkit import http_get, http_get_json, install_url_opener, normalize, token_expiry
@@ -67,6 +68,10 @@ CINEMETA_CATALOGS = (
 # canales deportivos que aparezcan en la lista pública. No se inventa nada: si
 # la agenda no trae partidos, la fila se queda vacía y el cliente la descarta.
 SPORTS_CATALOG_ID = "deportes"
+#: Canales que publican los proveedores de directo (se recogen solos).
+CHANNELS_CATALOG_ID = "canales"
+SHELF_TTL_SECONDS = 20 * 60
+SHELF_STALE_SECONDS = 7 * 86400
 SPORTS_EVENT_LIMIT = 24
 SPORTS_CHANNEL_LIMIT = 8
 SPORTS_KEYWORDS = (
@@ -223,52 +228,13 @@ def is_sports_channel(name: str) -> bool:
     return any(keyword in lowered for keyword in SPORTS_KEYWORDS)
 
 
-def clean_team(name: str) -> str:
-    """Nombre de equipo sin coletillas del titular: `"Celtics (Final)"` → `"Celtics"`."""
-    return re.sub(r"\s*\([^)]*\)\s*$", "", (name or "").strip()).strip(" -·")
-
-
 def sports_event_meta(provider: Dict[str, Any], event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Partido de la agenda → meta de la fila `deportes`.
 
-    La agenda del scraper publica ``"Liga 1: Cienciano vs Atlético Grau"`` con
-    hora y estado; aquí se separa liga y equipos, se marca el directo y se deja
-    el id que `/stream` ya sabe resolver (``tv:<proveedor>:evento:<slug>``).
+    La lógica vive en `_liveshelf.event_meta` (la comparten el motor, el
+    servidor y las pruebas); aquí queda el nombre histórico del motor.
     """
-    event_id = str(event.get("id") or "").strip()
-    title = str(event.get("title") or "").strip()
-    if not event_id or not title:
-        return None
-    league, _, teams = title.partition(":")
-    teams = (teams or title).strip()
-    league = league.strip() if teams != title else ""
-    halves = re.split(r"\s+(?:vs\.?|v|contra|–|-)\s+", teams, maxsplit=1, flags=re.IGNORECASE)
-    home, away = (clean_team(halves[0]), clean_team(halves[1])) if len(halves) == 2 else ("", "")
-    if not home or not away:
-        home = away = ""
-    status = str(event.get("status") or "").strip()
-    start = str(event.get("time") or "").strip()
-    on_air = bool(re.search(r"\b(?:en\s*vivo|live|directo)\b", status, re.IGNORECASE))
-    if on_air:
-        when = f"En vivo · {start}" if start else "En vivo"
-    else:
-        when = f"Hoy · {start}" if start else "Hoy"
-    return {
-        "id": f"tv:{provider['id']}:{event_id}",
-        "type": "tv",
-        "name": f"{home} vs {away}" if home and away else teams,
-        "sourceName": provider.get("label") or provider["id"],
-        "description": title,
-        "releaseInfo": when,
-        "startTime": start,
-        "status": status or when,
-        "league": league,
-        "home": home,
-        "away": away,
-        "genres": [name for name in ("Deportes", league) if name],
-        "onAir": on_air,
-        "live": True,
-    }
+    return _liveshelf.event_meta(provider, event)
 
 
 def declared_expiry(url: str) -> Optional[int]:
@@ -345,6 +311,9 @@ class Engine:
             if name in providers.MODULES and item.get("script") == f"{name}.py" and item.get("enabled", True):
                 self.providers[name] = item
         self.live = []
+        # La estantería necesita el JSON curado tal cual (cada entrada trae su
+        # `category`); `normalize_meta` se queda sólo con lo presentable.
+        self.live_raw = [item for item in live.get("items") or [] if isinstance(item, dict)]
         for item in live.get("items") or []:
             meta = normalize_meta({**item, "type": "tv"}, "tv")
             if meta:
@@ -380,15 +349,74 @@ class Engine:
                      "provider": "iptv-org"})
         rows.append({"id": "bundled_live", "type": "tv", "name": "TV en vivo · Canales guardados",
                      "posterShape": "landscape", "order": len(rows), "source": "embedded"})
-        # Área de deportes: partidos de hoy, no un catálogo de fichas. Va después
-        # de la TV en vivo para que el hero siga saliendo de Cinemeta/canales.
-        rows.append({"id": SPORTS_CATALOG_ID, "type": "tv", "name": "Deportes en vivo",
+        # El resto de canales de los proveedores de directo, recogidos solos: la
+        # lista curada de arriba es el subconjunto fijo, esta es la grande.
+        rows.append({"id": CHANNELS_CATALOG_ID, "type": "tv", "name": "TV en vivo · Canales",
+                     "posterShape": "landscape", "order": len(rows), "source": "embedded"})
+        # Agenda deportiva: partidos de hoy con su liga, equipos, hora y estado.
+        # Va al final para que el hero siga saliendo de Cinemeta/canales.
+        rows.append({"id": SPORTS_CATALOG_ID, "type": "tv", "name": "Agenda deportiva",
                      "posterShape": "landscape", "order": len(rows), "source": "embedded",
                      "layout": "sports"})
         # Los scrapers NO publican filas: no tienen portada, ni póster 2:3, ni
         # orden curado, y su listado es una sopa de títulos repetidos. Sólo
         # resuelven streams (ver `streams`), igual que los addons del servidor.
         return {"catalogs": rows}
+
+    @staticmethod
+    def _shelf_shape(value: Any) -> bool:
+        return (isinstance(value, dict) and isinstance(value.get("channels"), list)
+                and isinstance(value.get("events"), list))
+
+    def _build_shelf(self) -> Dict[str, Any]:
+        """Un scrape de los proveedores de directo, ya normalizado para la UI."""
+        live_providers = [provider for name, provider in self.providers.items()
+                          if name in providers.LIVE]
+        # Sólo los canales se fijan a mano. La agenda es dato del día: si se
+        # sembrara con el JSON curado, un partido de la semana pasada seguiría
+        # apareciendo como "Hoy" y su Play estaría muerto.
+        pinned = [item for item in self.live_raw
+                  if "evento" not in normalize(str(item.get("category") or ""))]
+        try:
+            built = _liveshelf.build(live_providers, curated=pinned)
+        except Exception as exc:
+            log("embedded live shelf unavailable:", type(exc).__name__)
+            return {"channels": [], "events": [], "meta": {}}
+        return {
+            "channels": [meta for item in built.get("channels") or []
+                         if (meta := normalize_meta(item, "tv"))],
+            "events": [meta for item in built.get("events") or []
+                       if (meta := normalize_meta(item, "tv"))],
+            "meta": built.get("meta") or {},
+        }
+
+    def live_shelf(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Canales y agenda de los proveedores de directo, con caché de 20 min.
+
+        Se recoge en paralelo (`_liveshelf`) y se guarda entero: la Home pide las
+        dos filas casi a la vez y no tiene sentido pagar dos veces el scraping.
+        Un scrape vacío **no** reutiliza partidos viejos (serían tarjetas
+        muertas: la agenda es dato del día), pero sí los canales: una lista de
+        canales de ayer sigue sirviendo.
+        """
+        fresh = self.cache.get("shelf:live")
+        if self._shelf_shape(fresh):
+            return fresh
+
+        shelf = self._build_shelf()
+        if shelf["channels"] or shelf["events"]:
+            self.cache.put("shelf:live", shelf, SHELF_TTL_SECONDS)
+            self._remember(shelf["channels"] + shelf["events"])
+            return shelf
+
+        stale = self.cache.get("shelf:live", stale_seconds=SHELF_STALE_SECONDS)
+        channels = stale.get("channels") if self._shelf_shape(stale) else []
+        channels = channels or []
+        if channels:
+            log("embedded live shelf degraded: only stale channels")
+        self._remember(channels)
+        return {"channels": channels, "events": [],
+                "meta": {"degraded": True, "reason": "shelf_unavailable"}}
 
     def iptv_metas(self) -> List[Dict[str, Any]]:
         """Canales abiertos ya normalizados, con caché de 6 h (y 7 días de respaldo)."""
@@ -429,24 +457,12 @@ class Engine:
             return cached["metas"]
         metas: List[Dict[str, Any]] = []
         seen = set()
-        for name, provider in self.providers.items():
-            if name not in providers.LIVE:
-                continue
-            try:
-                agenda = getattr(providers.module_for(name), "load_agenda", None)
-                if not callable(agenda):
-                    continue
-                # Deadline en milisegundos, como el resto de los scrapers.
-                events = agenda(providers.default_headers(provider), providers.Deadline(8000)) or []
-            except Exception as exc:
-                log("embedded sports agenda unavailable:", name, type(exc).__name__)
-                continue
-            for event in events[:SPORTS_EVENT_LIMIT]:
-                item = sports_event_meta(provider, event)
-                if item and item["id"] not in seen:
-                    seen.add(item["id"])
-                    metas.append(item)
-        metas = [normalized for meta in metas if (normalized := normalize_meta(meta, "tv"))]
+        # La agenda sale de la estantería: los partidos de todos los proveedores
+        # que publican programación (Fútbol Libre, DAMITV…), ya sin repetidos.
+        for meta in self.live_shelf().get("events") or []:
+            if meta["id"] not in seen:
+                seen.add(meta["id"])
+                metas.append(meta)
         # Directo primero y, dentro de cada grupo, por hora de comienzo.
         metas.sort(key=lambda meta: (not meta.get("onAir"), meta.get("startTime") or "99:99"))
         channels = [meta for meta in self.iptv_metas()
@@ -481,6 +497,8 @@ class Engine:
             metas = self.iptv_metas()
         elif catalog_id == "bundled_live" and media_type == "tv":
             metas = self.live
+        elif catalog_id == CHANNELS_CATALOG_ID and media_type == "tv":
+            metas = self.live_shelf()["channels"]
         elif catalog_id == SPORTS_CATALOG_ID and media_type == "tv":
             metas = self.sports_metas()
         elif catalog_id in self.providers:

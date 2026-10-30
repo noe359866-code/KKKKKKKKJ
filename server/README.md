@@ -187,6 +187,20 @@ curl -s http://localhost:7000/manifest.json | jq
         { "name": "skip", "isRequired": false },
         { "name": "genre", "options": ["Deportes", "Canales", "Eventos"], "isRequired": false }
       ]
+    },
+    {
+      "type": "tv",
+      "id": "canales",
+      "name": "TV en vivo · Canales",
+      "posterShape": "landscape",
+      "extra": [ …search, skip, genre["Deportes", "Canales"] ]
+    },
+    {
+      "type": "tv",
+      "id": "agenda",
+      "name": "Agenda deportiva",
+      "posterShape": "landscape",
+      "extra": [ …search, skip, genre["Deportes", "Eventos"] ]
     }
   ]
 }
@@ -195,6 +209,24 @@ curl -s http://localhost:7000/manifest.json | jq
 > `idPrefixes` se omite a propósito en el recurso `catalog`: los canales en vivo
 > usan ids como `tv:futbolibre:espn-1`, que no empiezan por `tt`. Declarar el
 > prefijo escondería esas filas en Stremio.
+
+### TV en vivo y agenda deportiva: tres filas, dos orígenes
+
+| Fila | Origen | Qué enseña |
+| --- | --- | --- |
+| `tv/live` | `config/live-catalog.json` (`kind: local`) | Los canales **fijados a mano**. Es el respaldo: si todo lo demás falla, sigue ahí. |
+| `tv/canales` | `kind: "live"` → `scrapers/_liveshelf.py` | Todos los canales que publican los proveedores de directo, deduplicados. |
+| `tv/agenda` | `kind: "live"` → `scrapers/_liveshelf.py` | Los partidos de hoy con liga, equipos, hora, estado y proveedor. |
+
+La estantería se construye una vez por ventana (`CATALOG_LIVE_TTL_MINUTES`, 15
+min) y se comparte con el motor del APK, que usa el mismo `_liveshelf.py`. Si el
+scrape no trae nada, `tv/canales` cae a la lista curada y `tv/agenda` se queda
+vacía a propósito: un partido de ayer pintado como "Hoy" es una tarjeta muerta.
+
+```bash
+curl -s "http://localhost:7000/catalog/tv/canales.json" | jq '.metas | length'
+python3 scrapers/_liveshelf.py --json --section events | jq '.items[0]'
+```
 
 ### Catálogos
 
@@ -280,6 +312,8 @@ Extras del protocolo, como segmentos de path:
 ```bash
 curl -s "http://localhost:7000/catalog/movie/top/search=matrix.json" | jq '.metas[0]'
 curl -s "http://localhost:7000/catalog/tv/live/genre=Deportes.json" | jq '.metas[].name'
+curl -s "http://localhost:7000/catalog/tv/canales.json" | jq '.metas[].name'   # todos los canales
+curl -s "http://localhost:7000/catalog/tv/agenda.json" | jq '.metas[0]'        # partidos de hoy
 curl -s "http://localhost:7000/meta/series/tt0944947:1:2.json" | jq '.meta.selectedVideo'
 ```
 
