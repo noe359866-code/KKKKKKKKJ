@@ -45,9 +45,27 @@ para evitar mantener dos copias diferentes.
    sólo resuelven el video cuando abres un título.
 4. Usa **Buscar** para filtrar las filas de Cinemeta y los canales en vivo, e
    **Inicio** para volver a la portada.
-5. Abre una ficha, elige capítulo cuando corresponda, selecciona una fuente
-   y reproduce. Si no se pudo extraer una lista real de episodios, se permite
-   indicar temporada y episodio manualmente; no se fabrica una lista.
+5. Abre una ficha, elige capítulo cuando corresponda y pulsa **Reproducir**.
+   No hay que elegir servidor: el reproductor pide las fuentes y salta solo a la
+   siguiente si una falla. Si no se pudo extraer una lista real de episodios, se
+   permite indicar temporada y episodio con dos contadores; no se fabrica una
+   lista.
+
+### Ficha del título (TV)
+
+La ficha es la página de película de Apple TV: backdrop a sangre con dos velos,
+tipo y nota en insignias, título grande, sinopsis de tres líneas y **una sola
+cápsula blanca** — *Reproducir* (con el capítulo detrás: `T1 E2`) — más *Cerrar*.
+
+- **Sin lista de servidores.** Antes había que elegir fuente antes de ver nada;
+  ahora el botón hace todo y el failover decide. La ficha sólo elige *qué*
+  capítulo se reproduce.
+- **Episodios** como tarjetas 16:9 con la miniatura real del proveedor, etiqueta
+  `T1 E2`, nombre y sinopsis corta. La elegida lleva borde blanco y ✓; al cambiar
+  de temporada la fila se desplaza al capítulo elegido.
+- **Temporadas** en píldoras a la derecha del encabezado, sólo si hay más de una.
+- **Sin lista publicada**: contadores `− 1 +` de temporada y episodio y una
+  cápsula *Ver este episodio*. Nada de `TextField` con teclado del sistema.
 
 ### Reproductor (TV)
 

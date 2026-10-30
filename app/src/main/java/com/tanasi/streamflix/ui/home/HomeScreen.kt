@@ -92,7 +92,7 @@ private const val TV_CONTENT_BASELINE = 0.62f
 fun HomeScreen(
     viewModel: HomeViewModel,
     onPlay: (PlaybackRequest) -> Unit,
-    onOpenDetails: (MediaEntry, Boolean) -> Unit,
+    onOpenDetails: (MediaEntry) -> Unit,
     onOpenSettings: () -> Unit,
     profile: Profile? = null,
     /** Filas propias del perfil activo ("Seguir viendo"), ya resueltas. */
@@ -205,7 +205,6 @@ fun HomeScreen(
                     val serverFocus = remember { FocusRequester() }
                     val heroPlayFocus = remember { FocusRequester() }
                     val heroDetailsFocus = remember { FocusRequester() }
-                    val heroSourcesFocus = remember { FocusRequester() }
                     val firstCardFocus = remember { FocusRequester() }
 
                     val heroBanner: @Composable (Modifier) -> Unit = { modifier ->
@@ -214,21 +213,19 @@ fun HomeScreen(
                             deviceProfile = deviceProfile,
                             playFocusRequester = heroPlayFocus,
                             detailsFocusRequester = heroDetailsFocus,
-                            sourcesFocusRequester = heroSourcesFocus,
                             upFocus = serverFocus,
                             ctaDownFocus = firstCardFocus,
                             contentBottomPadding = contentBottomPadding,
                             onPlay = {
+                                /* Series sin capítulo: abre la ficha para elegir
+                                 * episodio. Todo lo demás reproduce directo. */
                                 spotlight?.entry?.let { entry ->
-                                    if (!entry.isLive && !hasEpisodeNumber(entry.type, entry.id)) onOpenDetails(entry, false)
+                                    if (!entry.isLive && !hasEpisodeNumber(entry.type, entry.id)) onOpenDetails(entry)
                                     else onPlay(entry.playbackRequest())
                                 }
                             },
                             onDetails = {
-                                spotlight?.entry?.let { onOpenDetails(it, false) }
-                            },
-                            onChangeServer = {
-                                spotlight?.entry?.let { onOpenDetails(it, true) }
+                                spotlight?.entry?.let { onOpenDetails(it) }
                             },
                             modifier = modifier,
                         )
@@ -238,7 +235,7 @@ fun HomeScreen(
                         CatalogList(
                             rows = rows,
                             deviceProfile = deviceProfile,
-                            onEntryClick = { entry -> onOpenDetails(entry, false) },
+                            onEntryClick = { entry -> onOpenDetails(entry) },
                             onEntryFocused = viewModel::onCardFocused,
                             rowsTopPadding = contentBaseline,
                             firstCardFocus = firstCardFocus,

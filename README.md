@@ -248,8 +248,9 @@ Geometría y jerarquía:
 
 - **Hero** a sangre, anclado abajo a la izquierda: estado, título en 44 sp con
   interletraje negativo, línea de metadatos (`★ 8.2 · 4K · 2026 · 1 h 52 min`),
-  sinopsis de tres líneas y tres cápsulas — **▶ Reproducir** (blanca, la única
-  clara de la pantalla), *Más información* y *Fuentes*.
+  sinopsis de tres líneas y dos cápsulas — **▶ Reproducir** (blanca, la única
+  clara de la pantalla) y *Más información*. No hay botón de *Fuentes*: el
+  reproductor elige servidor por su cuenta.
 - **Deriva Ken Burns** del backdrop (escala 1 → 1,06 en 20 s) en una animación
   infinita sobre `graphicsLayer`: no recompone, así que un TV box barato no sufre.
 - **Filas** con encabezado mínimo (sólo el nombre, 22 sp). Se eliminaron la barra
@@ -258,6 +259,40 @@ Geometría y jerarquía:
   62 % y blanco pleno al enfocar), en vez de aparecer de la nada.
 - **Canales en vivo**: el logotipo se pinta con `ContentScale.Fit` para no
   recortar la marca; el cine se recorta a sangre.
+
+### Ficha del título: página de película de Apple TV
+
+Al abrir una tarjeta no se elige servidor: se ve la ficha y se pulsa
+**Reproducir**. El reproductor pide las fuentes y salta solo a la siguiente si
+una falla.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│              [backdrop a sangre, dos velos]                  │
+│  SERIE · 2011 · 8,9 · 4K                                     │
+│  Juego de tronos                                             │
+│  Sinopsis de tres líneas…                                    │
+│  ( ▶ Reproducir · T1 E2 )    ( Cerrar )                      │
+│  Buscamos la mejor fuente; si falla, pasamos a la siguiente. │
+├──────────────────────────────────────────────────────────────┤
+│  Episodios                             ( T1 )( T2 )( T3 )   │
+│  ┌────────┐ ┌────────┐ ┌────────┐                            │
+│  │ [img]  │ │ [img]  │ │ [img]  │  ← 16:9 con T1 E2 y título │
+│  └────────┘ └────────┘ └────────┘                            │
+└──────────────────────────────────────────────────────────────┘
+```
+
+- **Botón principal**: cápsula blanca con el triángulo dibujado en `Canvas` y el
+  capítulo elegido detrás (`Reproducir · T1 E2`); el foco arranca ahí.
+- **Episodios**: tarjetas 16:9 con miniatura real de Cinemeta (si no hay, se
+  dibuja el número, nunca una imagen de otro capítulo), etiqueta `T1 E2`, nombre
+  y sinopsis corta. La elegida lleva borde blanco y ✓; la fila se desplaza sola
+  al cambiar de temporada.
+- **Temporadas** en píldoras a la derecha del encabezado (sólo si hay más de una).
+- **Sin lista publicada**: dos contadores `− 1 +` para temporada y episodio y una
+  cápsula *Ver este episodio* — nada de teclados en la TV.
+- Se eliminaron la lista de servidores, el chip "elegido" y el `AlertDialog` de
+  reintento: la ficha no pregunta nada que el reproductor pueda resolver.
 
 Referencias de otros proyectos abiertos de TV (Jellyfin Android TV, SmartTube,
 Kodi) para lo que no se ve: foco inicial siempre definido, `Back` predecible,
@@ -437,9 +472,11 @@ A changed domain, anti-bot challenge or dead video host can still break a source
 - Catalogue metadata is cached on disk for one hour (live: ten minutes), with
   a bounded stale fallback for titles/artwork. Signed stream URLs have a short
   cache only and are never served stale after its expiry.
-- The details sheet discovers numbered episodes; if no list is published,
-  series/anime offer explicit manual season/episode selection rather than
-  inventing a list or playing episode one silently.
+- The details sheet discovers numbered episodes and shows them as 16:9 cards
+  with thumbnails, season pills and a white **Reproducir** capsule (no server
+  picker: playback starts at source 0 and the player fails over on its own); if
+  no list is published, series/anime offer explicit manual season/episode
+  selection rather than inventing a list or playing episode one silently.
 - Per-source Referer, User-Agent, Origin and Cookie headers survive into Media3.
   Both HLS and DASH modules are included.
 

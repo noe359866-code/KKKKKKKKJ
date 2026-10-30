@@ -125,7 +125,7 @@ class MainActivity : ComponentActivity() {
     /**
      * Catálogo + hojas del perfil activo.
      *
-     * La hoja de detalles es estado de UI (`DetailsTarget`) y no una pantalla
+     * La hoja de detalles es estado de UI (el `MediaEntry` abierto) y no una pantalla
      * aparte: se abre encima del Home, conserva el foco de la tarjeta que la
      * lanzó y se cierra volviendo exactamente ahí.
      */
@@ -161,7 +161,7 @@ class MainActivity : ComponentActivity() {
             continueWatching = progressStore.entriesFor(profile.id)
         }
 
-        var details by remember { mutableStateOf<DetailsTarget?>(null) }
+        var details by remember { mutableStateOf<MediaEntry?>(null) }
         /* Primer arranque autónomo: no pide IP, dominio ni un backend. */
         var showSettings by remember { mutableStateOf(false) }
         var pendingUpdate by remember { mutableStateOf<UpdateInfo?>(null) }
@@ -202,25 +202,22 @@ class MainActivity : ComponentActivity() {
         HomeScreen(
             viewModel = homeViewModel,
             onPlay = onPlay,
-            onOpenDetails = { entry, openOnSources ->
-                details = DetailsTarget(entry, openOnSources)
-            },
+            onOpenDetails = { entry -> details = entry },
             onOpenSettings = { showSettings = true },
             profile = profile,
             continueWatching = continueWatching,
             onSwitchProfile = onSwitchProfile,
         )
 
-        details?.let { target ->
+        details?.let { entry ->
             /* Un `ViewModel` por título: si el usuario abre, cierra y vuelve a
-             * abrir la misma tarjeta, las fuentes ya están cargadas y la
-             * elección de servidor se conserva. */
-            val factory = remember(target.entry.id) {
+             * abrir la misma tarjeta, no se repiten los metadatos ni se pierde
+             * el capítulo que había elegido. */
+            val factory = remember(entry.id) {
                 viewModelFactory {
                     initializer {
                         DetailsViewModel(
-                            entry = target.entry,
-                            repository = ServiceLocator.streamsRepository(applicationContext),
+                            entry = entry,
                             /* Episodios del proveedor local o del backend opcional. */
                             client = ServiceLocator.contentClient(applicationContext),
                             settings = ServiceLocator.settings(applicationContext),
@@ -229,20 +226,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
             val detailsViewModel: DetailsViewModel = viewModel(
-                key = "details:${settings.autonomous}:${settings.baseUrl}:${target.entry.id}",
+                key = "details:${settings.autonomous}:${settings.baseUrl}:${entry.id}",
                 factory = factory,
             )
 
             DetailsDialog(
-                entry = target.entry,
+                entry = entry,
                 viewModel = detailsViewModel,
-                openOnSources = target.openOnSources,
                 onDismiss = { details = null },
-                onPlay = { startIndex ->
+                onPlay = {
                     details = null
-                    /* ids de episodio incluidos: el ViewModel es el que sabe si
-                     * se eligió un capítulo o se reproduce el título entero. */
-                    onPlay(detailsViewModel.playbackRequest(startIndex))
+                    /* Sin elegir servidor: el reproductor pide las fuentes y
+                     * hace el failover. El id ya lleva el capítulo si tocaba. */
+                    onPlay(detailsViewModel.playbackRequest())
                 },
             )
         }
@@ -290,9 +286,4 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    /** Qué título tiene abierta la hoja de detalles y en qué sección entrar. */
-    private data class DetailsTarget(
-        val entry: MediaEntry,
-        val openOnSources: Boolean,
-    )
 }

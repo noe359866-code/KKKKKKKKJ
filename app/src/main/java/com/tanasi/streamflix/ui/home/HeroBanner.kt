@@ -68,9 +68,9 @@ import com.tanasi.streamflix.ui.theme.tvFocusGlow
  *     uno vertical funde el hero con las filas, así no hay un corte duro entre
  *     la foto y el catálogo.
  *
- * @param onPlay reproduce directamente la mejor fuente (índice 0).
- * @param onDetails abre la hoja con sinopsis y lista de fuentes.
- * @param onChangeServer abre esa misma hoja ya en la sección de servidores.
+ * @param onPlay reproduce directamente: el reproductor busca las fuentes y
+ *   hace el failover, así que aquí no se elige servidor.
+ * @param onDetails abre la ficha con sinopsis y episodios.
  * @param upFocus destino del D-Pad al pulsar ARRIBA (la barra superior).
  * @param ctaDownFocus destino al pulsar ABAJO desde cualquier botón: la primera
  *   tarjeta de la primera fila, que es donde el usuario quiere volver.
@@ -85,10 +85,8 @@ fun HeroBanner(
     deviceProfile: DeviceProfile,
     playFocusRequester: FocusRequester,
     detailsFocusRequester: FocusRequester,
-    sourcesFocusRequester: FocusRequester,
     onPlay: () -> Unit,
     onDetails: () -> Unit,
-    onChangeServer: () -> Unit,
     modifier: Modifier = Modifier,
     upFocus: FocusRequester? = null,
     ctaDownFocus: FocusRequester? = null,
@@ -241,14 +239,6 @@ fun HeroBanner(
                     upFocus = upFocus,
                     downFocus = ctaDownFocus,
                     onClick = onDetails,
-                )
-                HeroButton(
-                    text = "Fuentes",
-                    deviceProfile = deviceProfile,
-                    focusRequester = sourcesFocusRequester,
-                    upFocus = upFocus,
-                    downFocus = ctaDownFocus,
-                    onClick = onChangeServer,
                 )
             }
         }

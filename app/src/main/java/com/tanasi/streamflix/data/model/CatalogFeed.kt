@@ -212,12 +212,17 @@ data class EpisodeOption(
     val episode: Int,
     val name: String? = null,
     val overview: String? = null,
+    /** Miniatura 16:9 del episodio (Cinemeta la publica para casi todas las series). */
+    val thumbnail: String? = null,
 ) {
     /** "T1 · E2" */
     val label: String get() = "T$season · E$episode"
 
     /** "E2" para los chips compactos de la TV. */
     val shortLabel: String get() = "E$episode"
+
+    /** "T1 E2" para el botón de reproducir de la ficha (temporada 0 = sin T). */
+    val playLabel: String get() = if (season <= 0) "E$episode" else "T$season E$episode"
 
     fun idFor(baseId: String): String = "$baseId:$season:$episode"
 }
@@ -244,6 +249,7 @@ fun List<RemoteVideo>.toSeasonGroups(): List<SeasonGroup> =
                 episode = it.episode ?: 0,
                 name = it.name?.takeIf { name -> name.isNotBlank() },
                 overview = it.overview,
+                thumbnail = normalizeArtworkUrl(it.thumbnail),
             )
         }
         .distinctBy { it.season to it.episode }
