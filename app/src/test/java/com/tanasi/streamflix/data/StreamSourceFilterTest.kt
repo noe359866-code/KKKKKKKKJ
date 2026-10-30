@@ -68,4 +68,23 @@ class StreamSourceFilterTest {
         assertNull(StreamDto(name = "torrent", title = "Torrent", url = "").toSource(index = 0))
         assertNull(StreamDto(name = "html", title = "Embed", url = "https://example.com/x.html").toSource(index = 0))
     }
+
+    /**
+     * Línea técnica que enseña el selector de fuentes del reproductor: el
+     * formato real del enlace y la calidad anunciada, nunca una calidad
+     * inventada.
+     */
+    @Test
+    fun theSourceListShowsTheFormatAndQualityItActuallyHas() {
+        val hls = StreamSource(url = "https://cdn.example.com/master.m3u8", name = "n", title = "t",
+                               quality = "1080p", provider = "PelisPlus")
+        val dash = StreamSource(url = "https://cdn.example.com/video.mpd", name = "n", title = "t")
+        val mp4 = StreamSource(url = "https://cdn.example.com/clip.mp4", name = "n", title = "t", quality = " ")
+
+        assertEquals("HLS · 1080p", hls.formatLine)
+        assertEquals("DASH", dash.formatLine)
+        /* Una calidad en blanco no deja un " · " colgando. */
+        assertEquals("MP4", mp4.formatLine)
+        assertEquals("PelisPlus · 1080p", hls.label)
+    }
 }

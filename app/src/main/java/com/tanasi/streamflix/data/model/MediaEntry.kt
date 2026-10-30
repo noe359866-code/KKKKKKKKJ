@@ -66,6 +66,19 @@ data class MediaEntry(
     @SerialName("trending") val trending: Boolean = false,
     /** Canal en emisión continua. */
     @SerialName("live") val live: Boolean = false,
+    /**
+     * Estado explícito del directo cuando el tipo no basta (fila `deportes`):
+     * un partido de hoy que aún no ha empezado es `tv` pero no está al aire.
+     * `null` = dedúcelo del tipo, como el resto de las filas.
+     */
+    @SerialName("onAir") val onAir: Boolean? = null,
+    /** Equipos del partido (sólo deportes). El título ya es "A vs B". */
+    @SerialName("home") val homeTeam: String? = null,
+    @SerialName("away") val awayTeam: String? = null,
+    /** Competición: "Liga 1", "MLB", "NBA"… Sólo deportes. */
+    @SerialName("league") val league: String? = null,
+    /** Hora de comienzo del partido ("19:00"). Sólo deportes. */
+    @SerialName("startTime") val startTime: String? = null,
     /** 0-100 para las tarjetas de "Continuar viendo". */
     @SerialName("progressPercent") val progressPercent: Int? = null,
     /**
@@ -77,7 +90,10 @@ data class MediaEntry(
 ) {
     val mediaType: MediaType get() = MediaType.fromWire(type) ?: MediaType.Movie
 
-    val isLive: Boolean get() = live || mediaType == MediaType.Live
+    val isLive: Boolean get() = onAir ?: (live || mediaType == MediaType.Live)
+
+    /** Fila de deportes con dos equipos: la tarjeta se pinta como marcador. */
+    val isMatch: Boolean get() = !homeTeam.isNullOrBlank() && !awayTeam.isNullOrBlank()
 
     /** "Acción · Aventura · 2026 · 2 h 08 min" (sin huecos). */
     val metaLine: String
@@ -103,9 +119,21 @@ data class CatalogRow(
     /** `poster` (2:3) o `landscape` (16:9). */
     val aspect: String = "poster",
     val items: List<MediaEntry> = emptyList(),
+    /**
+     * Cómo se pinta la fila. `cards` (por defecto) usa las tarjetas de arte;
+     * `sports` pinta marcadores: liga, equipos, hora y EN VIVO.
+     */
+    val layout: String = LAYOUT_CARDS,
 ) {
     val rowAspect: RowAspect
         get() = if (aspect.equals("landscape", ignoreCase = true)) RowAspect.Landscape else RowAspect.Poster
+
+    val isSports: Boolean get() = layout.equals(LAYOUT_SPORTS, ignoreCase = true)
+
+    companion object {
+        const val LAYOUT_CARDS = "cards"
+        const val LAYOUT_SPORTS = "sports"
+    }
 }
 
 /**

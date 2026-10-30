@@ -139,9 +139,10 @@ class CatalogRepository(
             CatalogRow(
                 id = descriptor.rowId,
                 title = descriptor.name,
-                /* La forma la decide la fuente de datos. */
+                /* La forma y el dibujo los decide la fuente de datos. */
                 aspect = descriptor.posterShape,
                 items = items,
+                layout = descriptor.layout ?: CatalogRow.LAYOUT_CARDS,
             )
         }
     } catch (error: CancellationException) {

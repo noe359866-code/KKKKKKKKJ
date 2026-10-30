@@ -39,6 +39,11 @@ data class CatalogDescriptor(
     @SerialName("source") val source: String? = null,
     /** Nombre del addon de origen cuando [source] es `remote`. */
     @SerialName("provider") val provider: String? = null,
+    /**
+     * Pista de presentación que manda la fuente: `cards` (por defecto) o
+     * `sports` para la fila de deportes, que se pinta como marcador.
+     */
+    @SerialName("layout") val layout: String? = null,
 ) {
     /** Forma de las tarjetas, decidida por la fuente de datos. */
     val rowAspect: RowAspect
@@ -108,6 +113,16 @@ data class RemoteMeta(
      * filas; las de Cinemeta se reconocen por el id `tt…`.
      */
     @SerialName("sourceName") val sourceName: String? = null,
+    /**
+     * Deportes: equipos, competición y estado. [onAir] distingue el partido que
+     * ya empezó del que aún no, aunque los dos sean `tv`.
+     */
+    @SerialName("home") val home: String? = null,
+    @SerialName("away") val away: String? = null,
+    @SerialName("league") val league: String? = null,
+    @SerialName("startTime") val startTime: String? = null,
+    @SerialName("status") val status: String? = null,
+    @SerialName("onAir") val onAir: Boolean? = null,
     @SerialName("videos") val videos: List<RemoteVideo> = emptyList(),
 ) {
     val mediaType: MediaType get() = MediaType.fromWire(type) ?: MediaType.Movie
@@ -135,6 +150,11 @@ data class RemoteMeta(
         rating = rating,
         runtime = runtime,
         live = mediaType == MediaType.Live,
+        onAir = onAir,
+        homeTeam = home?.takeIf { it.isNotBlank() },
+        awayTeam = away?.takeIf { it.isNotBlank() },
+        league = league?.takeIf { it.isNotBlank() },
+        startTime = startTime?.takeIf { it.isNotBlank() },
         provider = providerLabel(descriptor),
     )
 

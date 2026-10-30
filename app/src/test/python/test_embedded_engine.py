@@ -95,12 +95,70 @@ class EngineTests(unittest.TestCase):
             rows = self.engine.dispatch("catalogs", {})["catalogs"]
             health = self.engine.dispatch("health", {})
         self.assertEqual(12, len(health["providers"]))
-        # Los scrapers resuelven streams; no son catálogo. La Home sólo lleva
-        # canales en vivo (y Cinemeta cuando el cliente lo pide).
-        self.assertEqual(["iptvorg", "bundled_live"], [row["id"] for row in rows])
+        # Los scrapers resuelven streams; no son catálogo. La Home lleva canales
+        # en vivo, el área de deportes (y Cinemeta cuando el cliente lo pide).
+        self.assertEqual(["iptvorg", "bundled_live", "deportes"], [row["id"] for row in rows])
+        self.assertEqual("sports", rows[-1]["layout"])
         self.assertFalse({row["id"] for row in rows} & set(self.engine.providers))
         self.assertTrue(all(row["source"] in ("embedded", "iptv") for row in rows))
         self.assertTrue(all(callable(catalogs.module_for(p).scrape) for p in health["providers"]))
+
+    def test_sports_row_lists_todays_matches_with_league_teams_and_state(self):
+        agenda = [
+            {"id": "evento:mlb-yankees-vs-red-sox", "title": "MLB: Yankees vs Red Sox",
+             "category": "beisbol", "date": "2026-10-29", "time": "21:00",
+             "status": "Programado", "links": ["https://la18hd.su/vivo/x"]},
+            {"id": "evento:liga-1-cienciano-vs-atletico-grau",
+             "title": "Liga 1: Cienciano vs Atlético Grau", "category": "futbol",
+             "date": "2026-10-29", "time": "19:00", "status": "En vivo",
+             "links": ["https://la18hd.su/vivo/y"]},
+        ]
+        channels = [
+            {"name": "ESPN 2", "logo": "https://logos.invalid/espn.png",
+             "url": "https://cdn.invalid/espn/index.m3u8"},
+            {"name": "Canal de cocina", "logo": "", "url": "https://cdn.invalid/food/index.m3u8"},
+        ]
+        with patch.object(catalogs.module_for("futbolibre"), "load_agenda", return_value=agenda), \
+                patch.object(embedded, "iptv_channels", return_value=channels):
+            result = self.engine.dispatch("catalog", {"type": "tv", "id": "deportes"})
+            metas = result["metas"]
+        self.assertTrue(metas)
+        # El partido en directo va primero, después el programado y los canales.
+        live, upcoming = metas[0], metas[1]
+        self.assertEqual("tv:futbolibre:evento:liga-1-cienciano-vs-atletico-grau", live["id"])
+        self.assertEqual("Cienciano vs Atlético Grau", live["name"])
+        self.assertEqual("Cienciano", live["home"])
+        self.assertEqual("Atlético Grau", live["away"])
+        self.assertEqual("Liga 1", live["league"])
+        self.assertEqual(["Deportes", "Liga 1"], live["genres"])
+        self.assertTrue(live["onAir"])
+        self.assertEqual("19:00", live["startTime"])
+        self.assertEqual(self.engine.providers["futbolibre"]["label"], live["sourceName"])
+        self.assertFalse(upcoming["onAir"])
+        self.assertEqual("MLB", upcoming["league"])
+        self.assertEqual("Hoy · 21:00", upcoming["releaseInfo"])
+        # Canales: sólo los deportivos, y el de cocina no entra.
+        self.assertTrue(any(meta["name"] == "ESPN 2" and meta["onAir"] for meta in metas))
+        self.assertFalse(any(meta["name"] == "Canal de cocina" for meta in metas))
+        # Y el partido se reproduce por el camino de siempre (el id del scraper).
+        module = catalogs.module_for("futbolibre")
+        with patch.object(module, "scrape", return_value=([{"url": "https://cdn.invalid/live.m3u8"}], {})):
+            self.assertTrue(self.engine.streams("tv", live["id"])["streams"])
+
+    def test_sports_titles_drop_the_broadcast_suffix_from_team_names(self):
+        meta = embedded.sports_event_meta(
+            {"id": "futbolibre", "label": "Fútbol Libre"},
+            {"id": "evento:nba", "title": "NBA: Lakers vs Celtics (Final)",
+             "time": "02:30", "status": "En vivo"},
+        )
+        self.assertEqual("Lakers", meta["home"])
+        self.assertEqual("Celtics", meta["away"])
+        self.assertEqual("Lakers vs Celtics", meta["name"])
+
+    def test_sports_row_is_empty_rather_than_stale_when_there_is_no_agenda(self):
+        with patch.object(catalogs.module_for("futbolibre"), "load_agenda", return_value=[]), \
+                patch.object(embedded, "iptv_channels", return_value=[]):
+            self.assertEqual([], self.engine.dispatch("catalog", {"type": "tv", "id": "deportes"})["metas"])
 
     def test_cinemeta_is_explicit_opt_in_and_always_first_when_enabled(self):
         base_rows = self.engine.catalogs()["catalogs"]

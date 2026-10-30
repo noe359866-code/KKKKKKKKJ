@@ -93,8 +93,10 @@ fun MediaRow(
                 val focusRequester = if (index == 0) firstCardFocusRequester else null
                 val up = if (index == 0) focusUp else null
 
-                when (row.rowAspect) {
-                    RowAspect.Poster -> PosterCard(
+                /* Deportes: marcador con liga, equipos y hora. La fuente de datos
+                 * lo pide con `layout: "sports"`; el resto de filas no cambia. */
+                if (row.isSports) {
+                    SportsCard(
                         entry = entry,
                         deviceProfile = deviceProfile,
                         onClick = { onEntryClick(entry) },
@@ -102,8 +104,17 @@ fun MediaRow(
                         focusUp = up,
                         focusRequester = focusRequester,
                     )
-
-                    RowAspect.Landscape -> LandscapeCard(
+                } else if (row.rowAspect == RowAspect.Poster) {
+                    PosterCard(
+                        entry = entry,
+                        deviceProfile = deviceProfile,
+                        onClick = { onEntryClick(entry) },
+                        onFocused = { entry -> onEntryFocused(row.id, entry) },
+                        focusUp = up,
+                        focusRequester = focusRequester,
+                    )
+                } else {
+                    LandscapeCard(
                         entry = entry,
                         deviceProfile = deviceProfile,
                         onClick = { onEntryClick(entry) },

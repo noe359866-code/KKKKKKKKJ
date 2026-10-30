@@ -3,6 +3,7 @@ package com.tanasi.streamflix.ui.player
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,16 +13,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -40,7 +42,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -48,9 +55,11 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
@@ -69,6 +78,7 @@ import com.tanasi.streamflix.player.SeekPolicy
 import com.tanasi.streamflix.ui.theme.StreamflixColors
 import com.tanasi.streamflix.ui.theme.tvFocusGlow
 import kotlinx.coroutines.delay
+import kotlin.math.max
 
 /** Tiempo que los controles se quedan en pantalla sin que nadie toque el mando. */
 private const val CONTROLS_AUTO_HIDE_MS = 4_000L
@@ -400,7 +410,10 @@ private fun PlaybackSurface(
             update = { view -> view.player = player },
         )
 
-        PlayerControls(
+        /* Con el panel de fuentes abierto los controles no existen: así el foco
+         * no puede escaparse a los botones de detrás (tvOS también los oculta
+         * al abrir la información). */
+        if (!showSources) PlayerControls(
             title = request.title,
             isLive = request.isLive,
             failover = failoverState,
@@ -458,6 +471,7 @@ private fun PlaybackSurface(
 
         if (showSources) {
             SourcePickerOverlay(
+                title = request.title,
                 sources = sources,
                 current = failoverState.current,
                 onDismiss = { showSources = false },
@@ -622,58 +636,108 @@ private fun PlayerPillButton(
 }
 
 /**
- * Lista de fuentes: panel centrado con filas grandes.
+ * Selector de fuentes, con el panel lateral del reproductor de tvOS.
  *
- * Sustituye al `AlertDialog` de Material, que en una TV deja el foco en un
- * botón de 40 dp y una lista que no se desplaza al navegar. Aquí cada fila es
- * enfocable, la `LazyColumn` lleva el foco a la vista y ATRÁS cierra.
+ * Antes era un `AlertDialog` centrado: en una TV tapaba el vídeo entero y las
+ * filas no se desplazaban con el mando. Ahora el panel entra por la derecha
+ * (donde tvOS pone "Información"), deja el vídeo visible a la izquierda y cada
+ * fila es una tarjeta enfocable:
+ *
+ * ```
+ * ┌──────────────────────────────────────────┐
+ * │ FUENTES                                  │
+ * │ Cienciano vs Atlético Grau               │  ← qué se está viendo
+ * │ 5 disponibles · el failover sigue abajo  │
+ * │ ┌──────────────────────────────────────┐ │
+ * │ │ ①  PelisPlus              HLS · 1080p│ │  ← enfocada (anillo blanco)
+ * │ └──────────────────────────────────────┘ │
+ * │ ┌──────────────────────────────────────┐ │
+ * │ │ ②  Gnula      HLS · 720p    En uso ✓ │ │  ← la que se está usando
+ * │ └──────────────────────────────────────┘ │
+ * │ OK elegir            ATRÁS cerrar        │
+ * └──────────────────────────────────────────┘
+ * ```
+ *
+ * El foco arranca en la fuente **en uso**, no en la primera: si el usuario sólo
+ * quería ver cuál era, ATRÁS sale sin mover nada.
  */
 @Composable
 private fun SourcePickerOverlay(
+    title: String,
     sources: List<StreamSource>,
     current: StreamSource?,
     onDismiss: () -> Unit,
     onSelect: (Int) -> Unit,
 ) {
-    val firstFocus = remember { FocusRequester() }
+    val currentIndex = remember(sources, current) {
+        sources.indexOfFirst { it.url == current?.url }.takeIf { it >= 0 } ?: 0
+    }
+    val focusTarget = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
         withFrameNanos { }
         withFrameNanos { }
-        runCatching { firstFocus.requestFocus() }
+        runCatching { focusTarget.requestFocus() }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.78f))
-            .clickable(onClick = onDismiss),
-        contentAlignment = Alignment.Center,
-    ) {
+    Box(Modifier.fillMaxSize()) {
+        /* Velo en degradado hacia la derecha: el vídeo sigue viéndose a la
+         * izquierda y sólo se oscurece la zona del panel. */
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        0.28f to Color.Transparent,
+                        0.60f to Color.Black.copy(alpha = 0.45f),
+                        1f to Color.Black.copy(alpha = 0.88f),
+                    ),
+                )
+                .clickable(onClick = onDismiss),
+        )
+
         Column(
             modifier = Modifier
-                .fillMaxWidth(0.62f)
-                .widthIn(min = 520.dp, max = 900.dp)
-                .background(StreamflixColors.Surface, RoundedCornerShape(20.dp))
-                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
-                .padding(horizontal = 32.dp, vertical = 28.dp),
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .fillMaxWidth(0.38f)
+                .widthIn(min = 420.dp, max = 640.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            StreamflixColors.Surface.copy(alpha = 0.98f),
+                            Color.Black.copy(alpha = 0.95f),
+                        ),
+                    ),
+                )
+                .padding(start = 34.dp, end = 34.dp, top = 40.dp, bottom = 28.dp),
         ) {
             Text(
-                text = "Fuentes",
+                text = "FUENTES",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 2.sp,
+                color = StreamflixColors.OnSurfaceMuted,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = title,
                 style = MaterialTheme.typography.headlineSmall,
                 color = Color.White,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "${sources.size} disponibles · el failover sigue hacia abajo · ATRÁS para volver",
+                text = "${sources.size} disponibles · si una falla, se pasa a la siguiente",
                 style = MaterialTheme.typography.labelMedium,
                 color = StreamflixColors.OnSurfaceMuted,
             )
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(22.dp))
 
             LazyColumn(
-                modifier = Modifier.heightIn(max = 460.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 itemsIndexed(sources, key = { index, source -> "$index:${source.url}" }) { index, source ->
                     SourceRow(
@@ -681,22 +745,28 @@ private fun SourcePickerOverlay(
                         source = source,
                         selected = source.url == current?.url,
                         onClick = { onSelect(index) },
-                        focusRequester = if (index == 0) firstFocus else null,
+                        focusRequester = if (index == currentIndex) focusTarget else null,
                     )
                 }
             }
 
-            Spacer(Modifier.height(20.dp))
-            Text(
-                text = "OK elige la fuente marcada · ATRÁS vuelve al vídeo",
-                style = MaterialTheme.typography.labelSmall,
-                color = StreamflixColors.OnSurfaceMuted.copy(alpha = 0.8f),
+            Spacer(Modifier.height(18.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color.White.copy(alpha = 0.08f)),
             )
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                SourceKeyHint(key = "OK", action = "Elegir")
+                SourceKeyHint(key = "ATRÁS", action = "Cerrar")
+            }
         }
     }
 }
 
-/** Fila de fuente: número, proveedor, formato y marca de "en uso". */
+/** Fila de fuente: número, proveedor, formato/calidad y marca de "en uso". */
 @Composable
 private fun SourceRow(
     index: Int,
@@ -711,65 +781,126 @@ private fun SourceRow(
         animationSpec = tween(durationMillis = 120),
         label = "sourceFocus",
     )
+    val pop by animateFloatAsState(
+        targetValue = if (focused) 1.02f else 1f,
+        animationSpec = tween(durationMillis = 120),
+        label = "sourcePop",
+    )
+
+    val name = source.provider?.takeIf { it.isNotBlank() } ?: source.name
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .tvFocusGlow(progress = ring, cornerRadius = 12.dp)
+            .graphicsLayer {
+                scaleX = pop
+                scaleY = pop
+            }
+            .tvFocusGlow(progress = ring, cornerRadius = 10.dp)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .background(
                 when {
-                    selected -> Color.White.copy(alpha = 0.12f)
-                    focused -> StreamflixColors.Glass
-                    else -> Color.Transparent
+                    selected -> Color.White.copy(alpha = 0.14f)
+                    focused -> StreamflixColors.GlassStrong
+                    else -> Color.White.copy(alpha = 0.04f)
                 },
-                RoundedCornerShape(12.dp),
+                RoundedCornerShape(10.dp),
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) Color.White.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.07f),
+                shape = RoundedCornerShape(10.dp),
             )
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = "${index + 1}",
-            style = MaterialTheme.typography.titleMedium,
-            color = StreamflixColors.OnSurfaceMuted,
-            modifier = Modifier.width(38.dp),
-        )
+        /* Número en cápsula: da el orden del failover de un vistazo. */
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .background(
+                    if (selected) Color.White else Color.White.copy(alpha = 0.10f),
+                    CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "${index + 1}",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (selected) Color.Black else Color.White,
+            )
+        }
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                text = source.label,
+                text = name,
                 style = MaterialTheme.typography.titleSmall,
                 color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Spacer(Modifier.height(2.dp))
             Text(
                 text = buildString {
-                    append(if (source.isHls) "HLS" else if (source.isDash) "DASH" else "Progresivo")
-                    source.quality?.takeIf { it.isNotBlank() }?.let { append(" · ").append(it) }
+                    append(source.formatLine)
+                    if (selected) append(" · en uso")
                 },
                 style = MaterialTheme.typography.labelMedium,
-                color = StreamflixColors.OnSurfaceMuted,
+                color = if (selected) Color.White.copy(alpha = 0.85f) else StreamflixColors.OnSurfaceMuted,
                 maxLines = 1,
             )
         }
         if (selected) {
-            Box(
-                modifier = Modifier
-                    .background(Color.White, RoundedCornerShape(percent = 50))
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    text = "EN USO",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.Black,
-                )
-            }
+            Spacer(Modifier.width(10.dp))
+            CheckMark(Modifier.size(18.dp))
         }
     }
 }
 
+/**
+ * Marca de "esta es la que se está viendo", dibujada en `Canvas`: nada de
+ * fuentes de iconos, que en algunos TV boxes salen como cajas.
+ */
+@Composable
+private fun CheckMark(modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val stroke = Stroke(width = max(2f, size.width * 0.13f), cap = StrokeCap.Round, join = StrokeJoin.Round)
+        val path = Path().apply {
+            moveTo(size.width * 0.16f, size.height * 0.55f)
+            lineTo(size.width * 0.42f, size.height * 0.80f)
+            lineTo(size.width * 0.87f, size.height * 0.22f)
+        }
+        drawPath(path, Color.White, style = stroke)
+    }
+}
+
+/** Chuleta de teclas del panel: tecla en caja + acción. */
+@Composable
+private fun SourceKeyHint(key: String, action: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(4.dp))
+                .padding(horizontal = 7.dp, vertical = 3.dp),
+        ) {
+            Text(
+                text = key,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+            )
+        }
+        Spacer(Modifier.width(7.dp))
+        Text(
+            text = action,
+            style = MaterialTheme.typography.labelSmall,
+            color = StreamflixColors.OnSurfaceMuted,
+        )
+    }
+}
 @Composable
 private fun CenterBox(content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }

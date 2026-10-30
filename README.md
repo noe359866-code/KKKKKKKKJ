@@ -83,6 +83,8 @@ For a production build, configure your own release signing as described below.
 - **Perfiles** al estilo Apple TV: avatares, hasta 6, y un "Seguir viendo" distinto por perfil
 - Multiple providers, with automatic silent failover between their streams
 - Home with horizontal carousels, starting with open live channels that play with no setup (iptv-org)
+- **Área de deportes** al estilo Apple TV: partidos de hoy con liga, equipos, hora y EN VIVO
+  (agenda de los scrapers en vivo + canales deportivos), pintados como marcador, no como póster
 
 ### Built with
 
@@ -365,9 +367,12 @@ Decisiones de salón:
 - **Reanuda donde se quedó**: la tarjeta de "Seguir viendo" viaja con
   `PlaybackRequest.startPositionMs` y el `FailoverController` arranca ahí; si
   el usuario cambia de capítulo en la ficha, empieza desde el principio.
-- **Lista de fuentes** como panel centrado con filas grandes y `LazyColumn` (el
-  foco arrastra la lista), no como `AlertDialog` de Material: en una TV los
-  botones de 40 dp y las listas que no se desplazan no se pueden usar.
+- **Selector de fuentes como panel lateral de tvOS**: entra por la derecha
+  (donde tvOS pone "Información"), deja el vídeo visible a la izquierda y cada
+  fuente es una tarjeta enfocable con número de failover, proveedor, `HLS · 1080p`
+  y una marca ✓ en la que se está usando. El foco arranca en la **fuente en
+  uso**, no en la primera. Sin `AlertDialog` de Material: en una TV los botones
+  de 40 dp y las listas que no se desplazan no se pueden usar.
 - **Cuando todo falla**, panel de vidrio con *Reintentar* (foco inicial) ·
   *Elegir fuente* · *Volver*. ATRÁS sale del reproductor, no del aviso.
 

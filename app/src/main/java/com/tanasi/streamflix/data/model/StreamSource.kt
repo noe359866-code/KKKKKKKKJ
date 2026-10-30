@@ -39,6 +39,17 @@ data class StreamSource(
 
     val isDash: Boolean get() = url.substringBefore('?').endsWith(".mpd", ignoreCase = true)
 
+    /** Línea técnica de la lista de fuentes del reproductor: "HLS · 1080p". */
+    val formatLine: String
+        get() = buildList {
+            add(when {
+                isHls -> "HLS"
+                isDash -> "DASH"
+                else -> "MP4"
+            })
+            quality?.takeIf { it.isNotBlank() }?.let { add(it) }
+        }.joinToString(" · ")
+
     companion object {
         /** Extensiones que ExoPlayer reproduce sin extensiones extra. */
         private val playableExtensions = listOf(".m3u8", ".mpd", ".mp4", ".m4v", ".webm", ".mkv", ".ts")

@@ -42,6 +42,23 @@ CINEMETA_CATALOGS = (
 )
 
 # --------------------------------------------------------------------------- #
+# Deportes (agenda del día)
+# --------------------------------------------------------------------------- #
+# Área de deportes al estilo del Sports de Apple TV: los partidos que hoy
+# publica la agenda de los scrapers en vivo (título, liga, hora y estado) y los
+# canales deportivos que aparezcan en la lista pública. No se inventa nada: si
+# la agenda no trae partidos, la fila se queda vacía y el cliente la descarta.
+SPORTS_CATALOG_ID = "deportes"
+SPORTS_EVENT_LIMIT = 24
+SPORTS_CHANNEL_LIMIT = 8
+SPORTS_KEYWORDS = (
+    "espn", "fox sports", "tudn", "tyc", "dsports", "directv sports", "dazn",
+    "gol tv", "tnt sports", "claro sports", "mlb", "nba", "nfl", "nhl", "ufc",
+    "bein", "win sports", "sky sports", "eurosport", "deportes", "depor",
+    "movistar deportes", "premier sports", "laliga", "liga mx",
+)
+
+# --------------------------------------------------------------------------- #
 # Canales abiertos (iptv-org)
 # --------------------------------------------------------------------------- #
 # Las webs scrapeadas cambian cada semana y muchos días no devuelven ni un
@@ -142,9 +159,14 @@ def normalize_meta(raw: Dict[str, Any], media_type: str) -> Optional[Dict[str, A
         return None
     result = {"id": content_id, "type": raw.get("type") or media_type,
               "name": str(raw.get("name") or raw.get("title") or content_id)}
-    for key in ("poster", "background", "logo", "description", "runtime", "sourceName", "_page", "_detail"):
+    for key in ("poster", "background", "logo", "description", "runtime", "sourceName", "_page", "_detail",
+                "home", "away", "league", "startTime", "status"):
         if raw.get(key):
-            result[key] = raw[key]
+            result[key] = str(raw[key])
+    # `onAir` es tri-state: True/False sólo para la agenda de deportes; si falta,
+    # el cliente deduce el directo del tipo (`tv`).
+    if isinstance(raw.get("onAir"), bool):
+        result["onAir"] = raw["onAir"]
     release = str(raw.get("releaseInfo") or raw.get("year") or "")
     if release:
         result["releaseInfo"] = release
@@ -175,6 +197,60 @@ def normalize_meta(raw: Dict[str, Any], media_type: str) -> Optional[Dict[str, A
     if videos:
         result["videos"] = sorted(videos, key=lambda v: (v["season"], v["episode"]))
     return result
+
+
+def is_sports_channel(name: str) -> bool:
+    """¿El nombre del canal es de deportes? (ESPN, TUDN, MLB, DAZN…)."""
+    lowered = (name or "").lower()
+    return any(keyword in lowered for keyword in SPORTS_KEYWORDS)
+
+
+def clean_team(name: str) -> str:
+    """Nombre de equipo sin coletillas del titular: `"Celtics (Final)"` → `"Celtics"`."""
+    return re.sub(r"\s*\([^)]*\)\s*$", "", (name or "").strip()).strip(" -·")
+
+
+def sports_event_meta(provider: Dict[str, Any], event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Partido de la agenda → meta de la fila `deportes`.
+
+    La agenda del scraper publica ``"Liga 1: Cienciano vs Atlético Grau"`` con
+    hora y estado; aquí se separa liga y equipos, se marca el directo y se deja
+    el id que `/stream` ya sabe resolver (``tv:<proveedor>:evento:<slug>``).
+    """
+    event_id = str(event.get("id") or "").strip()
+    title = str(event.get("title") or "").strip()
+    if not event_id or not title:
+        return None
+    league, _, teams = title.partition(":")
+    teams = (teams or title).strip()
+    league = league.strip() if teams != title else ""
+    halves = re.split(r"\s+(?:vs\.?|v|contra|–|-)\s+", teams, maxsplit=1, flags=re.IGNORECASE)
+    home, away = (clean_team(halves[0]), clean_team(halves[1])) if len(halves) == 2 else ("", "")
+    if not home or not away:
+        home = away = ""
+    status = str(event.get("status") or "").strip()
+    start = str(event.get("time") or "").strip()
+    on_air = bool(re.search(r"\b(?:en\s*vivo|live|directo)\b", status, re.IGNORECASE))
+    if on_air:
+        when = f"En vivo · {start}" if start else "En vivo"
+    else:
+        when = f"Hoy · {start}" if start else "Hoy"
+    return {
+        "id": f"tv:{provider['id']}:{event_id}",
+        "type": "tv",
+        "name": f"{home} vs {away}" if home and away else teams,
+        "sourceName": provider.get("label") or provider["id"],
+        "description": title,
+        "releaseInfo": when,
+        "startTime": start,
+        "status": status or when,
+        "league": league,
+        "home": home,
+        "away": away,
+        "genres": [name for name in ("Deportes", league) if name],
+        "onAir": on_air,
+        "live": True,
+    }
 
 
 def declared_expiry(url: str) -> Optional[int]:
@@ -260,6 +336,11 @@ class Engine:
                      "provider": "iptv-org"})
         rows.append({"id": "bundled_live", "type": "tv", "name": "TV en vivo · Canales guardados",
                      "posterShape": "landscape", "order": len(rows), "source": "embedded"})
+        # Área de deportes: partidos de hoy, no un catálogo de fichas. Va después
+        # de la TV en vivo para que el hero siga saliendo de Cinemeta/canales.
+        rows.append({"id": SPORTS_CATALOG_ID, "type": "tv", "name": "Deportes en vivo",
+                     "posterShape": "landscape", "order": len(rows), "source": "embedded",
+                     "layout": "sports"})
         # Los scrapers NO publican filas: no tienen portada, ni póster 2:3, ni
         # orden curado, y su listado es una sopa de títulos repetidos. Sólo
         # resuelven streams (ver `streams`), igual que los addons del servidor.
@@ -291,6 +372,52 @@ class Engine:
         self._remember(metas)
         return metas
 
+    def sports_metas(self) -> List[Dict[str, Any]]:
+        """Partidos de hoy (agenda de los scrapers en vivo) + canales deportivos.
+
+        La agenda cambia durante el día, así que se cachea 10 minutos y **no**
+        hay respaldo rancio: enseñar el partido de ayer como si fuera de hoy es
+        peor que dejar la fila vacía.
+        """
+        cached = self.cache.get("sports:today")
+        if cached is not None:
+            self._remember(cached["metas"])
+            return cached["metas"]
+        metas: List[Dict[str, Any]] = []
+        seen = set()
+        for name, provider in self.providers.items():
+            if name not in providers.LIVE:
+                continue
+            try:
+                agenda = getattr(providers.module_for(name), "load_agenda", None)
+                if not callable(agenda):
+                    continue
+                # Deadline en milisegundos, como el resto de los scrapers.
+                events = agenda(providers.default_headers(provider), providers.Deadline(8000)) or []
+            except Exception as exc:
+                log("embedded sports agenda unavailable:", name, type(exc).__name__)
+                continue
+            for event in events[:SPORTS_EVENT_LIMIT]:
+                item = sports_event_meta(provider, event)
+                if item and item["id"] not in seen:
+                    seen.add(item["id"])
+                    metas.append(item)
+        metas = [normalized for meta in metas if (normalized := normalize_meta(meta, "tv"))]
+        # Directo primero y, dentro de cada grupo, por hora de comienzo.
+        metas.sort(key=lambda meta: (not meta.get("onAir"), meta.get("startTime") or "99:99"))
+        channels = [meta for meta in self.iptv_metas()
+                    if is_sports_channel(str(meta.get("name") or ""))][:SPORTS_CHANNEL_LIMIT]
+        for channel in channels:
+            if channel["id"] in seen:
+                continue
+            seen.add(channel["id"])
+            metas.append({**channel, "genres": ["Deportes", "Canal"], "onAir": True,
+                          "releaseInfo": "En vivo", "status": "En vivo"})
+        if metas:
+            self.cache.put("sports:today", {"metas": metas}, 600)
+        self._remember(metas)
+        return metas
+
     def _remember(self, metas: List[Dict[str, Any]]) -> None:
         with self.lock:
             for meta in metas:
@@ -310,6 +437,8 @@ class Engine:
             metas = self.iptv_metas()
         elif catalog_id == "bundled_live" and media_type == "tv":
             metas = self.live
+        elif catalog_id == SPORTS_CATALOG_ID and media_type == "tv":
+            metas = self.sports_metas()
         elif catalog_id in self.providers:
             # Contrato: el scraper resuelve streams, no publica catálogo. Si un
             # cliente viejo pide su fila, recibe una lista vacía (sin `degraded`:

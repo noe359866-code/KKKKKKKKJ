@@ -55,7 +55,12 @@ Los controles son propios (no el `PlayerView` de Media3): título y fuente en
 uso arriba, botones redondos en el centro (título · **−10** · **▶/⏸** · **+10** ·
 **Fuentes** · **CC** si hay subtítulos) y barra de progreso con tiempos abajo.
 Se ocultan solos a los 4 s y las teclas multimedia del mando funcionan siempre.
-La lista de fuentes es un panel con filas grandes y ATRÁS la cierra.
+
+El **selector de fuentes** es el panel lateral del reproductor de tvOS: entra por
+la derecha, el vídeo sigue viéndose a la izquierda y cada fuente es una tarjeta
+enfocable con su número de failover, el proveedor, `HLS · 1080p` y una marca ✓
+en la que está en uso. El foco arranca en esa misma, así que ATRÁS sale sin
+mover nada; OK cambia de fuente sin salir del vídeo.
 
 ### Perfiles
 
@@ -70,6 +75,24 @@ las filas de TV en vivo no dependen de ese servicio.
 Los títulos IMDb de Cinemeta se traducen a nombres antes de invocar los
 scrapers, sin necesitar una clave privada de TMDB.
 
+### Deportes (área propia)
+
+La última fila del Home es **Deportes en vivo**, con el dibujo del Sports de
+Apple TV: no son pósters 2:3 sino marcadores.
+
+- **Datos reales, no inventados**: se leen de la agenda del día que ya publican
+  los scrapers en vivo (`futbolibre`), con título, competición, hora y estado.
+  `"Liga 1: Cienciano vs Atlético Grau"` se parte en liga y equipos.
+- Cada tarjeta enseña la competición en mayúsculas, los dos equipos con sus
+  iniciales, la hora y, si el partido ya empezó, el chip **EN VIVO**.
+- Los partidos programados **no** se marcan como directos: la meta viaja con
+  `onAir: false` y la app no los pinta como emisión en curso.
+- También entran los canales deportivos de la lista pública (ESPN, TUDN, MLB,
+  DAZN…) cuando aparecen. El partido se reproduce con su id de siempre
+  (`tv:futbolibre:evento:<slug>`), así que el failover no cambia.
+- Sin agenda no hay fila: se prefiere un Home sin deportes a enseñar el partido
+  de ayer. La caché es de 10 minutos y no tiene respaldo rancio.
+
 ### Scrapers: sólo resuelven streams
 
 Los doce scrapers de `server/scrapers/` (películas, series y anime) no publican
@@ -81,9 +104,9 @@ para **resolver el stream**:
   cada scraper busca esa ficha en su propio buscador.
 - `GET /catalog/:type/<id-de-scraper>.json` devuelve `{"metas": []}`: no es un
   error, es el contrato. Si un cliente viejo pide esa fila, se le responde vacío.
-- La portada queda con Cinemeta (si está activo) y la TV en vivo; el catálogo
-  del servidor (`server/config/catalogs.json`) sigue igual: sin filas de
-  proveedores.
+- La portada queda con Cinemeta (si está activo), la TV en vivo y el área de
+  deportes; el catálogo del servidor (`server/config/catalogs.json`) sigue
+  igual: sin filas de proveedores.
 
 ### Addons de Stremio (v3)
 
