@@ -68,10 +68,10 @@ For a production build, configure your own release signing as described below.
 
 ### Features
 
-- **Autonomous by default:** Python 3.11 and the twelve real provider scrapers run inside the APK; no Node.js server, IP address or backend deployment required
+- **Autonomous by default:** Python 3.11 and every real provider scraper run inside the APK; no Node.js server, IP address or backend deployment required
 - Cinemeta catalogues **on by default** (real 2:3 posters and 16:9 backdrops), followed by the open
   live channels, local episode discovery and on-device cache
-- The twelve scrapers are **stream resolvers only**: they publish no catalogue rows, they just
+- The scrapers are **stream resolvers only**: they publish no catalogue rows, they just
   resolve the video when a title or episode is opened
 - *Streaming Catalogs* (Netflix, Disney+, HBO Max, Prime Video…) installed automatically on first launch
 - Optional external-server mode remains available in Settings
@@ -475,7 +475,7 @@ A changed domain, anti-bot challenge or dead video host can still break a source
 - **Canales abiertos primero.** La fila `iptvorg` (iptv-org, HLS libre) es la
   primera del Inicio y se reproduce sin cuenta, sin addon y sin proveedor; ver
   *Canales abiertos sin configurar nada*.
-- The twelve provider definitions and curated live-channel IDs are packaged
+- The provider definitions and curated live-channel IDs are packaged
   from `server/config/`; the demo Python providers and server-only third-party
   addon configuration are excluded.
 - **Los scrapers no publican filas.** Su portada no tiene orden, arte ni
@@ -518,7 +518,7 @@ python3 scripts/verify-embedded-apk.py app/build/outputs/apk/debug/app-debug.apk
 # Offline tests of the actual engine + existing Python scrapers:
 python3 -m unittest discover -s app/src/test/python -v
 
-# Device/emulator smoke test: native Python + all twelve imports, no backend:
+# Device/emulator smoke test: native Python + every bundled provider, no backend:
 ./gradlew :app:connectedDebugAndroidTest
 
 # Optional backend regressions (separate from the Android runtime):

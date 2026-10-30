@@ -2,7 +2,7 @@
 
 ## Qué cambia
 
-El APK incluye el intérprete **Python 3.11** (Chaquopy 17.1.0), los doce
+El APK incluye el intérprete **Python 3.11** (Chaquopy 17.1.0), todos los
 scrapers reales de `server/scrapers/`, sus helpers, el registro de proveedores
 y los identificadores de canales guardados. No basta con copiar los `.py` como
 assets: `ChaquopyRuntime` inicia el intérprete y el motor importa cada módulo
@@ -113,7 +113,7 @@ Apple TV: no son pósters 2:3 sino marcadores.
 
 ### Scrapers: sólo resuelven streams
 
-Los doce scrapers de `server/scrapers/` (películas, series y anime) no publican
+Los scrapers de `server/scrapers/` (películas, series, anime y directo) no publican
 filas de catálogo. Sus listados son de mejor esfuerzo —sin póster 2:3, sin
 sinopsis, con títulos repetidos— y ensuciaban la portada. Ahora sólo se usan
 para **resolver el stream**:
@@ -228,7 +228,7 @@ al elegir manualmente el modo servidor. Sin keystore, el release queda sin
 firmar y no será instalable hasta firmarlo; el debug se firma automáticamente.
 
 El verificador inspecciona el APK real: comprueba el archivo de módulos Python,
-los doce scrapers y sus helpers, las bibliotecas nativas de las tres ABIs y la
+todos los scrapers y sus helpers, las bibliotecas nativas de las tres ABIs y la
 exclusión de los scrapers de demostración. No considera «completo» un APK
 únicamente porque su ZIP contenga archivos `.py`.
 

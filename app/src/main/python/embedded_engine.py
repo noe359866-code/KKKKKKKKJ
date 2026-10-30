@@ -2,7 +2,7 @@
 
 configure() receives bundled JSON assets, then dispatch() accepts/returns JSON.
 No HTTP listener, Node.js, subprocess, stdin, executable downloads or TMDB key.
-Only an allowlist of the twelve bundled providers can be imported.
+Only an allowlist of the bundled providers can be imported.
 """
 from __future__ import annotations
 

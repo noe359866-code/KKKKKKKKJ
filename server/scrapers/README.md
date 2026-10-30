@@ -76,7 +76,7 @@ qué se rompió. Varias de las rutas de esta página salen de ahí, no de supone
 ## Resiliencia compartida (lo que ya no hay que reescribir)
 
 Todos los proveedores pasan por los mismos kits, así que una mejora ahí vale
-para los doce. Lo que hay hoy:
+para todos (y los de directo, desde esta ronda, comparten `_livekit.py`). Lo que hay hoy:
 
 | Pieza | Qué hace |
 | --- | --- |

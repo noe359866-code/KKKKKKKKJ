@@ -24,7 +24,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** No backend and no Internet: proves native Python and all twelve scripts load on Android. */
+/** No backend and no Internet: proves native Python and every bundled script load on Android. */
 @RunWith(AndroidJUnit4::class)
 class EmbeddedEngineSmokeTest {
     @Test
@@ -35,7 +35,20 @@ class EmbeddedEngineSmokeTest {
         val runtime = ChaquopyRuntime(app)
         val health = Json.parseToJsonElement(runtime.call("health", "{}")).jsonObject
         assertEquals("embedded", health["mode"]?.jsonPrimitive?.content)
-        assertEquals(12, health["providers"]?.jsonArray?.size)
+        // La lista sale del registro empaquetado: añadir un proveedor no debe
+        // obligar a tocar el test, pero sí tiene que llegar al APK.
+        val registry = Json.parseToJsonElement(
+            app.assets.open("providers.json").bufferedReader().use { it.readText() }
+        ).jsonObject
+        val expected = registry["providers"]!!.jsonArray
+            .map { it.jsonObject }
+            .filter { it["enabled"]?.jsonPrimitive?.content != "false" }
+            .map { it["id"]!!.jsonPrimitive.content }
+            .filterNot { it.startsWith("demo") }
+            .toSet()
+        val shipped = health["providers"]!!.jsonArray.map { it.jsonPrimitive.content }.toSet()
+        assertEquals(expected, shipped)
+        assertTrue(expected.containsAll(setOf("livelive24", "damitv", "ntv", "streamcorner")))
         assertTrue(health["python"]!!.jsonPrimitive.content.startsWith("3.11."))
         val client = EmbeddedContentClient(runtime)
         val descriptors = client.catalogs("")
