@@ -59,11 +59,28 @@ from typing import Any, Dict, List
 from _base import run
 from _peliskit import cli, env_bases, scrape_site
 
-BASE = "https://repelis.live"
+#: `repelis.live` (el histórico) ya no responde. El 2026-10-30 respondía
+#: `www.repelis.net`; sigue siendo el proveedor más frágil de todos, así que la
+#: lista de espejos se prueba en orden y `REPELIS_BASE`/`REPELIS_MIRRORS` mandan.
+BASE = "https://www.repelis.net"
+
+#: Clones conocidos con el mismo motor (ficha `/pelicula/<slug>`).
+LEGACY_BASES = (
+    "https://repelishd.run",
+    "https://repelis.ink",
+    "https://repelis.live",
+)
 
 
 def _bases() -> List[str]:
-    return env_bases(BASE, "REPELIS_BASE", "REPELIS_MIRRORS")
+    """Dominio configurado (+ espejos) o, sin configuración, toda la familia."""
+    bases = env_bases(BASE, "REPELIS_BASE", "REPELIS_MIRRORS")
+    explicit = len(bases) > 1 or bases[0] != BASE
+    if not explicit:
+        for base in LEGACY_BASES:
+            if base not in bases:
+                bases.append(base)
+    return bases
 
 
 SITE: Dict[str, Any] = {
@@ -91,9 +108,10 @@ def scrape(payload: Dict[str, Any]) -> Any:
     bases = _bases()
     streams, meta = scrape_site(payload, {**SITE, "base": bases[0], "bases": bases})
     if not streams and len(bases) == 1:
-        # El dominio por defecto está documentado como caído: si el resultado es
-        # vacío y nadie configuró un espejo, decirlo en vez de dejarlo opaco.
+        # Un solo dominio y vacío: si además está caído, el motivo lo dice.
         meta["hint"] = "dominio por defecto caído: define REPELIS_BASE o REPELIS_MIRRORS"
+    elif not streams:
+        meta["tried_bases"] = bases
     return streams, meta
 
 

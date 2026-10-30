@@ -69,7 +69,18 @@ from _base import log, run
 from _htmlkit import Deadline
 from _peliskit import cli, env_bases, fetch_html, harvest_servers, join, scrape_site
 
-BASE = "https://cue.cuevana3.nu"
+#: Cuevana3 se replica en decenas de dominios y cada pocos meses cambia; el que
+#: estaba por defecto (`cue.cuevana3.nu`) no respondió el 2026-10-30 y este sí
+#: (misma estructura `/peliculas/<slug>-<año>/` con `showEmbed`). `CUEVANA_BASE`
+#: y `CUEVANA_MIRRORS` siguen mandando.
+BASE = "https://cuevana3.gs"
+
+#: Espejos conocidos de la misma familia, por si el primero cae.
+LEGACY_BASES = (
+    "https://cuevana-3.fun",
+    "https://cuevana.gs",
+    "https://cue.cuevana3.nu",
+)
 
 #: `showEmbed=<base64>` — el embed real, en base64 dentro de la URL.
 SHOW_EMBED_RE = re.compile(r"""showEmbed=([A-Za-z0-9+/=_\-%]{8,})""", re.IGNORECASE)
@@ -78,7 +89,14 @@ PLAYER_TOKEN_RE = re.compile(r"""player\.php\?[^"'\s>]*?\bt=([A-Za-z0-9_\-]{16,}
 
 
 def _bases() -> List[str]:
-    return env_bases(BASE, "CUEVANA_BASE", "CUEVANA_MIRRORS")
+    """Dominio configurado (+ espejos) o, si nadie configuró nada, con la familia."""
+    bases = env_bases(BASE, "CUEVANA_BASE", "CUEVANA_MIRRORS")
+    explicit = len(bases) > 1 or bases[0] != BASE
+    if not explicit:
+        for base in LEGACY_BASES:
+            if base not in bases:
+                bases.append(base)
+    return bases
 
 
 def show_embed_servers(html: str) -> List[Dict[str, Any]]:

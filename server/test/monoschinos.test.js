@@ -97,12 +97,12 @@ function routesFor(baseUrl) {
     '/ver/one-piece-episodio-1': episodePage(baseUrl),
     '/ver/one-piece-episodio-2': '<html><body><h1>Ver One piece - 2</h1><p>Sin servidores</p></body></html>',
     /* Episodio 5 sin botones en su página: la ficha lo tiene en otra ruta. */
-    '/ver/one-piece-sub-espanol-episodio-5':
+    '/ver/one-piece-episodio-5':
       '<html><body><h1>Ver One piece - 5</h1><p>Sin servidores</p></body></html>',
     '/anime/one-piece-sub-espanol': `<html><body><h1>One piece</h1><div class="episodes">
-      <a href="/ver/one-piece-sub-espanol-episodio-5-latino">Episodio 5</a>
+      <a href="/ver/one-piece-episodio-5-latino">Episodio 5</a>
     </div></body></html>`,
-    '/ver/one-piece-sub-espanol-episodio-5-latino': `<html><body><h1>Ver One piece - 5</h1>
+    '/ver/one-piece-episodio-5-latino': `<html><body><h1>Ver One piece - 5</h1>
 <div class="servers"><button class="btn btn-sm" data-player="tok-voe">voe</button></div>
 </body></html>`,
     '/buscar': searchPage(baseUrl, [['one-piece-sub-espanol', 'One piece']]),
@@ -228,9 +228,11 @@ test('uses the site search when the slug does not exist', async () => {
   const { body } = await runScraper(ask('monoschinos:one:1'));
 
   assert.equal(body.meta.resolved_from_search, 'one-piece-sub-espanol');
-  assert.equal(body.meta.page, `${base}/ver/one-piece-sub-espanol-episodio-1`);
-  assert.deepEqual(body.streams, [], 'the resolved slug has no fixture episode page');
-  assert.equal(body.meta.reason, 'episode_unavailable');
+  /* La ficha trae `-sub-espanol`, el capítulo no: sin quitar el sufijo la URL
+     del episodio da 404 (comprobado en el sitio real el 2026-10-30). */
+  assert.equal(body.meta.episode_slug, 'one-piece');
+  assert.equal(body.meta.page, `${base}/ver/one-piece-episodio-1`);
+  assert.ok(body.streams.length >= 1);
 });
 
 test('an episode without server buttons degrades to an empty result', async () => {
@@ -294,7 +296,7 @@ test('un episodio sin botones se rescata desde la ficha, con el lector del sitio
 
   assert.equal(code, 0);
   assert.equal(body.meta.servers_via, 'anime_page');
-  assert.match(body.meta.servers_from, /episodio-5-latino$/);
+  assert.match(body.meta.servers_from, /one-piece-episodio-5-latino$/);
   assert.ok(body.streams.length >= 1);
   assert.match(body.streams[0].url, /m3u8/);
   assert.ok(requested.some((entry) => entry.includes('/reproductor')), requested.join(' | '));

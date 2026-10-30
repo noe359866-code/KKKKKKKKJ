@@ -248,6 +248,19 @@ test('an episode without servers and without a link degrades to an empty result'
   assert.equal(body.meta.reason, 'no_servers');
 });
 
+test('rota a los espejos cuando el dominio configurado no responde', async () => {
+  /* El dominio histórico murió en 2026: si el primero cae, se prueba el espejo. */
+  const { code, body } = await runScraper(ask('animeflv:one-piece:1180'), {
+    ANIMEFLV_BASE: 'http://127.0.0.1:1',
+    ANIMEFLV_MIRRORS: base,
+  });
+
+  assert.equal(code, 0);
+  assert.equal(body.meta.base, base);
+  assert.equal(body.meta.base_rotated, true);
+  assert.ok(body.streams.length >= 1);
+});
+
 test('unreachable site returns [] with a reason instead of crashing', async () => {
   const { code, body } = await runScraper(ask('animeflv:one-piece:1180'), {
     ANIMEFLV_BASE: 'http://127.0.0.1:1',

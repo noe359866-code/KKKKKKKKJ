@@ -89,6 +89,9 @@ HOSTER_LABELS: Tuple[Tuple[str, str], ...] = (
 DOWNLOAD_ONLY = (
     "mega.nz", "mediafire", "1fichier", "zippyshare", "drive.google",
     "youtube.com", "youtu.be", "facebook.com", "instagram.com",
+    # JkAnime publica sus descargas en `c1.jkplayers.com/d/<id>`: es el mismo
+    # archivo que el reproductor, pero por HTTP de descarga (no es un medio).
+    "jkplayers",
 )
 
 #: `id="ideoooolink"` de Streamtape.

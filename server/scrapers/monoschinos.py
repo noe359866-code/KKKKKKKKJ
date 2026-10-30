@@ -89,6 +89,10 @@ ANIME_PATH = os.getenv("MONOSCHINOS_ANIME_PATH", "/anime/{slug}")
 SEARCH_PATH = os.getenv("MONOSCHINOS_SEARCH_PATH", "/buscar?q={query}")
 PLAYER_PATH = os.getenv("MONOSCHINOS_PLAYER_PATH", "/reproductor?url={url}")
 
+#: Sufijo que el sitio añade a la ficha del anime y **no** al capítulo.
+FICHA_SUFFIX = os.getenv("MONOSCHINOS_FICHA_SUFFIX", "-sub-espanol")
+LANG_SUFFIX_RE = re.compile(r"-(?:sub-espanol|sub|latino|castellano)$", re.IGNORECASE)
+
 MAX_SERVERS = int(os.getenv("MONOSCHINOS_MAX_SERVERS", "6"))
 PARALLEL_SERVERS = int(os.getenv("MONOSCHINOS_PARALLEL", "4"))
 
@@ -188,12 +192,29 @@ def expand_servers(
     return dedupe_servers(servers)
 
 
+def episode_slug(slug: str) -> str:
+    """Slug del capítulo: el sitio **quita** el sufijo de idioma de la ficha.
+
+    Comprobado en el sitio real (2026-10-30): la ficha es
+    ``/anime/black-clover-sub-espanol`` y el capítulo 1 vive en
+    ``/ver/black-clover-episodio-1`` — con el sufijo, la URL da 404. Como el id
+    suele venir de la ficha (buscador), sin esto **ningún** capítulo abría.
+    """
+    return LANG_SUFFIX_RE.sub("", slug.strip("/"))
+
+
+def ficha_slug(slug: str) -> str:
+    """Slug de la ficha: el sitio lo publica siempre con ``-sub-espanol``."""
+    cleaned = episode_slug(slug)
+    return f"{cleaned}{FICHA_SUFFIX}"
+
+
 def episode_url(slug: str, episode: int) -> str:
-    return f"{BASE_URL}{EPISODE_PATH.format(slug=slug, episode=int(episode))}"
+    return f"{BASE_URL}{EPISODE_PATH.format(slug=episode_slug(slug), episode=int(episode))}"
 
 
 def series_url(slug: str) -> str:
-    return f"{BASE_URL}{ANIME_PATH.format(slug=slug)}"
+    return f"{BASE_URL}{ANIME_PATH.format(slug=ficha_slug(slug))}"
 
 
 def _native_servers(
@@ -267,6 +288,11 @@ def scrape(payload: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any
 
     if found is None:
         return [], {**meta, "reason": "episode_unavailable"}
+
+    # La ficha y el capítulo no comparten slug: se anotan los dos (ya con el slug
+    # definitivo, por si salió del buscador) para que el cliente no adivine.
+    meta["episode_slug"] = episode_slug(str(ref.get("slug") or ""))
+    meta["ficha"] = series_url(str(ref.get("slug") or "")) if ref.get("slug") else ""
 
     html, final_url = found
     if looks_blocked(html):

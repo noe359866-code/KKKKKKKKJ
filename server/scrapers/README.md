@@ -62,6 +62,12 @@ Reglas:
 | `peliculasflix.py` | **Proveedor real** de `peliculasflix.co` (API GraphQL). |
 | `pelisjuanita.py` | **Proveedor real** de `pelisjuanita.org`. |
 
+## Estado real de las webs
+
+Antes de tocar una ruta, mira **[`RECON.md`](RECON.md)**: es el reconocimiento
+hecho abriendo cada web (2026-10-30) — qué dominio responde, qué rutas publica y
+qué se rompió. Varias de las rutas de esta página salen de ahí, no de suponer.
+
 ## Resiliencia compartida (lo que ya no hay que reescribir)
 
 Todos los proveedores pasan por los mismos kits, así que una mejora ahí vale
@@ -427,6 +433,15 @@ módulos en vez de repetirse:
 | `_animekit.py` | id `proveedor:slug[:temporada]:episodio`, lectura de los literales JS (`var videos = […]`), base64 de los embeds, etiquetas de los streams y búsqueda por nombre. |
 | `_hosters.py` | convertir la URL de un servidor (Streamwish, VOE, Filemoon, Mixdrop, Streamtape, Mp4upload, YourUpload, Okru, Doodstream…) en un `.m3u8`/`.mp4` reproducible, incluido el desempaquetado del JS empaquetado. |
 
+### Ficha y capítulo no comparten slug (MonosChinos)
+
+Comprobado el 2026-10-30: la ficha es `/anime/black-clover-sub-espanol` y el
+capítulo `/ver/black-clover-episodio-1`. Con el sufijo de la ficha en la URL del
+capítulo, el sitio devuelve **404** — y como el id sale de la ficha o del
+buscador, ningún capítulo abría. `episode_slug()` quita
+`-sub-espanol`/`-latino`/`-castellano` y `ficha_slug()` lo añade; `meta.episode_slug`
+y `meta.ficha` publican ambos.
+
 ### Formato de los ids
 
 ```
@@ -453,6 +468,14 @@ estaban caídos. Si la página no expone nada, la respuesta es
 siguiente.
 
 ## Proveedor incluido: `animeflv.py`
+
+> ⚠️ **El dominio histórico ya no reproduce** (2026): `www3.animeflv.net` y sus
+> subdominios siguen mostrando el catálogo pero los episodios responden
+> "Actualmente no hay vídeos". Por defecto se usa `https://vww.animeflv.one`,
+> que sí entrega episodios con la estructura clásica, y el proveedor **rota**
+> por `ANIMEFLV_MIRRORS` y los espejos conocidos hasta que una página de
+> episodio responde (`meta.base`, `meta.base_rotated`). Detalle en `RECON.md`.
+
 
 Scraper de **https://www3.animeflv.net/**. Prioridad **6**.
 
@@ -665,6 +688,12 @@ también es JSON (`/wp-json/gnrd/v1/search?q=`).
 
 #### `cuevana.py` — Cuevana (prioridad 12)
 
+Dominio por defecto `https://cuevana3.gs` (el anterior, `cue.cuevana3.nu`, no
+responde). Sin `CUEVANA_BASE`/`CUEVANA_MIRRORS` se prueba la familia
+`cuevana-3.fun`, `cuevana.gs`, `cue.cuevana3.nu`. Las fichas van con el año en el
+slug (`/peliculas/spider-man-de-regreso-a-casa-2017/`), que es justo lo que
+generan `slug_variants()` y TMDB.
+
 ```
 /peliculas/<slug>                          ficha
    │  <iframe src="…/embed-page?showEmbed=<base64>">
@@ -710,8 +739,9 @@ REPELIS_MIRRORS=https://repelis2.ejemplo,https://repelis3.ejemplo
 ```
 
 Prueba la base y luego los espejos hasta que una ficha responda, y lo anota en
-`meta.base`. Con `repelis.live` (el histórico) ya no responde: hay que poner el
-que esté vivo. Si el resultado es vacío y no hay ningún espejo configurado, el
+`meta.base`. Por defecto se usa `https://www.repelis.net` (verificado el
+2026-10-30) y, si nadie configura nada, se prueba además `repelishd.run`,
+`repelis.ink` y el histórico `repelis.live`, que ya no responde. Si el resultado es vacío y no hay ningún espejo configurado, el
 `meta.hint` lo dice en vez de dejar un `not_found` opaco. Los capítulos se prueban
 en `temporada/<n>/capitulo/<m>`, `<n>x<mm>` y `<n>/<m>`.
 

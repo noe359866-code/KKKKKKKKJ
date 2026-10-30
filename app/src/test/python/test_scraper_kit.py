@@ -384,6 +384,13 @@ class TypedSourceTest(unittest.TestCase):
         self.assertEqual(stream("https://x/y.m3u8", "n")["behaviorHints"], {"notWebReady": False})
 
 
+class DownloadOnlyHostsTest(unittest.TestCase):
+    def test_the_anime_site_download_host_is_not_a_stream(self):
+        """JkAnime sirve sus descargas en `c1.jkplayers.com/d/<id>`."""
+        self.assertTrue(_hosters.is_download_only("https://c1.jkplayers.com/d/PccD5609gkYcb/"))
+        self.assertFalse(_hosters.is_download_only("https://streamwish.to/e/abc123"))
+
+
 class ProbeTest(unittest.TestCase):
     def test_probe_recognises_what_it_downloads(self):
         cases = [
