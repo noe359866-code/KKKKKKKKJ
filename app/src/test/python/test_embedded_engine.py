@@ -331,6 +331,72 @@ class EngineTests(unittest.TestCase):
         self.assertEqual("PelisPlus", sources[0]["provider"])
         self.assertFalse(sources[0]["isLive"])
 
+    def test_subtitles_ride_with_the_streams_and_are_cached_once(self):
+        """Los subtítulos del `meta` del proveedor salen en la misma respuesta.
+
+        En el APK no hay un segundo viaje: el reproductor necesita las pistas
+        **antes** de crear el `MediaItem`, y volver a raspar retrasaría el
+        arranque del vídeo.
+        """
+        module = embedded.providers.module_for("pelisplushd")
+        payloads = []
+
+        def fake_scrape(payload):
+            payloads.append(payload)
+            return (
+                [{"url": self.base + "/video/fixture.m3u8", "name": "PelisPlus", "quality": "1080p"}],
+                {"subtitles": [
+                    {"url": self.base + "/subs/movie.en.vtt", "lang": "English"},
+                    {"url": self.base + "/subs/movie.es.srt", "lang": "SPA"},
+                    {"url": self.base + "/subs/movie.es.srt", "lang": "es"},
+                    {"url": self.base + "/embed/player.html", "lang": "es"},
+                ]},
+            )
+
+        with patch.object(module, "scrape", side_effect=fake_scrape):
+            self.engine.providers = {"pelisplushd": self.engine.providers["pelisplushd"]}
+            result = self.engine.streams("movie", "pelisplushd:fixture")
+            # `dispatch("subtitles")` reutiliza la caché de streams: cero scrapes.
+            again = self.engine.dispatch("subtitles", {"type": "movie", "id": "pelisplushd:fixture"})
+
+        self.assertEqual(1, len(payloads))
+        self.assertEqual(1, len(result["streams"]))
+        self.assertEqual(
+            [(item["lang"], item["label"], item.get("format")) for item in result["subtitles"]],
+            [("es", "Español", "srt"), ("en", "Inglés", "vtt")],
+        )
+        self.assertEqual(result["subtitles"], again["subtitles"])
+        # Sin duplicados y sin la página de embed del proveedor.
+        self.assertEqual(2, len({item["url"] for item in result["subtitles"]}))
+
+    def test_live_content_never_publishes_subtitles(self):
+        module = embedded.providers.module_for("futbolibre")
+        with patch.object(module, "scrape", return_value=(
+            [{"url": "https://video.invalid/live.m3u8", "name": "Fútbol Libre"}],
+            {"subtitles": [{"url": "https://video.invalid/live.es.vtt", "lang": "es"}]},
+        )):
+            self.engine.providers = {"futbolibre": self.engine.providers["futbolibre"]}
+            result = self.engine.streams("tv", "futbolibre:espn-1")
+        self.assertEqual(1, len(result["streams"]))
+        self.assertEqual([], result["subtitles"])
+
+    def test_subtitle_normalization_rejects_what_media3_cannot_open(self):
+        provider = {"label": "NovaHD"}
+        self.assertIsNone(embedded.normalize_subtitle({"url": "https://cdn/a.mp4"}, provider))
+        self.assertIsNone(embedded.normalize_subtitle({"url": "https://cdn/page.html"}, provider))
+        self.assertIsNone(embedded.normalize_subtitle({"url": "/subs/a.srt"}, provider))
+        self.assertIsNone(embedded.normalize_subtitle("nope", provider))
+        self.assertEqual(
+            {"id": "https://cdn/a.srt", "url": "https://cdn/a.srt", "lang": "es",
+             "label": "Español", "provider": "NovaHD", "format": "srt"},
+            embedded.normalize_subtitle({"url": "https://cdn/a.srt", "lang": "español"}, provider),
+        )
+        # Sin idioma ni etiqueta, al menos el nombre del proveedor.
+        self.assertEqual("NovaHD", embedded.normalize_subtitle({"url": "https://cdn/subs/9"}, provider)["label"])
+        self.assertEqual("es-419", embedded.normalize_language("es_419"))
+        self.assertEqual("", embedded.normalize_language("subtítulos en español"))
+        self.assertEqual("Español (Latino)", embedded.language_name("ES-419"))
+
     def test_cinemeta_titles_resolve_streams_through_the_scraper_search(self):
         self.engine.providers = {"pelisplushd": self.engine.providers["pelisplushd"]}
         with patch.dict(os.environ, {"PELISPLUSHD_BASE": self.base}):

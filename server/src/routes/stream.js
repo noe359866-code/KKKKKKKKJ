@@ -6,6 +6,7 @@
  * Response (Stremio protocol):
  *   {
  *     "streams": [ { name, title, url, behaviorHints: { requestHeaders } } ],
+ *     "subtitles": [ { id, url, lang, label } ],   // extra, see lib/subtitles.js
  *     "cacheMaxAge": 21600,        // seconds, mirrors the TTL policy
  *     "staleRevalidate": 3600,
  *     "staleError": 600
@@ -83,6 +84,9 @@ async function handleStream(req, res) {
 
   return res.json({
     streams: result.streams,
+    /* Extra field (ignored by Stremio clients): the same list the `subtitles`
+     * resource serves, already resolved by this scrape. */
+    subtitles: result.subtitles || [],
     cacheMaxAge,
     /* Client-side hints from the Stremio SDK: how long stale data is still
      * acceptable while the addon refreshes in the background. */

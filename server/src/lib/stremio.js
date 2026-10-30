@@ -46,6 +46,13 @@ export function buildManifest(baseUrl = '') {
       name: 'meta',
       types,
     },
+    {
+      /* Subtitles resource: only providers that publish them fill it (novaHD
+       * today). Declaring it is what makes a Stremio client ask; our own app
+       * reads the same list from the stream response body. */
+      name: 'subtitles',
+      types,
+    },
   ];
 
   return {

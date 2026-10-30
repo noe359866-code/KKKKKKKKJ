@@ -28,6 +28,7 @@ import { runProviderPool } from '../providers/runner.js';
 import { buildStream } from '../lib/stremio.js';
 import { parseMediaId, normalizeStreamId } from '../lib/ids.js';
 import { normalizeQuality, qualityRank } from '../lib/quality.js';
+import { buildSubtitleList } from '../lib/subtitles.js';
 import { createLogger } from '../lib/logger.js';
 
 const log = createLogger('streams');
@@ -187,7 +188,7 @@ export function buildStreamList(results, context = {}) {
  * @param {string} params.id   - Stremio video id
  * @param {boolean} [params.bypassCache] - force a fresh scrape (admin use)
  * @returns {Promise<{
- *   streams: object[], isLive: boolean, ttlMs: number, cacheKey: string,
+ *   streams: object[], subtitles: object[], isLive: boolean, ttlMs: number, cacheKey: string,
  *   cached: boolean, stale: boolean, coalesced: boolean, durationMs: number,
  *   providers: Array<{ id: string, status: string, streams: number, ms: number|null }>
  * }>}
@@ -202,6 +203,10 @@ export async function getStreams({ type, id, bypassCache = false }) {
 
   const respond = (payload) => ({
     ...payload,
+    /* Los subtítulos viajan con las fuentes (campo extra del protocolo): una
+     * sola petición resuelve el título entero, sin segundo round-trip. Va
+     * después del spread para que nunca quede `undefined`. */
+    subtitles: payload.subtitles || [],
     isLive,
     ttlMs,
     cacheKey: key,
@@ -222,6 +227,7 @@ export async function getStreams({ type, id, bypassCache = false }) {
       });
       return respond({
         streams: hit.value,
+        subtitles: hit.meta.subtitles || [],
         cached: true,
         stale: false,
         coalesced: false,
@@ -237,6 +243,7 @@ export async function getStreams({ type, id, bypassCache = false }) {
       refreshInBackground(key, { type, id: normalizedId, parsed, isLive, ttlMs });
       return respond({
         streams: hit.value,
+        subtitles: hit.meta.subtitles || [],
         cached: true,
         stale: true,
         coalesced: false,
@@ -259,6 +266,9 @@ export async function getStreams({ type, id, bypassCache = false }) {
     });
 
     const streams = buildStreamList(results, { isLive });
+    /* Los subtítulos salen del mismo scrape: `meta.subtitles` de cada proveedor
+     * (hoy novaHD) se normaliza y se cachea junto a las fuentes. */
+    const subtitles = buildSubtitleList(results);
 
     const providerStatus = results.map((result) => ({
       id: result.provider.id,
@@ -277,24 +287,26 @@ export async function getStreams({ type, id, bypassCache = false }) {
         durationMs,
         timedOut,
       });
-      return { streams: [], providers: providerStatus, negative: true };
+      return { streams: [], subtitles: [], providers: providerStatus, negative: true };
     }
 
-    cache.set(key, streams, ttlMs, { providers: providerStatus, isLive, ttlMs, negative: false });
+    cache.set(key, streams, ttlMs, { providers: providerStatus, subtitles, isLive, ttlMs, negative: false });
     log.info('scrape complete, cached', {
       key,
       streams: streams.length,
+      subtitles: subtitles.length,
       providers: providerStatus.filter((provider) => provider.status === 'ok').length,
       durationMs,
       ttlHours: (ttlMs / 3_600_000).toFixed(1),
       timedOut,
     });
 
-    return { streams, providers: providerStatus, negative: false };
+    return { streams, subtitles, providers: providerStatus, negative: false };
   });
 
   return respond({
     streams: value.streams,
+    subtitles: value.subtitles || [],
     cached: false,
     stale: false,
     coalesced,
@@ -321,6 +333,7 @@ function refreshInBackground(key, context) {
         isLive: context.isLive,
       });
       const streams = buildStreamList(results, { isLive: context.isLive });
+      const subtitles = buildSubtitleList(results);
 
       if (streams.length === 0) {
         log.warn('background refresh returned no streams, keeping stale entry', { key });
@@ -333,6 +346,7 @@ function refreshInBackground(key, context) {
           streams: result.streams.length,
           ms: result.durationMs,
         })),
+        subtitles,
         isLive: context.isLive,
         ttlMs: context.ttlMs,
         negative: false,

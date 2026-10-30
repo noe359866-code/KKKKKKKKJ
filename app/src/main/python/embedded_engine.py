@@ -277,6 +277,116 @@ def is_playable_stream(url: str, hints: Optional[Dict[str, Any]] = None) -> bool
         return False
     return not any(marker in path for marker in NOT_PLAYABLE_HINTS)
 
+# ---------------------------------------------------------------------------
+# Subtítulos
+# ---------------------------------------------------------------------------
+#: Tope defensivo: ninguna película necesita 40 pistas.
+SUBTITLE_LIMIT = 40
+
+#: Formatos que Media3 lee de forma nativa (`.vtt` → TEXT_VTT, etc.).
+SUBTITLE_FORMATS = {
+    "vtt": "vtt", "webvtt": "vtt", "srt": "srt", "sub": "srt",
+    "ass": "ass", "ssa": "ass", "ttml": "ttml", "dfxp": "ttml", "xml": "ttml",
+}
+
+#: Lo que nunca es una pista, aunque venga del mismo host.
+NOT_SUBTITLE = (".html", ".htm", ".php", ".asp", ".aspx", ".jsp", ".json", ".txt",
+                ".css", ".js", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
+                ".mp4", ".m3u8", ".mpd")
+
+LANGUAGE_ALIASES = {
+    "spa": "es", "esp": "es", "spanish": "es", "espanol": "es", "español": "es",
+    "castellano": "es", "latino": "es", "eng": "en", "english": "en", "ingles": "en",
+    "inglés": "en", "por": "pt", "portuguese": "pt", "portugues": "pt",
+    "fre": "fr", "fra": "fr", "french": "fr", "ger": "de", "deu": "de", "german": "de",
+    "ita": "it", "italian": "it", "jpn": "ja", "japanese": "ja", "kor": "ko",
+    "korean": "ko", "zho": "zh", "chi": "zh", "chinese": "zh", "rus": "ru", "russian": "ru",
+}
+
+LANGUAGE_NAMES = {
+    "es": "Español", "en": "Inglés", "pt": "Portugués", "fr": "Francés", "de": "Alemán",
+    "it": "Italiano", "ja": "Japonés", "ko": "Coreano", "zh": "Chino", "ru": "Ruso",
+}
+
+
+def normalize_language(value: Any) -> str:
+    """`SPA`, `es-419`, `Spanish`… → `es` / `es-419` (lo que espera ExoPlayer)."""
+    text = re.sub(r"[_\s]+", "-", str(value or "").strip().lower())
+    if not text:
+        return ""
+    base, _, region = text.partition("-")
+    base = LANGUAGE_ALIASES.get(base, base)
+    if not re.fullmatch(r"[a-z]{2,3}", base):
+        return ""
+    # `es-419` se conserva (latino ≠ castellano); un sufijo raro se descarta.
+    return f"{base}-{region}" if re.fullmatch(r"([a-z]{2}|\d{3})", region) else base
+
+
+def language_name(value: Any) -> str:
+    """`es` → `Español`, `es-419` → `Español (Latino)`, `pt-BR` → `Portugués (Brasil)`."""
+    normalized = normalize_language(value)
+    base, _, region = normalized.partition("-")
+    name = LANGUAGE_NAMES.get(base, "")
+    if not name:
+        return ""
+    if not region:
+        return name
+    if base == "es" and region == "419":
+        return f"{name} (Latino)"
+    if base == "pt" and region == "br":
+        return f"{name} (Brasil)"
+    return f"{name} ({region.upper()})"
+
+
+def subtitle_format(url: str) -> Optional[str]:
+    """`.../foo.es.srt?token=…` → `srt`; sin extensión conocida, `None`."""
+    clean = (url or "").split("#", 1)[0].split("?", 1)[0].lower()
+    extension = clean.rsplit(".", 1)[-1] if "." in clean else ""
+    return SUBTITLE_FORMATS.get(extension)
+
+
+def normalize_subtitle(raw: Any, provider: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Una entrada cruda del scraper → subtítulo del protocolo Stremio.
+
+    Devuelve `None` para lo que ExoPlayer no puede abrir: una página de embed,
+    una imagen o una URL relativa no son pistas de texto.
+    """
+    if not isinstance(raw, dict):
+        return None
+    url = str(raw.get("url") or raw.get("src") or "").strip()
+    if not url or len(url) > 2048 or not re.match(r"^https?://", url, re.I):
+        return None
+    path = url.split("#", 1)[0].split("?", 1)[0].lower()
+    if any(path.endswith(extension) for extension in NOT_SUBTITLE):
+        return None
+    lang = normalize_language(raw.get("lang") or raw.get("language"))
+    label = str(raw.get("label") or raw.get("name") or "").strip() \
+        or language_name(lang) or lang.upper() or str(provider.get("label") or "")
+    if not label:
+        return None
+    item = {"id": str(raw.get("id") or url), "url": url, "lang": lang, "label": label[:64]}
+    if provider.get("label"):
+        item["provider"] = provider["label"]
+    fmt = subtitle_format(url) or subtitle_format(f".{raw.get('format')}" if raw.get("format") else "")
+    if fmt:
+        item["format"] = fmt
+    return item
+
+
+def merge_subtitles(collected: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Deduplica por URL, pone el español primero y corta en [SUBTITLE_LIMIT]."""
+    seen, merged = set(), []
+    for item in collected:
+        if not item or item["url"] in seen:
+            continue
+        seen.add(item["url"])
+        merged.append(item)
+        if len(merged) >= SUBTITLE_LIMIT:
+            break
+    spanish = [item for item in merged if str(item.get("lang") or "").startswith("es")]
+    return spanish + [item for item in merged if item not in spanish]
+
+
 
 def normalize_stream(raw: Dict[str, Any], provider: Dict[str, Any], is_live: bool) -> Optional[Dict[str, Any]]:
     url = str(raw.get("url") or "").strip()
@@ -576,15 +686,35 @@ class Engine:
             if self.inflight.get(key) is task:
                 self.inflight.pop(key, None)
 
-    def _scrape(self, provider: Dict[str, Any], payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _scrape(self, provider: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Un scrape: `{"streams": [...], "subtitles": [...]}`.
+
+        Los subtítulos salen del `meta` del proveedor (hoy sólo novaHD los
+        publica). Viajan con las fuentes para que la app no tenga que pedirlos
+        aparte: el reproductor los necesita **antes** de crear el `MediaItem`,
+        y una segunda petición retrasaría el arranque del vídeo.
+        """
         try:
             result = providers.module_for(provider["id"]).scrape(payload)
-            streams = result[0] if isinstance(result, tuple) else result.get("streams", []) if isinstance(result, dict) else []
-            return [item for raw in streams if isinstance(raw, dict)
-                    and (item := normalize_stream(raw, provider, payload["isLive"]))]
+            meta: Dict[str, Any] = {}
+            if isinstance(result, tuple):
+                streams, meta = result[0], (result[1] if len(result) > 1 and isinstance(result[1], dict) else {})
+            elif isinstance(result, dict):
+                streams, meta = result.get("streams", []), (result.get("meta") or {})
+            else:
+                streams = []
+            subtitles = []
+            if not payload["isLive"]:
+                subtitles = [item for raw in (meta.get("subtitles") or [])
+                             if (item := normalize_subtitle(raw, provider))]
+            return {
+                "streams": [item for raw in streams if isinstance(raw, dict)
+                            and (item := normalize_stream(raw, provider, payload["isLive"]))],
+                "subtitles": subtitles,
+            }
         except Exception as exc:
             log("embedded provider failed:", provider["id"], type(exc).__name__)
-            return []
+            return {"streams": [], "subtitles": []}
 
     def streams(self, media_type: str, content_id: str) -> Dict[str, Any]:
         key = f"streams:{media_type}:{content_id}"
@@ -606,9 +736,9 @@ class Engine:
                     "isLive": True,
                     "behaviorHints": {"isLive": True,
                                       "requestHeaders": {"User-Agent": DEFAULT_USER_AGENT}},
-                }], "cacheMaxAge": 3600}
+                }], "subtitles": [], "cacheMaxAge": 3600}
                 return result
-            return {"streams": [], "cacheMaxAge": 0}
+            return {"streams": [], "subtitles": [], "cacheMaxAge": 0}
         parts = base_id.split(":")
         explicit = parts[1] if is_live and len(parts) > 1 and parts[0] == "tv" else parts[0]
         selected = [self.providers[explicit]] if explicit in self.providers else [
@@ -621,7 +751,7 @@ class Engine:
                 title = (self.known.get(f"meta:{media_type}:{base_id}") or {}).get("name")
             title = title or (self.meta(media_type, base_id).get("meta") or {}).get("name")
             if not title:
-                return {"streams": [], "cacheMaxAge": 0}
+                return {"streams": [], "subtitles": [], "cacheMaxAge": 0}
         futures = []
         for provider in selected:
             provider_id = provider["id"]
@@ -640,20 +770,22 @@ class Engine:
                     future.add_done_callback(lambda task, key=flight_key: self._forget_flight(key, task))
             futures.append((flight_key, future))
         if not futures:
-            return {"streams": [], "cacheMaxAge": 0}
+            return {"streams": [], "subtitles": [], "cacheMaxAge": 0}
         done, pending = concurrent.futures.wait([future for _, future in futures], timeout=9)
         for future in pending:
             future.cancel()  # Cancels queued work; running calls retain their own socket/deadline bounds.
-        streams, seen = [], set()
+        streams, seen, subtitles = [], set(), []
         # Iteration order is the immutable priority order, not completion order.
         for flight_key, future in futures:
             if future in done and not future.cancelled():
                 try:
-                    for item in future.result():
+                    payload_out = future.result()
+                    for item in payload_out["streams"]:
                         url_key = item["url"].split("#", 1)[0]
                         if url_key not in seen:
                             streams.append(item)
                             seen.add(url_key)
+                    subtitles.extend(payload_out.get("subtitles") or [])
                 except Exception:
                     pass
             if future.done():
@@ -665,7 +797,8 @@ class Engine:
             expiry = declared_expiry(item["url"])
             if expiry is not None:
                 ttl = min(ttl, max(0, int(expiry - time.time() - 15)))
-        result = {"streams": streams, "cacheMaxAge": ttl if streams else 0}
+        result = {"streams": streams, "subtitles": merge_subtitles(subtitles) if streams else [],
+                  "cacheMaxAge": ttl if streams else 0}
         if streams:
             self.cache.put(key, result, ttl)
         return result
@@ -690,6 +823,10 @@ class Engine:
             return self.meta(media_type, content_id)
         if operation == "streams":
             return self.streams(media_type, content_id)
+        if operation == "subtitles":
+            # Misma caché que las fuentes: pedir subtítulos después de los
+            # streams no vuelve a raspar los proveedores.
+            return {"subtitles": self.streams(media_type, content_id).get("subtitles") or []}
         raise ValueError("Unknown engine operation")
 
 

@@ -1,6 +1,7 @@
 package com.tanasi.streamflix.player
 
 import android.content.Context
+import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -10,6 +11,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import com.tanasi.streamflix.data.model.StreamSource
+import com.tanasi.streamflix.data.model.SubtitleTrack
 
 /**
  * Construcción de `ExoPlayer` y de las fuentes de medios.
@@ -62,7 +64,11 @@ object MediaSources {
      * `ProgressiveMediaSource` para `.mp4`. El MIME explícito sólo se usa como
      * ayuda cuando la URL no tiene extensión (algunos CDN sirven `/play/<id>`).
      */
-    fun mediaSource(context: Context, source: StreamSource): MediaSource {
+    fun mediaSource(
+        context: Context,
+        source: StreamSource,
+        subtitles: List<SubtitleTrack> = emptyList(),
+    ): MediaSource {
         val mimeType = when {
             /* La pista del scraper manda: es lo único que distingue un HLS de un
              * MP4 cuando la URL no tiene extensión (`https://cdn/v/abc123`). */
@@ -82,11 +88,49 @@ object MediaSources {
         val mediaItem = MediaItem.Builder()
             .setUri(source.url)
             .apply { mimeType?.let { setMimeType(it) } }
+            /* Los subtítulos van en el `MediaItem`, no en el `ExoPlayer`: si se
+             * añadieran después (con `addTextOutput` o cambiando la fuente) el
+             * vídeo volvería a empezar. Aquí llegan antes de `prepare()`. */
+            .apply {
+                val configurations = subtitleConfigurations(subtitles, source)
+                if (configurations.isNotEmpty()) setSubtitleConfigurations(configurations)
+            }
             .build()
 
         return DefaultMediaSourceFactory(context)
             .setDataSourceFactory(dataSourceFactory(source))
             .createMediaSource(mediaItem)
+    }
+
+    /**
+     * Subtítulos → `MediaItem.SubtitleConfiguration`.
+     *
+     * La pista en español (si la hay) se marca `DEFAULT`, que es lo que hace
+     * que Media3 la seleccione sola en cuanto el vídeo está listo: el usuario
+     * ve la película subtitulada sin tener que entrar al panel de pistas. En
+     * directo no se marca nada (muchas señales ya traen CC quemado).
+     */
+    fun subtitleConfigurations(
+        subtitles: List<SubtitleTrack>,
+        source: StreamSource,
+    ): List<MediaItem.SubtitleConfiguration> {
+        if (subtitles.isEmpty()) return emptyList()
+        val preferred = SubtitleTrack.preferredIndex(subtitles, source.isLive)
+        return subtitles.mapIndexed { index, track ->
+            MediaItem.SubtitleConfiguration.Builder(Uri.parse(track.url))
+                .setMimeType(track.mimeType)
+                .apply { if (track.lang.isNotBlank()) setLanguage(track.lang) }
+                .setLabel(track.displayLabel)
+                .apply {
+                    if (index == preferred) {
+                        /* DEFAULT: se activa sola. SELECTION_FLAG_FORCED no: no
+                         * queremos que un subtítulo "forzado" sustituya al
+                         * diálogo original. */
+                        setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                    }
+                }
+                .build()
+        }
     }
 
     /**

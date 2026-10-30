@@ -264,14 +264,14 @@ test('el registro descarta catálogos inválidos y respeta el orden', () => {
 /* Integración HTTP                                                           */
 /* -------------------------------------------------------------------------- */
 
-test('GET /manifest.json publica catálogos y los recursos catalog/meta', async () => {
+test('GET /manifest.json publica catálogos y los recursos catalog/meta/subtitles', async () => {
   const res = await fetch(`${baseUrl}/manifest.json`);
   const manifest = await res.json();
 
   assert.equal(res.status, 200);
   assert.deepEqual(
     manifest.resources.map((resource) => resource.name),
-    ['stream', 'catalog', 'meta'],
+    ['stream', 'catalog', 'meta', 'subtitles'],
   );
   assert.ok(manifest.catalogs.length >= 4);
   assert.equal(manifest.catalogs[0].type, 'tv');

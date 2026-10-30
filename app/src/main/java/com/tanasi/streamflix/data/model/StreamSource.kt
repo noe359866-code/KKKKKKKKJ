@@ -120,6 +120,12 @@ data class StreamsResponse(
     @SerialName("streams") val streams: List<StreamDto> = emptyList(),
     /** Segundos que el cliente puede cachear; el servidor lo alinea con su TTL. */
     @SerialName("cacheMaxAge") val cacheMaxAge: Long? = null,
+    /**
+     * Subtítulos resueltos en el mismo scrape que las fuentes (campo extra del
+     * protocolo, ver `lib/subtitles.js`). Si un addon de terceros no lo manda,
+     * la lista llega vacía y el reproductor se queda como estaba.
+     */
+    @SerialName("subtitles") val subtitles: List<SubtitleDto> = emptyList(),
 )
 
 @Serializable

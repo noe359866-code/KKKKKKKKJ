@@ -5,6 +5,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.tanasi.streamflix.data.model.StreamSource
+import com.tanasi.streamflix.data.model.SubtitleTrack
 import com.tanasi.streamflix.util.AppLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -55,6 +56,11 @@ class FailoverController(
     private val planner: FailoverPlanner,
     private val scope: CoroutineScope,
     private val stallTimeoutMs: Long = 12_000,
+    /**
+     * Subtítulos del título. Se aplican al **crear** cada `MediaSource`, así
+     * que un failover conserva las pistas sin reconstruir el reproductor.
+     */
+    private val subtitles: List<SubtitleTrack> = emptyList(),
 ) : Player.Listener {
 
     private val mutableState = MutableStateFlow(FailoverState(total = planner.total))
@@ -185,7 +191,7 @@ class FailoverController(
             return
         }
 
-        player.setMediaSource(MediaSources.mediaSource(context, source))
+        player.setMediaSource(MediaSources.mediaSource(context, source, subtitles))
         player.prepare()
         if (positionMs > 0L) player.seekTo(positionMs)
         player.playWhenReady = wasPlaying

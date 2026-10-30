@@ -75,7 +75,8 @@ import com.tanasi.streamflix.util.Durations
  *
  * @param playPauseFocusRequester lo usa `PlayerScreen` para llevar el foco al
  *   botón central al pulsar ABAJO con los controles ocultos.
- * @param hasSubtitles sólo se dibuja el botón CC si la pista existe de verdad.
+ * @param hasTracks sólo se dibuja el botón de pistas si hay algo que elegir
+ *   (subtítulos en el manifiesto, pistas externas o más de un audio).
  */
 @Composable
 fun PlayerControls(
@@ -102,9 +103,11 @@ fun PlayerControls(
     onShowSources: () -> Unit,
     onInteraction: () -> Unit,
     onShowChannels: () -> Unit = {},
-    hasSubtitles: Boolean = false,
+    /** Hay audio o subtítulos que elegir: se dibuja el botón "Pistas". */
+    hasTracks: Boolean = false,
+    /** `true` cuando hay subtítulos activos (el botón se pinta encendido). */
     subtitlesOn: Boolean = false,
-    onToggleSubtitles: () -> Unit = {},
+    onShowTracks: () -> Unit = {},
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -211,14 +214,18 @@ fun PlayerControls(
                         },
                     )
 
-                    if (hasSubtitles) {
+                    /* Un solo botón para audio y subtítulos: el panel que abre
+                     * es el mismo de tvOS ("Audio y subtítulos"), con las dos
+                     * secciones. Dos botones no caben en 960 dp y el usuario
+                     * no debería recordar cuál tiene los subtítulos. */
+                    if (hasTracks) {
                         RoundControl(
-                            label = "CC",
+                            label = "Pistas",
                             size = 86.dp,
                             accent = subtitlesOn,
                             onClick = {
                                 onInteraction()
-                                onToggleSubtitles()
+                                onShowTracks()
                             },
                         )
                     }
@@ -242,7 +249,7 @@ fun PlayerControls(
                             "OK pausa · ATRÁS salir"
                         }
                     } else {
-                        "◀ ▶ 10 s · OK pausa · ABAJO controles · ATRÁS salir"
+                        "◀ ▶ 10 s · OK pausa · Pistas audio/CC · ATRÁS salir"
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = StreamflixColors.OnSurfaceMuted.copy(alpha = 0.75f),

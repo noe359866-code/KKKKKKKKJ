@@ -151,7 +151,8 @@ copiar la URL y ver el estado de la caché en vivo.
 | `GET` | `/catalog/:type/:id.json` | Catálogo Stremio (Cinemeta + TV en vivo local). Admite `search=`, `genre=`, `skip=`. |
 | `GET` | `/meta/:type/:id.json` | Ficha enriquecida; en series incluye los episodios. |
 | `GET` | `/catalogs.json` | Qué filas publica el addon (extensión propia para la app Android). |
-| `GET` | `/stream/:type/:id.json` | Fuentes de video ordenadas por prioridad. |
+| `GET` | `/stream/:type/:id.json` | Fuentes de video ordenadas por prioridad, con `subtitles[]` (campo extra). |
+| `GET` | `/subtitles/:type/:id.json` | Subtítulos del mismo scrape (recurso `subtitles` del protocolo). |
 | `GET` | `/health` · `/healthz` | Estado, métricas de caché y proveedores. |
 | `GET` | `/proxy?url=…` | Proxy HLS opcional con `Referer`/`UA` y reescritura de segmentos. |
 | `GET` | `/admin/cache` | Estadísticas y claves (requiere `ADMIN_TOKEN`). |
@@ -174,7 +175,8 @@ curl -s http://localhost:7000/manifest.json | jq
   "resources": [
     { "name": "stream", "types": ["movie", "series", "anime", "tv"] },
     { "name": "catalog", "types": ["movie", "series", "anime", "tv"] },
-    { "name": "meta", "types": ["movie", "series", "anime", "tv"] }
+    { "name": "meta", "types": ["movie", "series", "anime", "tv"] },
+    { "name": "subtitles", "types": ["movie", "series", "anime", "tv"] }
   ],
   "catalogs": [
     {

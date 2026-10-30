@@ -62,6 +62,21 @@ HLS_TEST_STREAMS = {
 }
 
 
+# Subtítulos de demostración: el contrato del protocolo Stremio
+# (`{url, lang, label}`) tal como lo deja novaHD en `meta.subtitles`. Sirven
+# para ejercitar `lib/subtitles.js` y el recurso `/subtitles/...` sin red.
+DEMO_SUBTITLES = {
+    "demo-vod": [
+        {"url": "https://demo.local/subs/bigbuckbunny.en.vtt", "lang": "en", "label": "English"},
+        {"url": "https://demo.local/subs/bigbuckbunny.es.srt", "lang": "SPA", "label": "Español"},
+    ],
+    "demo-fallback": [
+        {"url": "https://demo.local/subs/bigbuckbunny.es.srt", "lang": "es-419"},
+        {"url": "https://demo.local/embed/player.html", "lang": "es"},
+    ],
+}
+
+
 def scrape(payload):
     """
     Real scrapers follow this shape:
@@ -109,8 +124,13 @@ def scrape(payload):
             )
         )
 
+    meta = {"provider": provider, "delay_ms": delay_ms, "live": is_live}
+    subtitles = DEMO_SUBTITLES.get(provider)
+    if subtitles and not is_live:
+        meta["subtitles"] = subtitles
+
     log(f"provider={provider} id={content_id} streams={len(streams)} delay_ms={delay_ms}")
-    return streams, {"provider": provider, "delay_ms": delay_ms, "live": is_live}
+    return streams, meta
 
 
 if __name__ == "__main__":

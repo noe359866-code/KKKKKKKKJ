@@ -7,7 +7,11 @@ dominios caídos) no se puede comprobar desde aquí y queda marcado como tal.
 
 Estado: CI verde (`testDebugUnitTest`, `lintDebug`, `lintRelease`,
 `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`), Node
-**260/260**, Python **102**, 18 clases de test en JVM.
+**272/272**, Python **105**, 19 clases de test en JVM.
+
+> **Actualización (§21):** los dos primeros puntos de P1 —subtítulos y pista de
+> audio— ya están implementados. Lo que sigue se conserva tal como se escribió
+> en la auditoría, con la nota de qué quedó hecho.
 
 ---
 
@@ -24,7 +28,15 @@ Estado: CI verde (`testDebugUnitTest`, `lintDebug`, `lintRelease`,
 
 ## P1 — Falta en el reproductor
 
-### Subtítulos: los proveedores los traen, la app no los usa
+### ✅ (hecho) Subtítulos: los proveedores los traen, la app no los usa
+
+> **Implementado.** `server/src/lib/subtitles.js` normaliza los `meta.subtitles`
+> de los proveedores; `getStreams()` los devuelve en el cuerpo de `/stream/...`
+> (campo extra) y en el recurso nuevo `/subtitles/:type/:id.json`, declarado en
+> el manifiesto. El motor embebido hace lo mismo (`dispatch("subtitles")` y
+> `streams()` con la lista dentro). En la app: `SubtitleTrack` +
+> `MediaItem.SubtitleConfiguration` en `player/MediaSources.kt` y un panel
+> **Audio y subtítulos** (tvOS) en `PlayerControls`/`PlayerScreen`.
 
 `server/scrapers/novahd.py` extrae `subtitles[]` (`url`, `label`, `lang`) y lo
 deja en `meta["subtitles"]`; el servidor **no** publica el recurso `subtitles`
@@ -42,7 +54,11 @@ Falta, para tenerlo de verdad:
    `ExoPlayer` (`player/MediaSources.kt`) y una lista de pistas para elegir
    idioma con el mando (no basta con un booleano).
 
-### Audio multi-idioma: el idioma no se puede cambiar
+### ✅ (hecho) Audio multi-idioma: el idioma no se puede cambiar
+
+> **Implementado.** El mismo panel lista los grupos `C.TRACK_TYPE_AUDIO` con
+> `TrackSelectionOverride`; «Automático» limpia los overrides y deja la pista
+> principal del rip. `player/PlayerTracks.kt` tiene la regla (y sus tests).
 
 NOVA ordena las fuentes por idioma preferido y escribe el idioma en el `name`
 del stream (`novahd.py:437`), pero `StreamSource` no lleva `language` y el

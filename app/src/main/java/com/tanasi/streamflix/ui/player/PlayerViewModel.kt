@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.tanasi.streamflix.data.model.PlaybackChannel
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.StreamSource
+import com.tanasi.streamflix.data.model.SubtitleTrack
 import com.tanasi.streamflix.data.repo.StreamsRepository
 import com.tanasi.streamflix.data.repo.StreamsResult
 import kotlinx.coroutines.Job
@@ -23,10 +24,14 @@ sealed interface PlayerUiState {
      *   sintonizado y en pantalla sigue el anterior. Es lo que hace que zapear
      *   se sienta como un televisor (la imagen cambia cuando engancha la nueva
      *   señal) en vez de como una app que se queda en negro medio segundo.
+     * @param subtitles pistas de texto que llegaron **con** las fuentes. Van en
+     *   el mismo estado a propósito: el reproductor las necesita antes de crear
+     *   el `MediaItem`, y esperar una segunda petición retrasaría el vídeo.
      */
     data class Ready(
         val sources: List<StreamSource>,
         val tuning: Boolean = false,
+        val subtitles: List<SubtitleTrack> = emptyList(),
     ) : PlayerUiState
 
     /** Sin fuentes (todos los proveedores fallaron) o error de red. */
@@ -128,7 +133,7 @@ class PlayerViewModel(
             val result = repository.streamsFor(request.type, request.id)
             if (ticket != loadTicket) return@launch
             mutableState.value = when (result) {
-                is StreamsResult.Ready -> PlayerUiState.Ready(result.sources)
+                is StreamsResult.Ready -> PlayerUiState.Ready(result.sources, subtitles = result.subtitles)
                 StreamsResult.Empty -> PlayerUiState.Unavailable(
                     "Ningún proveedor devolvió una fuente reproducible.",
                 )

@@ -70,13 +70,16 @@ import com.tanasi.streamflix.core.LocalDeviceProfile
 import com.tanasi.streamflix.data.model.PlaybackChannel
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.StreamSource
+import com.tanasi.streamflix.data.model.SubtitleTrack
 import com.tanasi.streamflix.player.ChannelZapping
 import com.tanasi.streamflix.player.FailoverController
 import com.tanasi.streamflix.player.FailoverPlanner
 import com.tanasi.streamflix.player.MediaSources
 import com.tanasi.streamflix.player.PlayerKeyAction
 import com.tanasi.streamflix.player.PlayerKeyMap
+import com.tanasi.streamflix.player.PlayerTracks
 import com.tanasi.streamflix.player.SeekPolicy
+import com.tanasi.streamflix.player.TrackOption
 import com.tanasi.streamflix.ui.theme.StreamflixColors
 import com.tanasi.streamflix.ui.theme.tvFocusGlow
 import kotlinx.coroutines.delay
@@ -173,6 +176,7 @@ fun PlayerScreen(
 
             is PlayerUiState.Ready -> PlaybackSurface(
                 sources = current.sources,
+                subtitles = current.subtitles,
                 tuning = current.tuning,
                 request = request,
                 onBack = onBack,
@@ -191,6 +195,8 @@ fun PlayerScreen(
 @Composable
 private fun PlaybackSurface(
     sources: List<StreamSource>,
+    /** Pistas de texto que llegaron con las fuentes (puede ser vacío). */
+    subtitles: List<SubtitleTrack>,
     /** Mientras se resuelve un canal nuevo, en pantalla sigue el anterior. */
     tuning: Boolean,
     request: PlaybackRequest,
@@ -209,18 +215,21 @@ private fun PlaybackSurface(
      * devuelve otro array, el planificador y el reproductor se recrean. */
     val player: ExoPlayer = remember(sources) { MediaSources.buildPlayer(context, request.isLive) }
     val planner = remember(sources) { FailoverPlanner(sources) }
-    val controller = remember(player, planner) {
+    val controller = remember(player, planner, subtitles) {
         FailoverController(
             context = context,
             player = player,
             planner = planner,
             scope = scope,
+            subtitles = subtitles,
         )
     }
 
     val failoverState by controller.state.collectAsStateWithLifecycle()
 
     var showSources by remember { mutableStateOf(false) }
+    /* Panel "Audio y subtítulos" (una sola hoja, como en tvOS). */
+    var showTracks by remember { mutableStateOf(false) }
 
     /* --- parrilla: zapeo sin salir del reproductor ------------------------ */
     val queue = request.queue
@@ -248,10 +257,14 @@ private fun PlaybackSurface(
     var positionMs by remember { mutableStateOf(0L) }
     var durationMs by remember { mutableStateOf(0L) }
 
-    /* Subtítulos: sólo se ofrece el botón si el manifiesto trae alguna pista.
-     * Arrancan apagados porque muchas señales emiten un CC quemado o vacío. */
-    var hasSubtitles by remember { mutableStateOf(false) }
-    var subtitlesOn by remember { mutableStateOf(false) }
+    /* Subtítulos: en VOD arrancan encendidos cuando hay pista en español
+     * (la app es para contenido doblado/subtitulado); en directo, apagados,
+     * porque muchas señales emiten un CC quemado o vacío. */
+    var subtitlesOn by remember(subtitles) {
+        mutableStateOf(SubtitleTrack.preferredIndex(subtitles, request.isLive) != null)
+    }
+    var textTracks by remember { mutableStateOf(emptyList<TrackOption>()) }
+    var audioTracks by remember { mutableStateOf(emptyList<TrackOption>()) }
 
     DisposableEffect(controller) {
         /* `startPositionMs` > 0 cuando la tarjeta viene de "Seguir viendo":
@@ -261,6 +274,16 @@ private fun PlaybackSurface(
             startPositionMs = request.startPositionMs,
             startIndex = request.startIndex,
         )
+        /* La preferencia manda sobre el `DEFAULT` del manifiesto: si el usuario
+         * dejó los subtítulos apagados, no se encienden solos. */
+        if (!subtitlesOn) {
+            runCatching {
+                player.trackSelectionParameters = player.trackSelectionParameters
+                    .buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                    .build()
+            }
+        }
         onDispose {
             /* Antes de soltar el decodificador: después, `currentPosition` ya
              * es 0 y el progreso se perdería. */
@@ -296,7 +319,10 @@ private fun PlaybackSurface(
             isPlaying = player.isPlaying
             positionMs = player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0L } ?: 0L
-            hasSubtitles = player.currentTracks.groups.any { it.type == C.TRACK_TYPE_TEXT }
+            val tracks = player.currentTracks
+            val overrides = player.trackSelectionParameters.overrides
+            textTracks = PlayerTracks.options(tracks, C.TRACK_TYPE_TEXT, overrides.keys.any { it.type == C.TRACK_TYPE_TEXT })
+            audioTracks = PlayerTracks.options(tracks, C.TRACK_TYPE_AUDIO, overrides.keys.any { it.type == C.TRACK_TYPE_AUDIO })
             delay(if (controlsVisible) 250L else 1_000L)
         }
     }
@@ -315,6 +341,10 @@ private fun PlaybackSurface(
         if (!showSources) runCatching { rootFocus.requestFocus() }
     }
 
+    LaunchedEffect(showTracks) {
+        if (!showTracks) runCatching { rootFocus.requestFocus() }
+    }
+
     fun togglePlayPause() {
         /* `playWhenReady` y no `play()/pause()`: durante un buffer el usuario
          * también quiere poder cancelar la espera. */
@@ -331,15 +361,28 @@ private fun PlaybackSurface(
         interactionTick++
     }
 
-    fun toggleSubtitles() {
-        val next = !subtitlesOn
-        subtitlesOn = next
+    /**
+     * Aplica una fila del panel de pistas.
+     *
+     * "Desactivado" apaga el tipo de pista entero; "Automático" borra los
+     * overrides de audio y deja que ExoPlayer elija la pista por defecto del
+     * manifiesto (que es la que el ripeo marca como principal).
+     */
+    fun applyTrack(option: TrackOption) {
         runCatching {
-            player.trackSelectionParameters = player.trackSelectionParameters
-                .buildUpon()
-                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !next)
-                .build()
+            val builder = player.trackSelectionParameters.buildUpon()
+            if (option.isAutomatic) {
+                builder.setTrackTypeDisabled(option.type, option.isText)
+                if (option.isAudio) builder.clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+            } else {
+                val group = PlayerTracks.groupFor(player.currentTracks, option) ?: return@runCatching
+                builder.setTrackTypeDisabled(option.type, false)
+                builder.setOverrideForType(TrackSelectionOverride(group, option.trackIndex))
+            }
+            player.trackSelectionParameters = builder.build()
+            if (option.isText) subtitlesOn = !option.isAutomatic
         }
+        showTracks = false
         interactionTick++
     }
 
@@ -379,7 +422,7 @@ private fun PlaybackSurface(
 
     /** `CH+` / `CH−`: siguiente/anterior de la parrilla, con vuelta. */
     fun zap(delta: Int): Boolean {
-        if (!canZap || showSources) return false
+        if (!canZap || showSources || showTracks) return false
         val target = ChannelZapping.step(channelIndex, delta, queue.size)
         val channel = ChannelZapping.channelAt(queue, target) ?: return false
         tuneTo(channel)
@@ -387,7 +430,7 @@ private fun PlaybackSurface(
     }
 
     fun openGuide() {
-        if (!canZap || showSources || showGuide) return
+        if (!canZap || showSources || showGuide || showTracks) return
         channelBeforeGuide = request
         controlsVisible = false
         showGuide = true
@@ -555,7 +598,7 @@ private fun PlaybackSurface(
         /* Con el panel de fuentes abierto los controles no existen: así el foco
          * no puede escaparse a los botones de detrás (tvOS también los oculta
          * al abrir la información). */
-        if (!showSources && !showGuide) PlayerControls(
+        if (!showSources && !showGuide && !showTracks) PlayerControls(
             title = request.title,
             isLive = request.isLive,
             failover = failoverState,
@@ -574,9 +617,9 @@ private fun PlaybackSurface(
             onShowSources = { showSources = true },
             onShowChannels = { openGuide() },
             onInteraction = { interactionTick++ },
-            hasSubtitles = hasSubtitles,
+            hasTracks = PlayerTracks.hasPanel(textTracks, audioTracks),
             subtitlesOn = subtitlesOn,
-            onToggleSubtitles = { toggleSubtitles() },
+            onShowTracks = { showTracks = true },
         )
 
         if (failoverState.switching || tuning) {
@@ -649,6 +692,17 @@ private fun PlaybackSurface(
         /* ATRÁS cierra la lista antes de salir del reproductor: si no, el
          * usuario tendría que pulsar dos veces sin saber por qué. */
         BackHandler(enabled = showSources) { showSources = false }
+        BackHandler(enabled = showTracks) { showTracks = false }
+
+        if (showTracks) {
+            TracksOverlay(
+                title = request.title,
+                textTracks = textTracks,
+                audioTracks = audioTracks,
+                onDismiss = { showTracks = false },
+                onSelect = { option -> applyTrack(option) },
+            )
+        }
 
         if (showSources) {
             SourcePickerOverlay(
@@ -1085,6 +1139,234 @@ private fun SourceKeyHint(key: String, action: String) {
         )
     }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Panel "Audio y subtítulos"                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Hoja de pistas: **una sola** para audio y subtítulos, como en tvOS.
+ *
+ * ```text
+ * ┌──────────────────────────────────────────┐
+ * │ AUDIO Y SUBTÍTULOS                       │
+ * │ Interestelar                             │
+ * │                                          │
+ * │ SUBTÍTULOS                               │
+ * │  ● Desactivado                           │
+ * │    Español · NovaHD                      │
+ * │    Español (Latino) · NovaHD             │
+ * │ AUDIO                                    │
+ * │  ● Automático                            │
+ * │    Español · AAC                         │
+ * │ OK elegir            ATRÁS cerrar        │
+ * └──────────────────────────────────────────┘
+ * ```
+ *
+ * A diferencia del panel de fuentes, éste **no** cierra el vídeo: se abre sobre
+ * la imagen y vuelve a los controles al elegir. Elegir una pista es una acción
+ * frecuente (cambiar de idioma a mitad de película), así que el foco arranca en
+ * la pista activa.
+ */
+@Composable
+private fun TracksOverlay(
+    title: String,
+    textTracks: List<TrackOption>,
+    audioTracks: List<TrackOption>,
+    onDismiss: () -> Unit,
+    onSelect: (TrackOption) -> Unit,
+) {
+    val focusTarget = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        withFrameNanos { }
+        runCatching { focusTarget.requestFocus() }
+    }
+
+    /* El foco arranca en la fila activa; si no hay ninguna, en la primera. */
+    val firstSelected = remember(textTracks, audioTracks) {
+        (textTracks + audioTracks).firstOrNull { it.selected }?.id
+            ?: (textTracks + audioTracks).firstOrNull()?.id
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        0.28f to Color.Transparent,
+                        0.60f to Color.Black.copy(alpha = 0.45f),
+                        1f to Color.Black.copy(alpha = 0.88f),
+                    ),
+                )
+                .clickable(onClick = onDismiss),
+        )
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight()
+                .fillMaxWidth(0.38f)
+                .widthIn(min = 420.dp, max = 640.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            StreamflixColors.Surface.copy(alpha = 0.98f),
+                            Color.Black.copy(alpha = 0.95f),
+                        ),
+                    ),
+                )
+                .padding(start = 34.dp, end = 34.dp, top = 40.dp, bottom = 28.dp),
+        ) {
+            Text(
+                text = "AUDIO Y SUBTÍTULOS",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 2.sp,
+                color = StreamflixColors.OnSurfaceMuted,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                color = Color.White,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(20.dp))
+
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (textTracks.isNotEmpty()) {
+                    item(key = "text-header") { TrackSectionHeader("SUBTÍTULOS") }
+                    itemsIndexed(textTracks, key = { _, option -> "text:${option.id}" }) { _, option ->
+                        TrackRow(
+                            option = option,
+                            onClick = { onSelect(option) },
+                            focusRequester = if (option.id == firstSelected) focusTarget else null,
+                        )
+                    }
+                }
+                if (audioTracks.isNotEmpty()) {
+                    item(key = "audio-header") { TrackSectionHeader("AUDIO") }
+                    itemsIndexed(audioTracks, key = { _, option -> "audio:${option.id}" }) { _, option ->
+                        TrackRow(
+                            option = option,
+                            onClick = { onSelect(option) },
+                            focusRequester = if (option.id == firstSelected) focusTarget else null,
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color.White.copy(alpha = 0.08f)),
+            )
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                SourceKeyHint(key = "OK", action = "Elegir")
+                SourceKeyHint(key = "ATRÁS", action = "Cerrar")
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackSectionHeader(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.6.sp,
+        color = StreamflixColors.OnSurfaceMuted.copy(alpha = 0.8f),
+        modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
+    )
+}
+
+/** Fila de pista: marca de activo, nombre y (si lo hay) idioma secundario. */
+@Composable
+private fun TrackRow(
+    option: TrackOption,
+    onClick: () -> Unit,
+    focusRequester: FocusRequester?,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val ring by animateFloatAsState(
+        targetValue = if (focused) 1f else 0f,
+        animationSpec = tween(durationMillis = 120),
+        label = "trackFocus",
+    )
+    val pop by animateFloatAsState(
+        targetValue = if (focused) 1.02f else 1f,
+        animationSpec = tween(durationMillis = 120),
+        label = "trackPop",
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = pop
+                scaleY = pop
+            }
+            .tvFocusGlow(progress = ring, cornerRadius = 10.dp)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .background(
+                when {
+                    option.selected -> Color.White.copy(alpha = 0.14f)
+                    focused -> StreamflixColors.GlassStrong
+                    else -> Color.White.copy(alpha = 0.04f)
+                },
+                RoundedCornerShape(10.dp),
+            )
+            .border(
+                width = 1.dp,
+                color = if (option.selected) Color.White.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.07f),
+                shape = RoundedCornerShape(10.dp),
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = option.label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = if (option.selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val secondary = when {
+                option.isAutomatic && option.isAudio -> "La pista principal del vídeo"
+                option.isAutomatic -> "Sin subtítulos"
+                else -> option.language?.let { PlayerTracks.languageName(it) }.orEmpty()
+            }
+            if (secondary.isNotEmpty()) {
+                Text(
+                    text = secondary,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = StreamflixColors.OnSurfaceMuted,
+                    maxLines = 1,
+                )
+            }
+        }
+        if (option.selected) {
+            Spacer(Modifier.width(10.dp))
+            CheckMark(Modifier.size(18.dp))
+        }
+    }
+}
+
 @Composable
 private fun CenterBox(content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
