@@ -27,6 +27,7 @@
     "movies:repelis": "python3 scrapers/repelis.py --list --query",
     "movies:peliculasflix": "python3 scrapers/peliculasflix.py --list --query",
     "movies:pelisjuanita": "python3 scrapers/pelisjuanita.py --list --query",
+    "movies:novahd": "python3 scrapers/novahd.py --list --query",
     "channels:livelive24": "python3 scrapers/livelive24.py --list",
     "channels:damitv": "python3 scrapers/damitv.py --list",
     "channels:ntv": "python3 scrapers/ntv.py --list",

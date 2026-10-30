@@ -22,6 +22,7 @@ una por una, y anotando lo que respondió cada una.
 | Cuevana | `cue.cuevana3.nu` | **No responde** | Nuevo dominio por defecto + familia de espejos |
 | Repelis | `repelis.live` | **No responde** | Nuevo dominio por defecto + familia de espejos |
 | PeliculasFlix | `peliculasflix.co` | **No responde** | Se mantiene: su API GraphQL es otro host |
+| NOVA | `novahd.cc` | **Vivo** (API JSON propia) | Proveedor nuevo: multi-idioma vía `/api/sources`, ids por Cinemeta |
 
 ## JkAnime — `https://jkanime.net` (vivo)
 
@@ -140,6 +141,69 @@ una por una, y anotando lo que respondió cada una.
   (`PELICULASFLIX_BASE`/`_MIRRORS`) y se sigue usando el que haya.
 - Recuerda: las series se resuelven con `getSerieLinks`/`getEpisodeLinks`, y la
   página/Referer es `/serie/<slug>/<n>x<mm>`.
+
+## NOVA — `https://novahd.cc` (vivo, API JSON propia)
+
+Sitio nuevo (dominio de ~3 meses, detrás de Cloudflare). La portada, las fichas y
+el reproductor son una SPA; lo que importa está detrás en su propio backend
+Fastify, que responde **sin navegador y sin cuenta**:
+
+```
+GET /api/health                                          → {"status":"ok",…}
+GET /api/sources?tmdbId=155&type=movie                    → señales de la película
+GET /api/sources?tmdbId=1396&type=show&season=1&episode=1 → señales del capítulo
+```
+
+Respuesta (recortada a lo que usa el proveedor):
+
+```json
+{"sources": [{"url": "https://nova-edge-<hash>.<worker>.workers.dev/mpd/…/master.m3u8",
+              "quality": "720p", "type": "hls", "provider": "Orion",
+              "language": "", "name": "Orion · Alpha", "codecs": "hevc",
+              "origAudio": true, "matchedTitle": "…", "cdnDirect": true,
+              "edge": "…", "hostKey": "…"},
+             {"url": "https://…workers.dev/?e=<token>&ip=<ip>&ipsig=<sig>",
+              "quality": "FHD", "type": "hls", "provider": "Swift",
+              "language": "English", "name": "Swift · NebulaC"}],
+ "subtitles": [{"url": "https://…/vtt?e=…", "label": "Chinese", "lang": "zh"},
+               {"url": "https://…/vtt?e=…", "label": "English", "lang": "en"}]}
+```
+
+Lo comprobado, con lo que se queda el proveedor:
+
+- **`sources[]` es la lista de idiomas**: cada entrada trae `language`,
+  `provider` (CDN) y `quality`, y hay varias por título. Por eso el proveedor
+  publica un stream por entrada, etiquetado `NOVA · <idioma> · <CDN> · <calidad>`.
+  `language` puede venir vacío (`""`); entonces se usa `origAudio` para
+  distinguir "audio original" de "sin dato".
+- **Las URLs firmadas caducan y van atadas a la IP del cliente**
+  (`?e=…&ip=…&ipsig=…`), y varias **no llevan extensión**: el `type` de la API
+  (`hls`/`dash`) es la única forma de saber qué es, y se publica en
+  `behaviorHints.mediaType`.
+- **La API exige `tmdbId` numérico** (patrón `^[0-9]{1,8}$`) y `type` `movie` o
+  `show`. Probado y rechazado: `type=series`, `type=tv`, `?imdbId=tt0468569`
+  ("body must have required property 'tmdbId'"), `?tmdbId=tt0468569` (falla el
+  patrón).
+- **Puente de ids sin clave de TMDB**: Cinemeta publica el id de TMDB en su meta.
+  `https://v3-cinemeta.strem.io/meta/movie/tt0468569.json` → `moviedb_id: 155`;
+  `…/meta/series/tt0903747.json` → `moviedb_id: 1396` (y `videos[]` con
+  `season`/`number`, por si hace falta deducir el episodio). Cuando lo que llega
+  es un **título** (así lo manda el motor del APK) se busca en
+  `…/catalog/movie/top/search=<texto>.json` y se prefiere la coincidencia exacta
+  de `name` antes que el primer resultado.
+- **El buscador del sitio no sirve desde aquí**: `/api/search?q=…` (con `q`,
+  `query`, `type`, página) contesta siempre
+  `{"results":[],"page":1,"limit":20,"totalCount":0}` y `/search?q=…` devuelve
+  un reto de Cloudflare Turnstile. Por eso NOVA **no** se registra como catálogo
+  ni tiene buscador propio: sólo resuelve títulos que ya conocemos por IMDb/TMDB.
+- Rutas muertas comprobadas: `/api/movie/155`, `/api/stream/movie/155`,
+  `/api/b/movie/155` (404), `/watch/movie/155` (redirige a la portada), `/live`
+  ("No live channels available") y `/sitemap.xml` (4 URLs, ninguna ficha).
+
+Pruebas: `server/test/novahd.test.js` replica `/api/sources` y Cinemeta en local
+(película 155 y serie 1396×1×1) y cubre idiomas, orden, `behaviorHints`,
+subtítulos y cada motivo de degradación (`no_episode`, `no_streams`,
+`api_error`, `not_found`).
 
 ## Qué **no** se pudo comprobar
 

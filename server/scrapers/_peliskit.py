@@ -71,7 +71,7 @@ KNOWN_PROVIDERS = {
     "gnula", "cuevana", "pelisplushd", "pelisplus", "repelis", "peliculasflix",
     "pelisjuanita", "comodin", "animeflv", "jkanime", "monoschinos",
     "tvenvivo", "deportelibre", "futbolibre", "livelive24", "damitv", "ntv",
-    "streamcorner",
+    "streamcorner", "novahd",
 }
 
 IMDB_RE = re.compile(r"^tt\d{6,9}$", re.IGNORECASE)

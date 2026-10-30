@@ -66,6 +66,7 @@ Reglas:
 | `repelis.py` | **Proveedor real** de Repelis (dominio configurable por entorno). |
 | `peliculasflix.py` | **Proveedor real** de `peliculasflix.co` (API GraphQL). |
 | `pelisjuanita.py` | **Proveedor real** de `pelisjuanita.org`. |
+| `novahd.py` | **Proveedor real** de `novahd.cc`: API propia (`/api/sources?tmdbId=…`), **varios idiomas y calidades por título**. No necesita navegador ni clave. |
 
 ## Estado real de las webs
 
@@ -660,7 +661,7 @@ de dónde salieron. Es la diferencia entre `no_servers` y ver el episodio.
 
 ## Proveedores de películas y series (VOD)
 
-Seis sitios con el mismo esqueleto: ficha por título, buscador y una lista de
+Los sitios con el mismo esqueleto —ficha por título, buscador y una lista de
 "servidores" (Streamwish, VOE, Filemoon, Streamtape, Mixdrop, Mp4upload…) que
 esconden el `.m3u8`/`.mp4`. Lo compartido vive en dos módulos:
 
@@ -704,15 +705,17 @@ y el addon sigue con el proveedor siguiente. Motivos posibles: `not_vod`,
 | 14 | `repelis` | dominio configurable |
 | 15 | `peliculasflix` | [peliculasflix.co](https://peliculasflix.co/) |
 | 16 | `pelisjuanita` | [pelisjuanita.org](https://pelisjuanita.org/) |
+| 17 | `novahd` | [novahd.cc](https://novahd.cc/) |
 
 ```bash
 curl -s "http://localhost:7000/stream/movie/gnula:street-fighter.json" | jq
 curl -s "http://localhost:7000/stream/series/pelisplushd:the-last-of-us:1:2.json" | jq
 npm run movies:gnula -- "street fighter"      # buscar e imprimir ids
 npm run movies:cuevana -- "the last of us"
+npm run movies:novahd -- "dark knight"
 ```
 
-### Los siete sitios, uno por uno
+### Los ocho sitios, uno por uno
 
 #### `gnula.py` — Gnula (prioridad 11)
 
@@ -842,6 +845,80 @@ streamwish / voe / filemoon / streamtape …  → `_hosters`
 - `PELISJUANITA_BASE` / `PELISJUANITA_MIRRORS` siguen sirviendo para dominios
   espejo.
 
+#### `novahd.py` — NOVA (prioridad 17)
+
+El primer proveedor del addon que **no se limita a un idioma por título**. NOVA
+(Cloudflare, dominio nuevo) sirve su propio backend JSON, así que no hay que
+pelear con el HTML ni con Turnstile:
+
+```
+GET /api/sources?tmdbId=155&type=movie
+GET /api/sources?tmdbId=1396&type=show&season=1&episode=1
+      │
+      ▼
+{"sources": [ {url, quality, type, provider, language, name, codecs,
+               origAudio, matchedTitle, cdnDirect, edge, hostKey}, … ],
+ "subtitles": [ {url, label, lang}, … ]}
+```
+
+Cada `sources[]` es una señal independiente: si el título tiene audio en inglés
+y en español, y dos CDN por idioma, llegan **cuatro streams**. Se publican todos
+(sin recortar idiomas), etiquetados y ordenados:
+
+```
+NOVA · Español · Swift · 1080p      ← primero: idioma preferido y mejor calidad
+NOVA · Español · Nova · 720p
+NOVA · Inglés · Orion · 720p · HEVC
+NOVA · Atlas · 1080p                ← sin idioma declarado ni audio original
+```
+
+- Los idiomas se traducen al español (`English` → `Inglés`, `zh` → `Chino`);
+  lo que no está en la tabla se deja como viene. `NOVAHD_LANGUAGES` decide el
+  orden (por defecto `Español,Latino,Castellano,Spanish`) y
+  `NOVAHD_ONLY_LANGUAGES` recorta la lista si se quiere un solo idioma.
+- La API **sólo acepta `tmdbId` numérico** (`^[0-9]{1,8}$`) y `type` `movie` o
+  `show`. Los ids IMDb y los títulos se traducen con **Cinemeta**
+  (`v3-cinemeta.strem.io/meta/<tipo>/<tt>.json` → `moviedb_id`), sin clave de
+  TMDB; si lo que llega es texto (así lo manda el motor del APK) se busca en
+  `/catalog/<tipo>/top/search=<texto>.json` y se toma el título exacto.
+- `type` se publica en `behaviorHints.mediaType` porque varias URLs firmadas no
+  llevan extensión (`…/?e=…&ip=…&ipsig=…`) y sin esa pista ExoPlayer abriría un
+  HLS como si fuera MP4.
+- `subtitles[]` se devuelve en `meta.subtitles` (el modelo del cliente todavía
+  no tiene campo para pintarlos: ver el backlog).
+- Las URLs están firmadas **con la IP del cliente** y caducan en minutos: se
+  piden en el momento de reproducir. El motor embebido ya recorta el
+  `cacheMaxAge` con `declared_expiry()`; el servidor Node usa un TTL global de
+  VOD (2–6 h), así que una entrada vieja puede devolver una URL caducada — el
+  reproductor reintenta con el siguiente proveedor.
+
+Ids aceptados:
+
+```
+novahd:155                                  tmdbId (película)
+novahd:show:1396:1:1                        serie (tmdbId:temporada:episodio)
+tt0468569                                   IMDb → Cinemeta → tmdbId
+The Dark Knight                             título (buscador de Cinemeta)
+https://novahd.cc/m/155                     URL del sitio
+movie:155 · tv:novahd:155                   prefijos del addon
+```
+
+```bash
+python3 scrapers/novahd.py --sources 155
+python3 scrapers/novahd.py --sources tt0468569
+python3 scrapers/novahd.py --sources 1396 --season 1 --episode 1
+python3 scrapers/novahd.py --list --query "dark knight"
+node --test test/novahd.test.js
+```
+
+Variables: `NOVAHD_BASE`, `NOVAHD_MIRRORS`, `CINEMETA_BASE`,
+`NOVAHD_MAX_STREAMS` (12), `NOVAHD_LANGUAGES`, `NOVAHD_ONLY_LANGUAGES`.
+
+**Lo que NO se puede hacer** (probado, ver `RECON.md`): `/api/search` contesta
+siempre vacío y `/search` es un reto de Cloudflare Turnstile, así que el sitio no
+sirve como catálogo; este proveedor **sólo resuelve** títulos que ya conocemos
+por IMDb/TMDB.
+
 ### TMDB (opcional)
 
 Sin `TMDB_API_KEY` los ids IMDb (`gnula:tt0145487`) no se pueden traducir a un
@@ -852,8 +929,8 @@ por su cuenta.
 
 ### Pruebas
 
-Cada uno de los seis tiene su fixture HTTP local (ficha → servidores → `.m3u8`)
-y su propio archivo:
+Cada uno tiene su fixture HTTP local (ficha → servidores → `.m3u8`) y su propio
+archivo; NOVA, además, replica su API JSON y a Cinemeta:
 
 ```bash
 node --test test/gnula.test.js
@@ -862,6 +939,7 @@ node --test test/pelisplushd.test.js
 node --test test/repelis.test.js
 node --test test/peliculasflix.test.js
 node --test test/pelisjuanita.test.js
+node --test test/novahd.test.js
 ```
 
 Los fixtures (`testsupport/pelis.js`) cubren `showEmbed` en base64, el token
@@ -869,7 +947,7 @@ legado `player.php?t=`, la API GNRD con su cadena de desofuscado, los literales
 JS, los servidores empaquetados, los hostings de descarga, la caída al espejo y
 la degradación a `{"streams": []}`.
 
-> ⚠️ Los seis leen páginas públicas y no alojan ni redistribuyen contenido.
+> ⚠️ Todos leen páginas y APIs públicas y no alojan ni redistribuyen contenido.
 > Úsalos con autorización y respetando los términos de cada sitio y la ley de tu
 > país. Los dominios cambian a menudo: si un proveedor devuelve `not_found`,
 > abre la ficha en el navegador y ajusta `*_BASE` / `*_MIRRORS`.

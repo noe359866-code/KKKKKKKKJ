@@ -169,6 +169,12 @@ through the official Addon protocol:
     (`/anime/<slug>`, `/wwe/<slug>`, `/serie/<slug>/1x03`); when the ficha only
     points at the site's own `/player/<id>` page, the scraper opens it and reads
     the embeds inside;
+  - `novahd.py` — [novahd.cc](https://novahd.cc/) (17): `novahd:155`,
+    `novahd:show:1396:1:1`, `tt0468569` or a title. It talks to NOVA's own
+    `/api/sources?tmdbId=…&type=movie|show` API and publishes **every audio
+    language of the title as its own labelled stream** (`NOVA · Español ·
+    Swift · 1080p`), best language and quality first; IMDb ids are translated
+    through Cinemeta's `moviedb_id`, so no TMDB key is needed;
 
   The anime and movie providers return **one stream per resolved server**
   (Streamwish, VOE, Filemoon, Streamtape…), in the site's order, so the

@@ -546,7 +546,7 @@ anotan en `meta.unresolved`. Detalles y variables de entorno en
 
 ### Proveedores reales de películas y series (VOD)
 
-Seis sitios `kind: "vod"`, del 11 al 16 en prioridad:
+Siete sitios `kind: "vod"`, del 11 al 17 en prioridad:
 
 | Prioridad | Proveedor (`id`) | Sitio | Id de ejemplo |
 | --- | --- | --- | --- |
@@ -556,12 +556,14 @@ Seis sitios `kind: "vod"`, del 11 al 16 en prioridad:
 | 14 | `repelis` | dominio por `REPELIS_BASE` | `repelis:spider-man-de-regreso-a-casa` |
 | 15 | `peliculasflix` | [peliculasflix.co](https://peliculasflix.co/) | `peliculasflix:spider-man-de-regreso-a-casa` |
 | 16 | `pelisjuanita` | [pelisjuanita.org](https://pelisjuanita.org/) | `pelisjuanita:spider-man-un-nuevo-dia-2026` |
+| 17 | `novahd` | [novahd.cc](https://novahd.cc/) | `novahd:155` · `novahd:show:1396:1:1` |
 
 ```bash
 curl -s "http://localhost:7000/stream/movie/gnula:street-fighter.json" | jq
 curl -s "http://localhost:7000/stream/series/pelisplushd:the-last-of-us:1:2.json" | jq
 npm run movies:gnula -- "street fighter"    # buscar e imprimir ids
 npm run movies:pelisjuanita -- "reacher"
+npm run movies:novahd -- "dark knight"
 ```
 
 Cada película devuelve **un stream por servidor resuelto** (Streamwish, VOE,
