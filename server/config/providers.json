@@ -32,6 +32,46 @@
       "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
     },
     {
+      "id": "livelive24",
+      "label": "Live24 TV",
+      "script": "livelive24.py",
+      "priority": 6,
+      "kind": "live",
+      "enabled": true,
+      "referer": "https://livelive24.com/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "damitv",
+      "label": "DAMITV",
+      "script": "damitv.py",
+      "priority": 7,
+      "kind": "live",
+      "enabled": true,
+      "referer": "https://damitv.st/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "ntv",
+      "label": "NTV",
+      "script": "ntv.py",
+      "priority": 8,
+      "kind": "live",
+      "enabled": true,
+      "referer": "https://ntv.st/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "streamcorner",
+      "label": "StreamCorner",
+      "script": "streamcorner.py",
+      "priority": 9,
+      "kind": "live",
+      "enabled": true,
+      "referer": "https://streamcorner.fun/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
       "id": "animeflv",
       "label": "AnimeFLV",
       "script": "animeflv.py",

@@ -15,7 +15,8 @@ from _base import default_headers
 from _htmlkit import Deadline, clean_title, http_get, pretty_name
 
 ANIME = frozenset(("animeflv", "jkanime", "monoschinos"))
-LIVE = frozenset(("futbolibre", "deportelibre", "tvenvivo"))
+LIVE = frozenset(("futbolibre", "deportelibre", "tvenvivo", "livelive24", "damitv",
+                       "ntv", "streamcorner"))
 MOVIES = frozenset(("gnula", "cuevana", "pelisplushd", "repelis", "peliculasflix", "pelisjuanita"))
 MODULES = ANIME | LIVE | MOVIES
 NON_TITLES = frozenset(("anime", "animes", "directorio", "buscar", "busqueda", "search", "browse",

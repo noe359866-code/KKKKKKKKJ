@@ -26,7 +26,11 @@
     "movies:pelisplushd": "python3 scrapers/pelisplushd.py --list --query",
     "movies:repelis": "python3 scrapers/repelis.py --list --query",
     "movies:peliculasflix": "python3 scrapers/peliculasflix.py --list --query",
-    "movies:pelisjuanita": "python3 scrapers/pelisjuanita.py --list --query"
+    "movies:pelisjuanita": "python3 scrapers/pelisjuanita.py --list --query",
+    "channels:livelive24": "python3 scrapers/livelive24.py --list",
+    "channels:damitv": "python3 scrapers/damitv.py --list",
+    "channels:ntv": "python3 scrapers/ntv.py --list",
+    "channels:streamcorner": "python3 scrapers/streamcorner.py --list"
   },
   "dependencies": {
     "cors": "^2.8.5",

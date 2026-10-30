@@ -89,12 +89,22 @@ class EngineTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_scrapers_are_bundled_but_publish_no_catalog_rows(self):
-        self.assertEqual(12, len(self.engine.providers))
+        # La lista sale del registro: añadir un proveedor no debe obligar a
+        # tocar el test, pero sí debe reflejarse aquí (y en el APK).
+        expected = {
+            item["id"] for item in REGISTRY["providers"]
+            if item.get("enabled", True) and "demo" not in item["id"]
+        }
+        self.assertEqual(expected, set(self.engine.providers))
+        self.assertIn("livelive24", expected)
+        self.assertIn("damitv", expected)
+        self.assertIn("ntv", expected)
+        self.assertIn("streamcorner", expected)
         self.assertFalse(any("demo" in key for key in self.engine.providers))
         with patch("urllib.request.urlopen", side_effect=AssertionError("No network at discovery")):
             rows = self.engine.dispatch("catalogs", {})["catalogs"]
             health = self.engine.dispatch("health", {})
-        self.assertEqual(12, len(health["providers"]))
+        self.assertEqual(len(expected), len(health["providers"]))
         # Los scrapers resuelven streams; no son catálogo. La Home lleva canales
         # en vivo, el área de deportes (y Cinemeta cuando el cliente lo pide).
         self.assertEqual(["iptvorg", "bundled_live", "deportes"], [row["id"] for row in rows])

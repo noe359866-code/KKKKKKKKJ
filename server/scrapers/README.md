@@ -48,6 +48,11 @@ Reglas:
 | `tvenvivo.py` | **Proveedor real** de `www.tvenvivo.org` (TV/deportes en directo, LATAM). Ver la sección siguiente. |
 | `deportelibre.py` | **Proveedor real** de `deportelibre.top` (agenda deportiva + canales 24/7). Ver su sección. |
 | `futbolibre.py` | **Proveedor real** de `futbolibre.live` (canales 24/7 de México + agenda de partidos con varias señales). Ver su sección. |
+| `_livekit.py` | Plomería compartida de los proveedores de **directo**: `harvest()` (página → reproductores → `.m3u8`), `media_candidates()`, `anchor_entries()`, `build_live_streams()`, `decode_embedded_url()`. Sin catálogo propio. |
+| `livelive24.py` | **Proveedor real** de `livelive24.com` (índice Live Sport + Live TV). Ver la sección de directo. |
+| `damitv.py` | **Proveedor real** de `damitv.st` (API pública `/papi/`: partidos + canales 24/7). Ver la sección de directo. |
+| `ntv.py` | **Proveedor real** de `ntv.st` (`/matches/{raptor,falcon,phoenix,titan}` y `/watch/{servidor}/ppv-{id}`). Ver la sección de directo. |
+| `streamcorner.py` | **Proveedor real** de `streamcorner.fun` (`/stream/{liga}/{slug}`, varias fuentes por evento). Ver la sección de directo. |
 | `_hosters.py` | Resolutor de los "servidores" de video que usan los sitios de anime (Streamwish, VOE, Filemoon, Mixdrop, Streamtape, Mp4upload…) → `.m3u8`/`.mp4`. |
 | `_animekit.py` | Capa común de anime: ids `proveedor:slug:episodio`, lectura de literales JS, base64, formato de las señales y búsqueda por nombre. |
 | `animeflv.py` | **Proveedor real** de `animeflv.net` (VOD). |
@@ -133,6 +138,51 @@ Prueba sin arrancar el servidor:
 ```bash
 node scripts/bridge-demo.js mi_sitio.py '{"type":"movie","id":"tt0133093","provider":"mi-sitio"}'
 ```
+
+## Directo: `_livekit.py` y los cuatro proveedores nuevos
+
+Los proveedores de TV/deporte añadidos en esta ronda (`livelive24`, `damitv`,
+`ntv`, `streamcorner`) comparten el mismo problema: **una ficha por evento con
+un reproductor dentro**. En vez de repetir el descenso en cada archivo, vive en
+`_livekit.py`:
+
+| Pieza | Para qué |
+| --- | --- |
+| `harvest(url, headers, deadline)` | Descarga la ficha, cosecha medios y, si no hay, sigue hasta 3 reproductores (iframes, `data-*`, literales JS, base64) y los hostings conocidos de `_hosters`. |
+| `media_candidates()` / `player_candidates()` | Qué es medio y qué es página intermedia. |
+| `anchor_entries()` | Índice HTML → `{id, name, url, live}`, quitando la etiqueta de fuente de la tarjeta. |
+| `build_live_streams()` | Medios → streams de Stremio con `isLive`, `quality`, `referer`, `userAgent` y `mediaType`. |
+| `decode_embedded_url()` | `…/player/jw/?url=%2Fc%2F346.m3u8` → `https://sitio/c/346.m3u8`. |
+| `fetch_many()` | Corta el índice cuando el sitio no responde (no gasta segundos por base × ruta). |
+
+Ids que acepta cada proveedor (todos valen como `id` de `/stream/tv/<id>.json`):
+
+| Proveedor | Id de catálogo | Alternativas |
+| --- | --- | --- |
+| `livelive24` | `tv:livelive24:watch/espn` | `livelive24:espn`, `ESPN`, URL de la ficha |
+| `damitv` | `tv:damitv:cr-new-zealand-india` | `damitv:formula 1`, URL |
+| `ntv` | `tv:ntv:ppv-18172` | `ntv:falcon/ppv-18172`, `NFL Network`, URL `/watch/…` |
+| `streamcorner` | `tv:streamcorner:nfl/nfl-network` | `streamcorner:nfl-network`, URL `/stream/…` |
+
+Entorno: `LIVELIVE24_BASE`, `DAMITV_BASE`/`DAMITV_MIRRORS`, `NTV_BASE`/`NTV_MIRRORS`
+(+ `NTV_SERVERS`), `STREAMCORNER_BASE`/`STREAMCORNER_MIRRORS`, y
+`LIVE_MAX_STREAMS`/`LIVE_MAX_DOCS`/`LIVE_MAX_DEPTH` para el kit. Si defines un
+`*_BASE`, **ese** manda (los espejos por defecto no se prueban): es lo que usan
+los tests para no tocar la red.
+
+Para ver ids listos para pegar en `config/live-catalog.json`:
+
+```bash
+cd server
+npm run channels:ntv -- --query "nfl"      # o channels:damitv / livelive24 / streamcorner
+npm run channels:damitv -- --query "f1" --json
+```
+
+Límite honesto: en `streamcorner` y `livelive24` el reproductor se monta desde
+JS. Cuando la señal no está en el HTML (ni en un `data-*`, ni en un hosting
+conocido), el evento se informa **sin streams** (`meta.reason = "no_streams"`)
+en lugar de devolver un enlace a la web. `damitv` y `ntv` publican la ruta del
+manifiesto y no tienen ese problema.
 
 ## Proveedor incluido: `tvenvivo.py`
 

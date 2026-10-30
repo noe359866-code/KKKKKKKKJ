@@ -9,10 +9,11 @@ import sys
 import zipfile
 
 PROVIDERS = {
-    "futbolibre", "deportelibre", "tvenvivo", "animeflv", "jkanime", "monoschinos",
+    "futbolibre", "deportelibre", "tvenvivo", "livelive24", "damitv", "ntv",
+    "streamcorner", "animeflv", "jkanime", "monoschinos",
     "gnula", "cuevana", "pelisplushd", "repelis", "peliculasflix", "pelisjuanita",
 }
-HELPERS = {"embedded_engine", "_embedded_cache", "_embedded_catalogs", "_android_http", "_base", "_htmlkit", "_hosters", "_animekit", "_peliskit", "_tmdb"}
+HELPERS = {"embedded_engine", "_embedded_cache", "_embedded_catalogs", "_android_http", "_base", "_htmlkit", "_hosters", "_animekit", "_peliskit", "_livekit", "_tmdb"}
 ABIS = {"armeabi-v7a", "arm64-v8a", "x86_64"}
 
 

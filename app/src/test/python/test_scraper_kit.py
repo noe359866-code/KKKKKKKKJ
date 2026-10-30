@@ -19,6 +19,7 @@ sys.path[:0] = [str(ROOT / "app/src/main/python"), str(ROOT / "server/scrapers")
 import _animekit
 import _hosters
 import _htmlkit
+import _livekit
 import _peliskit
 from _htmlkit import Deadline, guess_quality, is_media_url
 
@@ -756,6 +757,125 @@ class SoftNotFoundTest(unittest.TestCase):
         streams, meta = _peliskit.scrape_site(payload, dict(self.SITE))
         self.assertEqual(meta["resolved_by"], "direct")
         self.assertEqual(len(streams), 1)
+
+
+# ---------------------------------------------------------------------------
+# Kit de directo: lo que comparten livelive24 / damitv / ntv / streamcorner
+# ---------------------------------------------------------------------------
+
+
+class LiveKitTests(unittest.TestCase):
+    """El kit sólo publica señales reales, nunca la web del proveedor."""
+
+    def test_decodes_the_manifest_hidden_in_a_player_query(self):
+        url = _livekit.decode_embedded_url(
+            "/player/jw/?url=%2Fc%2F346.m3u8&name=Willow%20Cricket", "https://damitv.st"
+        )
+        self.assertEqual(url, "https://damitv.st/c/346.m3u8")
+        # Sin pista de manifiesto no se inventa nada.
+        self.assertEqual(_livekit.decode_embedded_url("/embed/?id=abc", "https://damitv.st"), "")
+
+    def test_media_candidates_cover_data_attributes_js_and_typed_sources(self):
+        html = (
+            '<div data-src="/hls/a.m3u8"></div>'
+            '<script>var p={file:"https:\\/\\/cdn.example\\/v\\/b.m3u8"};</script>'
+            '<video><source src="https://cdn.example/c.m3u8" type="application/x-mpegURL"></video>'
+        )
+        found = _livekit.media_candidates(html, "https://site.example/watch/1")
+        self.assertIn("https://site.example/hls/a.m3u8", found)
+        self.assertIn("https://cdn.example/v/b.m3u8", found)
+        self.assertIn("https://cdn.example/c.m3u8", found)
+        self.assertTrue(all(item.endswith(".m3u8") for item in found))
+
+    def test_anchor_entries_skip_source_labels_and_other_site_links(self):
+        html = (
+            '<a href="/watch/espn"><span class="src">Football24</span> ESPN</a>'
+            '<a href="https://otro.example/watch/x">Ajeno</a>'
+            '<a href="/contacto">Contacto</a>'
+        )
+        entries = _livekit.anchor_entries(html, "https://livelive24.com/", hints=("/watch/",))
+        names = [entry["name"] for entry in entries]
+        # La etiqueta de origen desaparece; los enlaces de navegación no entran.
+        self.assertEqual(names, ["ESPN", "Ajeno"])
+        self.assertNotIn("Contacto", names)
+        self.assertEqual(entries[0]["id"], "watch/espn")
+
+    def test_build_live_streams_marks_hls_and_deduplicates(self):
+        media = [
+            {"url": "https://cdn.example/live/index.m3u8", "referer": "https://site.example/", "source": "Sky"},
+            {"url": "https://cdn.example/live/index.m3u8", "referer": "https://site.example/", "source": "dup"},
+            {"url": "https://cdn.example/live/backup.m3u8", "hd": 1, "source": "Backup"},
+        ]
+        streams = _livekit.build_live_streams("NTV", "NFL Network", media, "UA/1.0")
+        self.assertEqual(len(streams), 2)
+        first = streams[0]
+        self.assertEqual(first["isLive"], True)
+        self.assertEqual(first["behaviorHints"]["mediaType"], "hls")
+        self.assertEqual(first["referer"], "https://site.example/")
+        self.assertEqual(first["userAgent"], "UA/1.0")
+        self.assertIn("NFL Network", first["title"])
+        self.assertIn("Sky", first["title"])
+        self.assertEqual(streams[1]["quality"], "720p")
+
+    def test_env_bases_never_falls_back_to_the_real_site(self):
+        with patch.dict("os.environ", {"XX_BASE": "http://127.0.0.1:1", "XX_MIRRORS": "http://127.0.0.1:2"}):
+            self.assertEqual(
+                _livekit.env_bases("https://real.example", "XX_BASE", "XX_MIRRORS"),
+                ["http://127.0.0.1:1", "http://127.0.0.1:2"],
+            )
+        with patch.dict("os.environ", {"XX_BASE": "", "XX_MIRRORS": ""}):
+            self.assertEqual(
+                _livekit.env_bases("https://real.example", "XX_BASE", "XX_MIRRORS"),
+                ["https://real.example"],
+            )
+
+    def test_strip_live_prefix_keeps_channels_that_start_with_live(self):
+        self.assertEqual(_livekit.strip_live_prefix("LiveNFL Network"), "NFL Network")
+        self.assertEqual(_livekit.strip_live_prefix("Live NBA TV"), "NBA TV")
+        self.assertEqual(_livekit.strip_live_prefix("Liverpool TV"), "Liverpool TV")
+
+    def test_page_title_drops_the_site_suffix(self):
+        self.assertEqual(
+            _livekit.page_title("<title>NFL Network - Watch Live Stream | NTVSTREAM</title>"),
+            "NFL Network",
+        )
+        self.assertEqual(_livekit.page_title("<title>NFL NETWORK - StreamCorner</title>", "StreamCorner"),
+                         "NFL NETWORK")
+        self.assertEqual(_livekit.page_title("<title>ESPN 2 en vivo | Live24</title>"), "ESPN 2")
+
+    def test_harvest_follows_the_player_iframe_and_stops_at_the_first_signal(self):
+        class Opener(RouteOpener):
+            def __init__(self):
+                super().__init__({
+                    "https://site.example/watch/1": FakeResponse(
+                        '<html><head><title>Canal Uno - Watch Live</title></head><body>'
+                        '<iframe src="/player.php?id=7"></iframe>'
+                        '<a href="/watch/2">otro canal</a></body></html>',
+                        "https://site.example/watch/1",
+                    ),
+                    "https://site.example/player.php?id=7": FakeResponse(
+                        '<html><body><script>var s={file:"https:\\/\\/cdn.example\\/uno\\/a.m3u8"};'
+                        "</script></body></html>",
+                        "https://site.example/player.php?id=7",
+                    ),
+                })
+
+        opener = Opener()
+        _htmlkit.install_url_opener(opener)
+        try:
+            media, meta = _livekit.harvest(
+                "https://site.example/watch/1",
+                {"User-Agent": "UA/1.0", "Referer": "https://site.example/"},
+                Deadline(8000),
+            )
+        finally:
+            _htmlkit.install_url_opener(None)
+
+        self.assertEqual([item["url"] for item in media],
+                         ["https://cdn.example/uno/a.m3u8"])
+        self.assertEqual(meta["title"], "Canal Uno")
+        # La ficha dice "otro canal": es navegación, no un reproductor.
+        self.assertNotIn("/watch/2", opener.requests)
 
 
 if __name__ == "__main__":

@@ -28,6 +28,13 @@ process.env.FUTBOLIBRE_INDEX_TTL_SECONDS = '0';
 process.env.FUTBOLIBRE_AGENDA_TTL_SECONDS = '0';
 process.env.DEPORTELIBRE_BASE = 'http://127.0.0.1:1';
 process.env.DEPORTELIBRE_INDEX_TTL_SECONDS = '0';
+process.env.LIVELIVE24_BASE = 'http://127.0.0.1:1';
+process.env.DAMITV_BASE = 'http://127.0.0.1:1';
+process.env.DAMITV_MIRRORS = '';
+process.env.NTV_BASE = 'http://127.0.0.1:1';
+process.env.NTV_MIRRORS = '';
+process.env.STREAMCORNER_BASE = 'http://127.0.0.1:1';
+process.env.STREAMCORNER_MIRRORS = '';
 
 const { runProviderPool } = await import('../src/providers/runner.js');
 const { loadProviders, getProvidersFor } = await import('../src/providers/index.js');

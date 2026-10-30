@@ -148,3 +148,60 @@ una por una, y anotando lo que respondió cada una.
   lo que el sitio publica como enlaces visibles y en los fixtures.
 - Ninguno de los hosts de video (Streamwish, Filemoon, VOE…) desde esta red: la
   resolución de embeds se validó offline con fixtures que replican su JS.
+
+# Directo (TV y deporte): los cuatro proveedores nuevos
+
+Reconocimiento del **2026-10-30**, el mismo día del commit. Se miraron las
+portadas y una ficha interior de cada sitio, y se cruzó con implementaciones
+open-source que ya existen para ellos (el proyecto pide apoyarse en otros
+repos):
+
+- [`Ziorub96/M3u8-extractor-`](https://github.com/Ziorub96/M3u8-extractor-):
+  `damitv_extractor.py` (de ahí salen `/papi/api/streams`,
+  `/papi/matches/all` y `/papi/extract-url/`) y `streamcorner_extractor.py`
+  (SPA, botones `.stream-source-btn`/`[data-source]`, "click para que pida el
+  m3u8").
+- [`rajhodedara/live-sport-plugin`](https://github.com/rajhodedara/live-sport-plugin):
+  `DamiTvProvider.js` confirma las dos fuentes (`/papi/api/streams` y
+  `/papi/matches/all`), que el feed **no** da `.m3u8` crudos y que los `embed`
+  son el contrato.
+- [`guillosan21/streamcorner-tv-feed`](https://github.com/guillosan21/streamcorner-tv-feed):
+  rutas `/stream/…` y espejos del sitio.
+
+| Sitio | Qué respondió | Entrada | Cómo se saca la señal | Confianza |
+| --- | --- | --- | --- | --- |
+| `livelive24.com` | Portada con "Live Sport 654" y "Live TV 434", filtro por país, origen por tarjeta (`Football24`, `Tennis24`, `HotHD🔥`, `PeleZidaneTV`) | Ficha de la tarjeta | `harvest()` sobre la ficha: iframe/literal JS/`data-*` → `.m3u8` | media (índice con tarjetas; ficha no inspeccionable en crudo) |
+| `damitv.st` | **API pública**: `/papi/api/streams` (partidos por deporte) y `/papi/matches/all` (24/7), JSON completo | `id` del feed | `sources[].embed` trae `?url=%2Fc%2F346.m3u8` → se decodifica; si no, se abre `/embed/?id=…` | **alta** (JSON real leído) |
+| `ntv.st` | `/matches/{raptor,falcon,phoenix,titan}` con tarjetas `Live…CategoríaN` → `/watch/{servidor}/ppv-{id}`; ficha con "Source 1 (247CHANNEL)" y iframe "Loading stream" | `ppv-{id}` | Los cuatro servidores sirven el mismo id: se prueban en orden y se publica la primera señal | alta en rutas, media en el reproductor |
+| `streamcorner.fun` | SPA (React Router): `/stream/{liga}/{slug|hex}`, `/extra`, "AVAILABLE SOURCES" con varias señales por evento, reproductor Bitmovin | ruta `/stream/…` | `harvest()` sobre la ficha (botones `[data-source]`, iframes, config Bitmovin) | media (si el manifiesto se pide sólo por JS, se informa sin streams) |
+
+Detalles que cambiaron el diseño:
+
+- **DAMITV no necesita navegador.** Su API es el contrato real; el `embed` ya
+  lleva la ruta del manifiesto (`/c/346.m3u8`, `/dl/353.m3u8`). Los `.m3u8`
+  llevan `Referer: https://damitv.st/`.
+- **NTV son cuatro espejos, no cuatro sitios.** El mismo `ppv-18172` responde
+  en raptor y falcon; el scraper usa eso como failover (y deduplica el índice,
+  que si no devuelve cada evento cuatro veces).
+- **Los nombres vienen pegados.** El índice de NTV concatena canal + categoría
+  + contador (`LiveNFL NetworkAmerican Football1`), así que `ntv.channel_name`
+  recorta la categoría del final en vez de adivinar; `Liverpool TV` no se toca
+  (la etiqueta `Live` sólo se quita si va seguida de mayúscula o separador).
+- **La tarjeta de LiveLive24 trae la fuente delante** (`Football24 ESPN`):
+  se descarta el `<span class="src|source|badge">` y, si no hay markup, la
+  etiqueta conocida (`\w{3,}\d{2}`, `HotHD`, `PeleZidaneTV`).
+
+## Qué **no** se pudo comprobar en el directo
+
+- El **HTML crudo** de las fichas (atributos del reproductor, `src` del iframe):
+  esta red sólo tiene salida a GitHub y a los registros de paquetes, así que
+  todo lo que se miró fue con el lector de páginas (texto, sin DOM). Por eso la
+  resolución genérica (`_livekit.harvest`) cubre iframes, `data-*`, literales
+  JS, base64 y hostings conocidos, y se prueba con fixtures que replican cada
+  caso en `server/test/{damitv,ntv,streamcorner,livelive24}.test.js`.
+- Que los CDN acepten el `Referer` del reproductor en todos los casos: se
+  publica el `referer` del documento donde apareció el manifiesto, que es lo
+  que envía el navegador.
+- Ids concretos de `livelive24` (no se pudo leer una ficha): el proveedor queda
+  registrado y resuelve por nombre, pero **no** se añadieron canales suyos a
+  `config/live-catalog.json`.
