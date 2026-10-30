@@ -241,7 +241,7 @@ class Engine:
         """Filas de la Home: Cinemeta (opt-in) y canales en vivo. Nada más.
 
         Los scrapers de películas/series/anime quedan fuera a propósito: son
-        resolvedores de streams, no catálogos. Su listado interno
+        resuelven streams, no son catálogos. Su listado interno
         (`_embedded_catalogs.catalogue`) se usa para buscar por título dentro de
         `streams`, nunca para pintar filas.
         """

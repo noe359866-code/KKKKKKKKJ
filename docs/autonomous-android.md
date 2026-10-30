@@ -70,7 +70,7 @@ las filas de TV en vivo no dependen de ese servicio.
 Los títulos IMDb de Cinemeta se traducen a nombres antes de invocar los
 scrapers, sin necesitar una clave privada de TMDB.
 
-### Scrapers: sólo resolvedores de streams
+### Scrapers: sólo resuelven streams
 
 Los doce scrapers de `server/scrapers/` (películas, series y anime) no publican
 filas de catálogo. Sus listados son de mejor esfuerzo —sin póster 2:3, sin
