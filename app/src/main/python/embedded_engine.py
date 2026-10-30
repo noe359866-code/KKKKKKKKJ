@@ -238,13 +238,19 @@ class Engine:
         self.pool.shutdown(wait=True, cancel_futures=True)
 
     def catalogs(self, metadata_catalogs: bool = False) -> Dict[str, Any]:
+        """Filas de la Home: Cinemeta (opt-in) y canales en vivo. Nada más.
+
+        Los scrapers de películas/series/anime quedan fuera a propósito: son
+        resolvedores de streams, no catálogos. Su listado interno
+        (`_embedded_catalogs.catalogue`) se usa para buscar por título dentro de
+        `streams`, nunca para pintar filas.
+        """
         rows: List[Dict[str, Any]] = []
         if metadata_catalogs:
             # Cinemeta va PRIMERO: es la única fuente que trae póster 2:3 real y
             # backdrop 16:9 para todos sus títulos, así que el hero y las
-            # primeras filas se pintan con arte de verdad. Los proveedores
-            # (títulos en español, pósters pequeños de su propia web) van
-            # después, como "catálogo profundo".
+            # primeras filas se pintan con arte de verdad. Debajo sólo quedan
+            # los canales en vivo: los scrapers no pintan filas.
             for order, (media_type, catalog_id, title) in enumerate(CINEMETA_CATALOGS):
                 rows.append({"id": "cinemeta_" + catalog_id, "type": media_type, "name": title,
                              "posterShape": "poster", "order": order, "source": "cinemeta",
@@ -254,12 +260,9 @@ class Engine:
                      "provider": "iptv-org"})
         rows.append({"id": "bundled_live", "type": "tv", "name": "TV en vivo · Canales guardados",
                      "posterShape": "landscape", "order": len(rows), "source": "embedded"})
-        for order, (name, provider) in enumerate(self.providers.items(), len(rows)):
-            media_type = "tv" if name in providers.LIVE else "anime" if name in providers.ANIME else "movie"
-            category = {"tv": "TV y deportes", "anime": "Anime", "movie": "Películas y series"}[media_type]
-            rows.append({"id": name, "type": media_type, "name": f"{category} · {provider['label']}",
-                         "posterShape": "landscape" if media_type == "tv" else "poster", "order": order,
-                         "source": "embedded", "provider": provider["label"]})
+        # Los scrapers NO publican filas: no tienen portada, ni póster 2:3, ni
+        # orden curado, y su listado es una sopa de títulos repetidos. Sólo
+        # resuelven streams (ver `streams`), igual que los addons del servidor.
         return {"catalogs": rows}
 
     def iptv_metas(self) -> List[Dict[str, Any]]:
@@ -307,6 +310,11 @@ class Engine:
             metas = self.iptv_metas()
         elif catalog_id == "bundled_live" and media_type == "tv":
             metas = self.live
+        elif catalog_id in self.providers:
+            # Contrato: el scraper resuelve streams, no publica catálogo. Si un
+            # cliente viejo pide su fila, recibe una lista vacía (sin `degraded`:
+            # no hay error, simplemente no hay catálogo que enseñar).
+            return {"metas": []}
         else:
             try:
                 if catalog_id.startswith("cinemeta_"):
@@ -317,8 +325,6 @@ class Engine:
                     data = http_get_json(self.cinemeta_base + path + (extra_path if extra_path != "/" else "") + ".json",
                                          {"Accept": "application/json", "User-Agent": "Streamflix/embedded"}, 6) or {}
                     metas = [{**item, "type": media_type, "sourceName": "Cinemeta"} for item in data.get("metas") or []]
-                elif catalog_id in self.providers:
-                    metas = providers.catalogue(self.providers[catalog_id], media_type, query)
                 else:
                     return {"metas": [], "degraded": True}
                 metas = [normalized for item in metas if (normalized := normalize_meta(item, media_type))]

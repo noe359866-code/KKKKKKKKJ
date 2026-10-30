@@ -147,6 +147,13 @@ def cards(provider: str, html: str, page: str, media_type: str, label: str) -> L
 
 
 def catalogue(provider: Dict[str, Any], media_type: str, query: str = "") -> List[Dict[str, Any]]:
+    """Tarjetas que publica hoy la portada de un scraper (listado o búsqueda).
+
+    **No se expone como catálogo del motor**: los scrapers sólo resuelven
+    streams (ver `Engine.streams`). Esta función queda como herramienta interna
+    para buscar la ficha de un título y para las pruebas de los parsers; el
+    contrato público es `{"metas": []}` para cualquier id de proveedor.
+    """
     name, label = provider["id"], provider["label"]
     module = module_for(name)
     headers = default_headers(provider)

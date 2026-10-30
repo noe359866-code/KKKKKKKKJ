@@ -53,6 +53,10 @@ class FixtureHandler(BaseHTTPRequestHandler):
             "/catalog/series/top/genre=Animation.json": json.dumps({"metas": [{"id": "tt7654321", "type": "series", "name": "Anime fixture"}]}),
         }
         body = routes.get(self.path)
+        if body is None and self.path.startswith("/search"):
+            # Buscador del sitio: es la ruta que usa un scraper cuando sólo
+            # conoce el título (p. ej. un id IMDb de Cinemeta).
+            body = '<a href="/pelicula/fixture">Fixture title<img src="/poster.jpg"></a>'
         self.send_response(200 if body is not None else 404)
         self.send_header("Content-Type", "application/json" if ".json" in self.path else "text/html; charset=utf-8")
         self.end_headers()
@@ -84,17 +88,17 @@ class EngineTests(unittest.TestCase):
         self.engine.close()
         self.temp.cleanup()
 
-    def test_twelve_real_providers_are_bundled_not_the_demo_providers(self):
+    def test_scrapers_are_bundled_but_publish_no_catalog_rows(self):
         self.assertEqual(12, len(self.engine.providers))
         self.assertFalse(any("demo" in key for key in self.engine.providers))
         with patch("urllib.request.urlopen", side_effect=AssertionError("No network at discovery")):
             rows = self.engine.dispatch("catalogs", {})["catalogs"]
             health = self.engine.dispatch("health", {})
         self.assertEqual(12, len(health["providers"]))
-        # Primero los canales abiertos (iptv-org): reproducen sin depender de
-        # ninguna web scrapeada. Después los canales guardados y los proveedores.
-        self.assertEqual("iptvorg", rows[0]["id"])
-        self.assertEqual("bundled_live", rows[1]["id"])
+        # Los scrapers resuelven streams; no son catálogo. La Home sólo lleva
+        # canales en vivo (y Cinemeta cuando el cliente lo pide).
+        self.assertEqual(["iptvorg", "bundled_live"], [row["id"] for row in rows])
+        self.assertFalse({row["id"] for row in rows} & set(self.engine.providers))
         self.assertTrue(all(row["source"] in ("embedded", "iptv") for row in rows))
         self.assertTrue(all(callable(catalogs.module_for(p).scrape) for p in health["providers"]))
 
@@ -156,13 +160,16 @@ class EngineTests(unittest.TestCase):
         all_matches = self.engine.catalogue("tv", "bundled_live", "ESPN")
         self.assertEqual(all_matches["metas"][1:], first["metas"])
 
-    def test_real_pelisplus_catalog_to_scraper_to_playable_stream_without_spawn(self):
+    def test_scraper_resolves_streams_without_publishing_a_catalog(self):
         with patch.dict(os.environ, {"PELISPLUSHD_BASE": self.base}), patch("subprocess.Popen", side_effect=AssertionError("No child processes")):
-            result = self.engine.catalogue("movie", "pelisplushd")
-            movie = next(m for m in result["metas"] if m["id"] == "pelisplushd:fixture")
+            # El motor no expone la fila del scraper: pedirla devuelve vacío.
+            self.assertEqual({"metas": []}, self.engine.dispatch("catalog", {"type": "movie", "id": "pelisplushd"}))
+            # Pero sigue resolviendo la ficha y el stream con su parser.
+            listed = catalogs.catalogue(self.engine.providers["pelisplushd"], "movie")
+            movie = next(m for m in listed if m["id"] == "pelisplushd:fixture")
             self.assertEqual("Película de prueba", movie["name"])
             self.assertEqual(self.base + "/poster.jpg", movie["poster"])
-            self.assertTrue(any(m["type"] == "series" for m in result["metas"]))
+            self.assertTrue(any(m["type"] == "series" for m in listed))
             sources = self.engine.streams("movie", movie["id"])["streams"]
         self.assertEqual([self.base + "/video/fixture.m3u8"], [s["url"] for s in sources])
         self.assertIn("Referer", sources[0]["behaviorHints"]["requestHeaders"])
@@ -170,9 +177,18 @@ class EngineTests(unittest.TestCase):
         self.assertEqual("PelisPlus", sources[0]["provider"])
         self.assertFalse(sources[0]["isLive"])
 
+    def test_cinemeta_titles_resolve_streams_through_the_scraper_search(self):
+        self.engine.providers = {"pelisplushd": self.engine.providers["pelisplushd"]}
+        with patch.dict(os.environ, {"PELISPLUSHD_BASE": self.base}):
+            streams = self.engine.streams("movie", "tt1234567")["streams"]
+        # Nadie publicó una fila de pelisplushd: el título salió de Cinemeta y el
+        # scraper lo encontró buscando en su propio sitio.
+        self.assertEqual([self.base + "/video/fixture.m3u8"], [item["url"] for item in streams])
+        self.assertTrue(any(path.startswith("/search") for path in FixtureHandler.requests))
+        self.assertEqual("PelisPlus", streams[0]["provider"])
+
     def test_local_series_details_get_real_numbered_episodes_and_the_selected_episode(self):
         with patch.dict(os.environ, {"PELISPLUSHD_BASE": self.base}):
-            self.engine.catalogue("movie", "pelisplushd")
             meta = self.engine.meta("series", "pelisplushd:serie-fixture")["meta"]
             self.assertEqual([1, 2], [v["episode"] for v in meta["videos"]])
             self.assertEqual("Sinopsis", meta["description"])
@@ -182,7 +198,7 @@ class EngineTests(unittest.TestCase):
     def test_anime_cards_have_episode_ids_and_real_detail_list(self):
         module = catalogs.module_for("animeflv")
         with patch.object(module, "BASE_URL", self.base):
-            items = self.engine.catalogue("anime", "animeflv")["metas"]
+            items = catalogs.catalogue(self.engine.providers["animeflv"], "anime")
             self.assertEqual("animeflv:anime-fixture:2", items[0]["id"])
             meta = self.engine.meta("anime", "animeflv:anime-fixture")["meta"]
         self.assertEqual([1, 2], [v["episode"] for v in meta["videos"]])
@@ -237,14 +253,14 @@ class EngineTests(unittest.TestCase):
             self.assertTrue(self.engine.streams("movie", "pelisplushd:fixture")["streams"])
         self.assertEqual(2, scrape.call_count)
 
-    def test_stale_titles_remain_browsable_after_restart_when_source_is_offline(self):
-        with patch("_embedded_catalogs.catalogue", return_value=[{"id": "gnula:fixture", "type": "movie", "name": "Fixture"}]):
-            expected = self.engine.catalogue("movie", "gnula")
+    def test_cinemeta_rows_survive_a_restart_when_the_metadata_source_is_offline(self):
+        expected = self.engine.catalogue("anime", "cinemeta_top")
+        self.assertTrue(expected["metas"])
         other = embedded.Engine(self.temp.name, REGISTRY, LIVE)
         try:
             other.cache.clock = lambda: time.time() + 3700
-            with patch("_embedded_catalogs.catalogue", side_effect=OSError("offline")):
-                self.assertEqual(expected, other.catalogue("movie", "gnula"))
+            with patch.object(embedded, "http_get_json", side_effect=OSError("offline")):
+                self.assertEqual(expected, other.catalogue("anime", "cinemeta_top"))
         finally:
             other.close()
 

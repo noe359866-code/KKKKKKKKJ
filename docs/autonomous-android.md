@@ -41,9 +41,10 @@ para evitar mantener dos copias diferentes.
 2. Abre la app: entra en modo autónomo sin pedir IP o dominio.
 3. La primera fila es **Canales abiertos** (iptv-org, HLS libre): se reproduce
    con el mando sin claves, sin addon y sin proveedor. Debajo aparece la fila de
-   canales guardados y, conforme responden, las de los proveedores.
-4. Usa **Buscar** para consultar los proveedores por título/canal y **Inicio**
-   para volver a la portada.
+   canales guardados. Los scrapers de películas/series/anime **no añaden filas**:
+   sólo resuelven el video cuando abres un título.
+4. Usa **Buscar** para filtrar las filas de Cinemeta y los canales en vivo, e
+   **Inicio** para volver a la portada.
 5. Abre una ficha, elige capítulo cuando corresponda, selecciona una fuente
    y reproduce. Si no se pudo extraer una lista real de episodios, se permite
    indicar temporada y episodio manualmente; no se fabrica una lista.
@@ -65,9 +66,24 @@ persona. El avatar de la barra superior cambia de perfil sin cerrar la app y el
 último usado se recuerda para el siguiente encendido.
 
 En **Ajustes** se puede activar **Añadir catálogos de Cinemeta**. Es opcional:
-las filas de los proveedores y la TV guardada no dependen de ese servicio.
+las filas de TV en vivo no dependen de ese servicio.
 Los títulos IMDb de Cinemeta se traducen a nombres antes de invocar los
 scrapers, sin necesitar una clave privada de TMDB.
+
+### Scrapers: sólo resolvedores de streams
+
+Los doce scrapers de `server/scrapers/` (películas, series y anime) no publican
+filas de catálogo. Sus listados son de mejor esfuerzo —sin póster 2:3, sin
+sinopsis, con títulos repetidos— y ensuciaban la portada. Ahora sólo se usan
+para **resolver el stream**:
+
+- `GET /stream/movie/tt0944947.json` → el motor traduce el id IMDb a título y
+  cada scraper busca esa ficha en su propio buscador.
+- `GET /catalog/:type/<id-de-scraper>.json` devuelve `{"metas": []}`: no es un
+  error, es el contrato. Si un cliente viejo pide esa fila, se le responde vacío.
+- La portada queda con Cinemeta (si está activo) y la TV en vivo; el catálogo
+  del servidor (`server/config/catalogs.json`) sigue igual: sin filas de
+  proveedores.
 
 ### Addons de Stremio (v3)
 
@@ -115,8 +131,9 @@ al servidor ni envía consultas a un backend configurado anteriormente.
 - Los dominios, las estructuras HTML, los enlaces firmados y la disponibilidad
   de las fuentes pueden cambiar. Un bloqueo geográfico, CAPTCHA, contenido DRM
   o una fuente caída no se elimina por integrar Python.
-- Los parsers de catálogo son de mejor esfuerzo. No todos los sitios publican
-  pósters, sinopsis o listas completas de episodios en HTML.
+- Los parsers de los scrapers son de mejor esfuerzo: buscan la ficha por
+  título y no todos los sitios publican pósters, sinopsis o listas completas de
+  episodios en HTML. No fabrican filas de catálogo: sólo resuelven streams.
 - Los scripts incluidos son estáticos; actualizar un scraper o un dominio
   predeterminado requiere una nueva compilación del APK. No hay actualización
   de código ejecutable descargado de terceros.

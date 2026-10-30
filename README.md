@@ -69,8 +69,10 @@ For a production build, configure your own release signing as described below.
 ### Features
 
 - **Autonomous by default:** Python 3.11 and the twelve real provider scrapers run inside the APK; no Node.js server, IP address or backend deployment required
-- Cinemeta catalogues **on by default** (real 2:3 posters and 16:9 backdrops), followed by the twelve
-  provider catalogues, local episode discovery and on-device cache
+- Cinemeta catalogues **on by default** (real 2:3 posters and 16:9 backdrops), followed by the open
+  live channels, local episode discovery and on-device cache
+- The twelve scrapers are **stream resolvers only**: they publish no catalogue rows, they just
+  resolve the video when a title or episode is opened
 - *Streaming Catalogs* (Netflix, Disney+, HBO Max, Prime Video…) installed automatically on first launch
 - Optional external-server mode remains available in Settings
 - Open-source and ad-free interface
@@ -396,8 +398,9 @@ cross-protocol redirects), and each source gets its own factory, since the
 
 **Ajustes → Autónomo · En este dispositivo** is the default, including after an
 upgrade from the old server-only build. First launch does not ask for a URL.
-Catalogues are queried directly from the bundled providers. Cinemeta rows are
-an explicit opt-in, not a requirement for browsing provider catalogues.
+Catalogue rows come from Cinemeta (explicit opt-in) and the open live channels;
+the bundled scrapers only resolve streams. Cinemeta is optional, not a
+requirement for watching anything.
 
 An external server can still be selected in **Ajustes → Servidor externo**.
 Only that mode uses `DEFAULT_ADDON_BASE_URL` / the saved URL. Returning to local
@@ -415,12 +418,17 @@ A changed domain, anti-bot challenge or dead video host can still break a source
 - The twelve provider definitions and curated live-channel IDs are packaged
   from `server/config/`; the demo Python providers and server-only third-party
   addon configuration are excluded.
-- Native Python calls scrape the provider home/search pages for movies, series,
+- **Los scrapers no publican filas.** Su portada no tiene orden, arte ni
+  sinopsis, así que sólo resuelven streams: al abrir un título o episodio, el
+  motor busca esa ficha por nombre en cada scraper y devuelve los enlaces. Un
+  pedido de catálogo con su id responde `{"metas": []}` (contrato, no error).
+- Native Python calls scrape the provider search pages for movies, series,
   anime, live channels and sports. Posters and episode lists come from those
   same pages where available. No private TMDB key is required.
 - The saved live-channel shelf is available immediately without a metadata
-  service. Other shelves appear incrementally as providers answer.
-- **Buscar** queries the providers; **Inicio** clears the search.
+  service.
+- **Buscar** filtra las filas de Cinemeta y los canales en vivo; **Inicio**
+  limpia la búsqueda.
 - Catalogue metadata is cached on disk for one hour (live: ten minutes), with
   a bounded stale fallback for titles/artwork. Signed stream URLs have a short
   cache only and are never served stale after its expiry.

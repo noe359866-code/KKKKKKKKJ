@@ -41,6 +41,9 @@ class EmbeddedEngineSmokeTest {
         val descriptors = client.catalogs("")
         assertTrue(descriptors.isNotEmpty())
         assertFalse(descriptors.any { it.source == "cinemeta" })
+        // Los scrapers no publican filas: sólo resuelven streams.
+        assertEquals(listOf("iptvorg", "bundled_live"), descriptors.map { it.id })
+        assertTrue(descriptors.none { it.id in health["providers"]!!.jsonArray.map { p -> p.jsonPrimitive.content } })
         val channels = client.catalog("", "tv", "bundled_live")!!.metas
         assertTrue(channels.isNotEmpty())
         assertTrue(channels.all { it.type == "tv" })

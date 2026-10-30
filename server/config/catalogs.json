@@ -1,5 +1,5 @@
 {
-  "$comment": "Catálogos que publica este addon en /manifest.json. 'type' e 'id' son los del protocolo Stremio: GET /catalog/<type>/<id>.json. 'source' dice de dónde salen las metas: cinemeta (addon oficial de metadatos), local (config/live-catalog.json) o remote (un addon de terceros declarado en 'addons'). 'posterShape' controla si el cliente pinta tarjetas 2:3 (poster) o 16:9 (landscape).",
+  "$comment": "Catálogos que publica este addon en /manifest.json. 'type' e 'id' son los del protocolo Stremio: GET /catalog/<type>/<id>.json. 'source' dice de dónde salen las metas: cinemeta (addon oficial de metadatos), local (config/live-catalog.json) o remote (un addon de terceros declarado en 'addons'). 'posterShape' controla si el cliente pinta tarjetas 2:3 (poster) o 16:9 (landscape). Los scrapers de server/scrapers/ NO publican filas: sólo resuelven /stream/movie|series|anime/<id>.json a partir del título.",
   "catalogs": [
     {
       "type": "tv",

@@ -60,7 +60,7 @@ class RoutingContentClient(
             }
         } else emptyList()
         /* El orden lo fija la fuente: Cinemeta 0..n (arte de calidad, va
-         * primero) y después proveedores y addons. */
+         * primero), después la TV en vivo y los addons. */
         return (baseCatalogs + addonCatalogs).sortedBy { it.order }
     }
 

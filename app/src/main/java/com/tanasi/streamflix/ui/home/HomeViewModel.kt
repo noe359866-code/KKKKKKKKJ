@@ -85,10 +85,9 @@ class HomeViewModel(
      * Pide `/meta` del título que ocupa el hero para completar lo que el
      * catálogo no trae: backdrop 16:9, sinopsis, nota y géneros.
      *
-     * Los catálogos de los proveedores sólo traen el póster pequeño de la web
-     * de origen; sin este paso el hero se queda con el arte local y parece una
-     * plantilla. Se espera [HERO_DEBOUNCE_MS] porque en una TV el foco salta de
-     * tarjeta en tarjeta y no tiene sentido pedir una ficha por cada salto.
+     * La fila de Cinemeta ya trae póster y backdrop; los canales en vivo no
+     * tienen ficha. Se espera [HERO_DEBOUNCE_MS] porque en una TV el foco salta
+     * de tarjeta en tarjeta y no tiene sentido pedir una ficha por cada salto.
      */
     private fun enrichHero(spotlight: Spotlight?) {
         val client = client ?: return
@@ -157,7 +156,7 @@ class HomeViewModel(
                     is CatalogResult.Ready -> {
                         if (result.catalog.isEmpty) {
                             mutableState.value = HomeUiState.Error(
-                                "No hay títulos disponibles. Revisa Internet y los proveedores.",
+                                "No hay títulos disponibles. Revisa la conexión e intenta de nuevo.",
                             )
                             return@launch
                         }

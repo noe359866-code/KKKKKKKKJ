@@ -28,8 +28,9 @@ sealed interface CatalogResult {
 }
 
 /**
- * Las filas se resuelven en paralelo. En modo autónomo salen de los proveedores
- * del APK; sólo el modo remoto necesita baseUrl. Una fila caída no tumba las demás.
+ * Las filas se resuelven en paralelo. En modo autónomo salen de Cinemeta (opt-in),
+ * los canales en vivo y los addons; los scrapers sólo resuelven streams. Sólo el
+ * modo remoto necesita baseUrl. Una fila caída no tumba las demás.
  */
 class CatalogRepository(
     private val client: ContentClient,
@@ -78,7 +79,7 @@ class CatalogRepository(
         if (rows.isEmpty()) {
             return@withContext CatalogResult.Failure(
                 if (!search.isNullOrBlank()) "No se encontraron títulos para esa búsqueda."
-                else "No se pudo cargar contenido de los proveedores. Revisa Internet y vuelve a intentarlo.",
+                else "No se pudo cargar ninguna fila. Revisa la conexión y vuelve a intentarlo.",
                 needsSetup = false,
             )
         }

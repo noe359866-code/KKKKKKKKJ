@@ -24,10 +24,10 @@ fun CatalogSearchDialog(initialQuery: String, onSearch: (String) -> Unit, onDism
     var value by remember { mutableStateOf(initialQuery) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Buscar en los proveedores") },
+        title = { Text("Buscar en el catálogo") },
         text = {
             Column {
-                Text("Busca películas, series, anime o canales por su nombre.")
+                Text("Busca en las filas de Cinemeta y en los canales en vivo.")
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = value,
