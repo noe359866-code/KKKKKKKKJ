@@ -40,6 +40,8 @@ import com.tanasi.streamflix.ui.theme.StreamflixColors
  *    `LazyRow` no recorta a sus hijos: crecen por encima y por debajo sin
  *    empujar al vecino, y ese margen es el que deja ver el halo entero.
  *
+ * @param onEntryClick recibe también los títulos de la fila: son la parrilla
+ *   con la que el reproductor cambia de canal (`CH+`/`CH−`) sin volver al Home.
  * @param onEntryFocused se llama con la fila y el título al entrar en foco,
  *   para que el hero sepa de qué carrusel viene la tarjeta.
  * @param firstCardFocusRequester foco inicial del Home en TV.
@@ -49,7 +51,7 @@ import com.tanasi.streamflix.ui.theme.StreamflixColors
 fun MediaRow(
     row: CatalogRow,
     deviceProfile: DeviceProfile,
-    onEntryClick: (MediaEntry) -> Unit,
+    onEntryClick: (MediaEntry, List<MediaEntry>) -> Unit,
     onEntryFocused: (rowId: String, entry: MediaEntry) -> Unit,
     modifier: Modifier = Modifier,
     firstCardFocusRequester: FocusRequester? = null,
@@ -99,7 +101,7 @@ fun MediaRow(
                     SportsCard(
                         entry = entry,
                         deviceProfile = deviceProfile,
-                        onClick = { onEntryClick(entry) },
+                        onClick = { onEntryClick(entry, row.items) },
                         onFocused = { entry -> onEntryFocused(row.id, entry) },
                         focusUp = up,
                         focusRequester = focusRequester,
@@ -108,7 +110,7 @@ fun MediaRow(
                     PosterCard(
                         entry = entry,
                         deviceProfile = deviceProfile,
-                        onClick = { onEntryClick(entry) },
+                        onClick = { onEntryClick(entry, row.items) },
                         onFocused = { entry -> onEntryFocused(row.id, entry) },
                         focusUp = up,
                         focusRequester = focusRequester,
@@ -117,7 +119,7 @@ fun MediaRow(
                     LandscapeCard(
                         entry = entry,
                         deviceProfile = deviceProfile,
-                        onClick = { onEntryClick(entry) },
+                        onClick = { onEntryClick(entry, row.items) },
                         onFocused = { entry -> onEntryFocused(row.id, entry) },
                         focusUp = up,
                         focusRequester = focusRequester,

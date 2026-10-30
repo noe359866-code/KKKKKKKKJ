@@ -142,7 +142,15 @@ data class CatalogRow(
  * @param startIndex fuente elegida en la hoja de detalles (0 = la de mayor
  *   prioridad). El failover continúa desde ahí hacia abajo.
  */
-fun MediaEntry.playbackRequest(startIndex: Int = 0) = PlaybackRequest(
+fun MediaEntry.playbackRequest(
+    startIndex: Int = 0,
+    /**
+     * Parrilla de la fila de la que salió la tarjeta (ver
+     * [toChannelQueue]). Sólo se usa para zapear con `CH+`/`CH−` dentro del
+     * reproductor; en películas y series va vacía.
+     */
+    queue: List<PlaybackChannel> = emptyList(),
+) = PlaybackRequest(
     id = id,
     type = type,
     title = title,
@@ -151,6 +159,7 @@ fun MediaEntry.playbackRequest(startIndex: Int = 0) = PlaybackRequest(
     poster = poster,
     backdrop = backdrop,
     startPositionMs = resumePositionMs,
+    queue = queue,
 )
 
 /** Lo que el reproductor necesita saber para abrir un título. */
@@ -172,6 +181,16 @@ data class PlaybackRequest(
     val backdrop: String? = null,
     /** Posición de arranque: 0 salvo que venga de "Seguir viendo". */
     val startPositionMs: Long = 0L,
+    /**
+     * Parrilla de canales de la que salió este título, en el orden en que el
+     * usuario la vio. Es lo que permite `CH+`/`CH−` y la guía sin volver al
+     * Home; vacía en películas, series y cuando se abre desde fuera.
+     *
+     * El canal **actual** se localiza aquí por `id`, no por posición: si el
+     * catálogo se reordena entre abrir y zapear, seguimos apuntando al mismo
+     * canal.
+     */
+    val queue: List<PlaybackChannel> = emptyList(),
 )
 
 /** Tanto :temporada:episodio como los ids de anime proveedor:slug:episodio. */

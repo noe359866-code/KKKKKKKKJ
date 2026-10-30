@@ -83,6 +83,13 @@ fun PlayerControls(
     isLive: Boolean,
     failover: FailoverState,
     sourcesCount: Int,
+    /**
+     * `"3 de 12"` cuando el título está dentro de una parrilla zapeable, o
+     * `null` si es un canal suelto. Se pinta junto al chip EN VIVO.
+     */
+    channelPosition: String? = null,
+    /** Canales de la parrilla. `0` = no hay guía que abrir. */
+    channelCount: Int = 0,
     visible: Boolean,
     isPlaying: Boolean,
     positionMs: Long,
@@ -94,6 +101,7 @@ fun PlayerControls(
     onForward: () -> Unit,
     onShowSources: () -> Unit,
     onInteraction: () -> Unit,
+    onShowChannels: () -> Unit = {},
     hasSubtitles: Boolean = false,
     subtitlesOn: Boolean = false,
     onToggleSubtitles: () -> Unit = {},
@@ -132,6 +140,7 @@ fun PlayerControls(
                     isLive = isLive,
                     failover = failover,
                     sourcesCount = sourcesCount,
+                    channelPosition = channelPosition,
                 )
 
                 Spacer(Modifier.weight(1f))
@@ -179,6 +188,20 @@ fun PlayerControls(
                         )
                     }
 
+                    /* La guía es la otra forma de cambiar de canal (la
+                     * primera son `CH+`/`CH−`), y aquí es donde se descubre:
+                     * un botón con nombre, no un gesto escondido. */
+                    if (channelCount > 1) {
+                        RoundControl(
+                            label = "Canales",
+                            size = 86.dp,
+                            onClick = {
+                                onInteraction()
+                                onShowChannels()
+                            },
+                        )
+                    }
+
                     RoundControl(
                         label = "Fuentes",
                         size = 86.dp,
@@ -213,7 +236,11 @@ fun PlayerControls(
 
                 Text(
                     text = if (isLive) {
-                        "OK pausa · ATRÁS salir"
+                        if (channelCount > 1) {
+                            "◀ ▶ canal · ▲ guía · ▼ controles · ATRÁS salir"
+                        } else {
+                            "OK pausa · ATRÁS salir"
+                        }
                     } else {
                         "◀ ▶ 10 s · OK pausa · ABAJO controles · ATRÁS salir"
                     },
@@ -239,6 +266,7 @@ private fun TitleBlock(
     isLive: Boolean,
     failover: FailoverState,
     sourcesCount: Int,
+    channelPosition: String? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -257,6 +285,16 @@ private fun TitleBlock(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (isLive) {
                     LiveChip()
+                    Spacer(Modifier.width(12.dp))
+                }
+                if (channelPosition != null) {
+                    Text(
+                        text = "CANAL $channelPosition",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White.copy(alpha = 0.86f),
+                        maxLines = 1,
+                    )
                     Spacer(Modifier.width(12.dp))
                 }
                 Text(

@@ -12,6 +12,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tanasi.streamflix.core.DeviceDetector
 import com.tanasi.streamflix.core.DpadKeys
+import com.tanasi.streamflix.data.model.PlaybackQueueCodec
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.WatchProgress
 import com.tanasi.streamflix.di.ServiceLocator
@@ -66,7 +67,6 @@ class PlayerActivity : ComponentActivity() {
 
                 PlayerScreen(
                     viewModel = playerViewModel,
-                    request = request,
                     onBack = { finish() },
                     onProgress = { positionMs, durationMs ->
                         /* Un directo no se "continúa": no hay posición que
@@ -101,6 +101,10 @@ class PlayerActivity : ComponentActivity() {
             isLive = getBooleanExtra(EXTRA_IS_LIVE, false),
             startIndex = getIntExtra(EXTRA_START_INDEX, 0).coerceAtLeast(0),
             startPositionMs = getLongExtra(EXTRA_START_POSITION, 0L).coerceAtLeast(0L),
+            /* La parrilla viaja serializada: el reproductor la usa para `CH+`,
+             * `CH−` y la guía. Si el extra falta o está corrupto, la lista
+             * queda vacía y todo lo demás funciona igual. */
+            queue = PlaybackQueueCodec.decode(getStringExtra(EXTRA_QUEUE)),
         )
     }
 
@@ -114,5 +118,6 @@ class PlayerActivity : ComponentActivity() {
         const val EXTRA_PROFILE_ID = "extra.profileId"
         const val EXTRA_POSTER = "extra.poster"
         const val EXTRA_BACKDROP = "extra.backdrop"
+        const val EXTRA_QUEUE = "extra.queue"
     }
 }

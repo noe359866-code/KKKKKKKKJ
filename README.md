@@ -456,18 +456,37 @@ Decisiones de salón:
   de 40 dp y las listas que no se desplazan no se pueden usar.
 - **Cuando todo falla**, panel de vidrio con *Reintentar* (foco inicial) ·
   *Elegir fuente* · *Volver*. ATRÁS sale del reproductor, no del aviso.
+- **Cambiar de canal sin salir** (TV en vivo): la tarjeta de un canal abre el
+  reproductor directamente —la ficha de un canal no tiene nada que elegir— y
+  desde ahí `CH+`/`CH−` recorren la fila entera, con vuelta al llegar al final.
+  Cada zapeo deja un **rótulo** arriba (canal y `3 de 12`) que se va solo a los
+  2,6 s, y el vídeo anterior sigue en pantalla hasta que engancha la señal nueva:
+  no hay fundido a negro entre canales.
+- **Guía de canales**: `▲` (o el botón *Canales*) abre la parrilla sobre la
+  franja inferior, con el vídeo visible arriba. Recorrerla con `◀ ▶` **cambia de
+  canal al instante**, sin confirmar; `OK` la cierra en el canal elegido y
+  `ATRÁS` la cierra **devolviendo el canal desde el que se abrió**.
+- **La parrilla es la fila que estabas viendo**, no todo el catálogo: el
+  `PlaybackRequest` viaja con `queue` (ids, títulos y carátulas) y el canal en
+  uso se localiza por `id`, no por posición. Si el catálogo se reordena entre
+  abrir y zapear, sigues apuntando al mismo canal.
 
 Teclas:
 
 | Tecla | Acción |
 | --- | --- |
 | `OK` / `ENTER` / `SPACE` / gamepad `A` | play / pausa |
-| `◀` / `▶` | −10 s / +10 s (sólo VOD; con el foco en un botón mueven el foco) |
-| `▼` / `▲` | sacar los controles y llevar el foco a ellos |
-| `MEDIA_PLAY_PAUSE` / `MEDIA_FAST_FORWARD` / `MEDIA_REWIND` | **siempre** funcionan, aunque el foco esté en un botón o en la lista de fuentes |
-| `BACK` | cierra la lista de fuentes, luego oculta los controles, luego sale |
+| `◀` / `▶` | −10 s / +10 s en VOD; en directo con parrilla, canal anterior/siguiente (con el foco en un botón mueven el foco) |
+| `▼` | sacar los controles y llevar el foco a ellos |
+| `▲` | en directo con parrilla abre la **guía de canales**; si no, saca los controles |
+| `CH+` / `CH−` | canal siguiente / anterior en directo, con vuelta (sin salir del vídeo) |
+| `MEDIA_NEXT` / `MEDIA_PREVIOUS` | lo mismo, para mandos sin `CH+`/`CH−` |
+| `MEDIA_PLAY_PAUSE` / `MEDIA_FAST_FORWARD` / `MEDIA_REWIND` | **siempre** funcionan, aunque el foco esté en un botón, en la guía o en la lista de fuentes |
+| `BACK` | cierra la guía (devolviendo el canal), cierra la lista de fuentes, luego oculta los controles, luego sale |
 
-La aritmética del salto vive en `player/SeekPolicy.kt` (acotada a
+La aritmética del zapeo vive en `player/ChannelZapping.kt` (vuelta en los
+extremos y canal fuera de la parrilla) y la del salto en
+`player/SeekPolicy.kt` (acotada a
 `0..duration`, duración desconocida = sin tope) y la tabla de teclas en
 `player/PlayerKeyMap.kt`; ambas se prueban en JVM, sin emulador.
 

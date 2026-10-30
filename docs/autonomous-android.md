@@ -80,6 +80,16 @@ enfocable con su número de failover, el proveedor, `HLS · 1080p` y una marca �
 en la que está en uso. El foco arranca en esa misma, así que ATRÁS sale sin
 mover nada; OK cambia de fuente sin salir del vídeo.
 
+**Cambiar de canal** es lo propio de la TV en vivo y no pasa por el Home:
+`CH+`/`CH−` (o `MEDIA_NEXT`/`MEDIA_PREVIOUS` en mandos sin esas teclas) saltan
+al canal siguiente/anterior de la misma fila, con vuelta en los extremos. Cada
+salto pinta un rótulo arriba con el nombre y `3 de 12` que desaparece solo, y la
+imagen del canal anterior se mantiene hasta que resuelve la señal nueva. `▲`
+abre la guía (franja inferior, vídeo visible) donde `◀ ▶` sintonizan al instante,
+`OK` cierra y `ATRÁS` vuelve al canal desde el que se abrió. La tarjeta de un
+canal del Home entra al reproductor en una sola pulsación: la ficha no tiene
+nada que elegir.
+
 ### Perfiles
 
 Al arrancar, la app pregunta **¿Quién está viendo?** con avatares redondos (hasta

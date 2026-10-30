@@ -51,6 +51,7 @@ import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.core.LocalDeviceProfile
 import com.tanasi.streamflix.data.model.CatalogRow
 import com.tanasi.streamflix.data.model.MediaEntry
+import com.tanasi.streamflix.data.model.toChannelQueue
 import com.tanasi.streamflix.data.model.Profile
 import com.tanasi.streamflix.data.model.hasEpisodeNumber
 import com.tanasi.streamflix.data.model.PlaybackRequest
@@ -92,7 +93,12 @@ private const val TV_CONTENT_BASELINE = 0.62f
 fun HomeScreen(
     viewModel: HomeViewModel,
     onPlay: (PlaybackRequest) -> Unit,
-    onOpenDetails: (MediaEntry) -> Unit,
+    /**
+     * Abre la ficha. Recibe también los títulos de la misma fila porque son la
+     * parrilla con la que el reproductor zapea: sin ellos, cambiar de canal
+     * obligaría a volver al Home.
+     */
+    onOpenDetails: (MediaEntry, List<MediaEntry>) -> Unit,
     onOpenSettings: () -> Unit,
     profile: Profile? = null,
     /** Filas propias del perfil activo ("Seguir viendo"), ya resueltas. */
@@ -220,12 +226,15 @@ fun HomeScreen(
                                 /* Series sin capítulo: abre la ficha para elegir
                                  * episodio. Todo lo demás reproduce directo. */
                                 spotlight?.entry?.let { entry ->
-                                    if (!entry.isLive && !hasEpisodeNumber(entry.type, entry.id)) onOpenDetails(entry)
-                                    else onPlay(entry.playbackRequest())
+                                    if (!entry.isLive && !hasEpisodeNumber(entry.type, entry.id)) {
+                                        onOpenDetails(entry, emptyList())
+                                    } else {
+                                        onPlay(entry.playbackRequest())
+                                    }
                                 }
                             },
                             onDetails = {
-                                spotlight?.entry?.let { onOpenDetails(it) }
+                                spotlight?.entry?.let { onOpenDetails(it, emptyList()) }
                             },
                             modifier = modifier,
                         )
@@ -235,7 +244,17 @@ fun HomeScreen(
                         CatalogList(
                             rows = rows,
                             deviceProfile = deviceProfile,
-                            onEntryClick = { entry -> onOpenDetails(entry) },
+                            onEntryClick = { entry, siblings ->
+                                /* Un canal en directo va derecho al reproductor:
+                                 * la ficha de un canal no tiene nada que elegir
+                                 * (ni episodios ni servidores) y era un peaje de
+                                 * dos pulsaciones antes de ver algo. */
+                                if (entry.isLive) {
+                                    onPlay(entry.playbackRequest(queue = siblings.toChannelQueue()))
+                                } else {
+                                    onOpenDetails(entry, siblings)
+                                }
+                            },
                             onEntryFocused = viewModel::onCardFocused,
                             rowsTopPadding = contentBaseline,
                             firstCardFocus = firstCardFocus,
@@ -315,7 +334,7 @@ private fun CatalogList(
     rows: List<CatalogRow>,
     deviceProfile: DeviceProfile,
     rowsTopPadding: Dp,
-    onEntryClick: (MediaEntry) -> Unit,
+    onEntryClick: (MediaEntry, List<MediaEntry>) -> Unit,
     onEntryFocused: (rowId: String, entry: MediaEntry) -> Unit,
     firstCardFocus: FocusRequester,
     firstRowFocusUp: FocusRequester,

@@ -10,6 +10,7 @@ import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.RemoteMeta
 import com.tanasi.streamflix.data.model.SeasonGroup
 import com.tanasi.streamflix.data.model.hasEpisodeNumber
+import com.tanasi.streamflix.data.model.PlaybackChannel
 import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.data.model.toSeasonGroups
 import com.tanasi.streamflix.util.AddonSettings
@@ -174,9 +175,13 @@ class DetailsViewModel(
      * Lo que hay que abrir en el reproductor: el id (con `:temporada:episodio`
      * si es una serie). El índice es siempre 0: el reproductor pide las fuentes
      * y empieza por la de mayor prioridad, sin preguntar.
+     *
+     * @param queue parrilla de la fila de origen (ver `toChannelQueue`). Va
+     *   vacía en películas y series; en directo es lo que permite cambiar de
+     *   canal sin salir del reproductor.
      */
-    fun playbackRequest(): PlaybackRequest {
-        val base = entry.playbackRequest(0)
+    fun playbackRequest(queue: List<PlaybackChannel> = emptyList()): PlaybackRequest {
+        val base = entry.playbackRequest(0, queue)
         return base.copy(
             id = requestedId,
             title = selectedEpisode()?.let { episode -> "${displayTitle()} · ${episode.label}" } ?: displayTitle(),

@@ -67,8 +67,10 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.tanasi.streamflix.core.LocalDeviceProfile
+import com.tanasi.streamflix.data.model.PlaybackChannel
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.StreamSource
+import com.tanasi.streamflix.player.ChannelZapping
 import com.tanasi.streamflix.player.FailoverController
 import com.tanasi.streamflix.player.FailoverPlanner
 import com.tanasi.streamflix.player.MediaSources
@@ -94,7 +96,6 @@ private const val CONTROLS_AUTO_HIDE_MS = 4_000L
 @Composable
 fun PlayerScreen(
     viewModel: PlayerViewModel,
-    request: PlaybackRequest,
     onBack: () -> Unit,
     /**
      * Posición alcanzada, justo antes de liberar el reproductor. Es lo que
@@ -104,6 +105,10 @@ fun PlayerScreen(
     onProgress: (positionMs: Long, durationMs: Long) -> Unit = { _, _ -> },
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    /* El `Intent` sólo abre la puerta: quién se está viendo lo dice el
+     * `ViewModel`, porque el zapeo cambia de canal sin volver a la `Activity`. */
+    val request by viewModel.current.collectAsStateWithLifecycle()
 
     Box(
         modifier = Modifier
@@ -149,6 +154,18 @@ fun PlayerScreen(
                     Spacer(Modifier.height(26.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         PlayerPillButton(text = "Reintentar", primary = true, onClick = { viewModel.load() })
+                        /* Un canal caído no puede dejar al usuario encerrado:
+                         * si venía de la parrilla, sigue por el siguiente. */
+                        if (ChannelZapping.canZap(request.isLive, request.queue.size)) {
+                            PlayerPillButton(
+                                text = "Siguiente canal",
+                                onClick = {
+                                    val index = ChannelZapping.indexOf(request.queue, request.id)
+                                    val next = ChannelZapping.step(index, 1, request.queue.size)
+                                    ChannelZapping.channelAt(request.queue, next)?.let(viewModel::tune)
+                                },
+                            )
+                        }
                         PlayerPillButton(text = "Volver", onClick = onBack)
                     }
                 }
@@ -156,9 +173,12 @@ fun PlayerScreen(
 
             is PlayerUiState.Ready -> PlaybackSurface(
                 sources = current.sources,
+                tuning = current.tuning,
                 request = request,
                 onBack = onBack,
                 onProgress = onProgress,
+                onTune = viewModel::tune,
+                onRestore = viewModel::restore,
             )
         }
     }
@@ -171,9 +191,15 @@ fun PlayerScreen(
 @Composable
 private fun PlaybackSurface(
     sources: List<StreamSource>,
+    /** Mientras se resuelve un canal nuevo, en pantalla sigue el anterior. */
+    tuning: Boolean,
     request: PlaybackRequest,
     onBack: () -> Unit,
     onProgress: (positionMs: Long, durationMs: Long) -> Unit,
+    /** Sintoniza otro canal de la parrilla sin salir del reproductor. */
+    onTune: (PlaybackChannel) -> Unit,
+    /** Deshace un zapeo volviendo al `PlaybackRequest` anterior completo. */
+    onRestore: (PlaybackRequest) -> Unit,
 ) {
     val context = LocalContext.current
     val deviceProfile = LocalDeviceProfile.current
@@ -195,6 +221,20 @@ private fun PlaybackSurface(
     val failoverState by controller.state.collectAsStateWithLifecycle()
 
     var showSources by remember { mutableStateOf(false) }
+
+    /* --- parrilla: zapeo sin salir del reproductor ------------------------ */
+    val queue = request.queue
+    val channelIndex = remember(request.id, queue) { ChannelZapping.indexOf(queue, request.id) }
+    /* Sólo se zapea en directo y con algo a lo que saltar: en una película
+     * `◀ ▶` sigue siendo el salto de 10 s. */
+    val canZap = ChannelZapping.canZap(request.isLive, queue.size)
+
+    var showGuide by remember { mutableStateOf(false) }
+    var banner by remember { mutableStateOf<PlaybackChannel?>(null) }
+    var bannerTick by remember { mutableStateOf(0) }
+    /* Canal desde el que se abrió la guía. ATRÁS vuelve a él: mirar la parrilla
+     * no debe costar el canal que se estaba viendo. */
+    var channelBeforeGuide by remember { mutableStateOf<PlaybackRequest?>(null) }
 
     /* --- estado de los controles (D-Pad y táctil) ------------------------- */
     val rootFocus = remember { FocusRequester() }
@@ -314,6 +354,59 @@ private fun PlaybackSurface(
         controlsVisible = false
     }
 
+    /**
+     * Sintoniza [channel] y deja el rótulo en pantalla.
+     *
+     * El `ExoPlayer` anterior se libera solo: `PlaybackSurface` está memorizado
+     * por `sources`, y al llegar las fuentes del canal nuevo se destruye y se
+     * recrea. Es a propósito — dos decodificadores vivos a la vez en una TV box
+     * acaban en "no reproduce nada".
+     */
+    fun tuneTo(channel: PlaybackChannel?, keepGuide: Boolean = false) {
+        if (channel == null || channel.id == request.id) return
+        /* Desde la guía el zapeo NO la cierra: recorrer la parrilla es el uso
+         * normal, y cerrar a cada paso obligaría a reabrirla. */
+        if (!keepGuide) {
+            channelBeforeGuide = request
+            showGuide = false
+        }
+        onTune(channel)
+        banner = channel
+        bannerTick += 1
+        showSources = false
+        controlsVisible = false
+    }
+
+    /** `CH+` / `CH−`: siguiente/anterior de la parrilla, con vuelta. */
+    fun zap(delta: Int): Boolean {
+        if (!canZap || showSources) return false
+        val target = ChannelZapping.step(channelIndex, delta, queue.size)
+        val channel = ChannelZapping.channelAt(queue, target) ?: return false
+        tuneTo(channel)
+        return true
+    }
+
+    fun openGuide() {
+        if (!canZap || showSources || showGuide) return
+        channelBeforeGuide = request
+        controlsVisible = false
+        showGuide = true
+    }
+
+    /* El rótulo se va solo, sin que nadie lo cierre: es información, no un
+     * diálogo (Apple TV hace lo mismo al cambiar de canal). */
+    LaunchedEffect(bannerTick) {
+        if (bannerTick == 0) return@LaunchedEffect
+        delay(CHANNEL_BANNER_MS)
+        banner = null
+    }
+
+    /* Al cerrar la guía el foco se queda huérfano en tarjetas que ya no
+     * existen: vuelve al vídeo. */
+    LaunchedEffect(showGuide) {
+        if (!showGuide) runCatching { rootFocus.requestFocus() }
+    }
+
     /* Con el aviso de fallo en pantalla, ATRÁS sale del reproductor: es lo que
      * espera cualquiera que vea "No se pudo reproducir" y quiera volver. */
     val playbackFailed = failoverState.fatalMessage != null || failoverState.exhausted
@@ -343,15 +436,38 @@ private fun PlaybackSurface(
                     }
 
                     Key.MediaFastForward -> {
-                        showControls(focusPlayPause = false)
-                        seekBy(SeekPolicy.STEP_MS)
+                        if (canZap) {
+                            zap(1)
+                        } else {
+                            showControls(focusPlayPause = false)
+                            seekBy(SeekPolicy.STEP_MS)
+                        }
                         return@onPreviewKeyEvent true
                     }
 
                     Key.MediaRewind -> {
-                        showControls(focusPlayPause = false)
-                        seekBy(-SeekPolicy.STEP_MS)
+                        if (canZap) {
+                            zap(-1)
+                        } else {
+                            showControls(focusPlayPause = false)
+                            seekBy(-SeekPolicy.STEP_MS)
+                        }
                         return@onPreviewKeyEvent true
+                    }
+
+                    else -> Unit
+                }
+
+                /* Zapeo: se atiende con el foco donde sea — superficie, guía o
+                 * barra de controles. Es la tecla que más se pulsa viendo un
+                 * directo y no puede depender de dónde esté el foco. */
+                when (PlayerKeyMap.actionFor(event.key)) {
+                    PlayerKeyAction.CHANNEL_UP -> {
+                        if (zap(1)) return@onPreviewKeyEvent true
+                    }
+
+                    PlayerKeyAction.CHANNEL_DOWN -> {
+                        if (zap(-1)) return@onPreviewKeyEvent true
                     }
 
                     else -> Unit
@@ -369,27 +485,53 @@ private fun PlaybackSurface(
                         true
                     }
 
+                    /* En directo no hay nada que retroceder (la ventana HLS
+                     * no guarda el pasado): `◀ ▶` no se quedan muertos, cambian
+                     * de canal. Es lo que hacen los mandos de TV y es la razón
+                     * por la que las flechas laterales son las más usadas. */
                     PlayerKeyAction.SEEK_BACK -> {
-                        showControls(focusPlayPause = false)
-                        seekBy(-SeekPolicy.STEP_MS)
+                        if (canZap) {
+                            zap(-1)
+                        } else {
+                            showControls(focusPlayPause = false)
+                            seekBy(-SeekPolicy.STEP_MS)
+                        }
                         true
                     }
 
                     PlayerKeyAction.SEEK_FORWARD -> {
-                        showControls(focusPlayPause = false)
-                        seekBy(SeekPolicy.STEP_MS)
+                        if (canZap) {
+                            zap(1)
+                        } else {
+                            showControls(focusPlayPause = false)
+                            seekBy(SeekPolicy.STEP_MS)
+                        }
                         true
                     }
 
                     PlayerKeyAction.OPEN_CONTROLS -> {
-                        showControls(focusPlayPause = true)
+                        /* En directo ARRIBA abre la parrilla y ABAJO los
+                         * controles: "más canales" queda a una tecla, que es
+                         * justo lo que se busca en una TV. En VOD, ambas
+                         * siguen sacando los controles. */
+                        if (canZap && event.key == Key.DirectionUp) openGuide()
+                        else showControls(focusPlayPause = true)
                         true
                     }
+
+                    /* Ya se atendieron arriba, antes del filtro de foco. */
+                    PlayerKeyAction.CHANNEL_UP,
+                    PlayerKeyAction.CHANNEL_DOWN,
+                    -> true
 
                     null -> false
                 }
             }
-            .focusable(),
+            /* Con la guía abierta la superficie no es enfocable: si lo fuera,
+             * `▶` en la última tarjeta sacaría el foco de la guía y el mando
+             * dejaría de recorrer canales. Los atajos (`CH+`, `CH−`) siguen
+             * llegando porque el evento sube por los ancestros. */
+            .focusable(enabled = !showGuide),
     ) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -413,11 +555,13 @@ private fun PlaybackSurface(
         /* Con el panel de fuentes abierto los controles no existen: así el foco
          * no puede escaparse a los botones de detrás (tvOS también los oculta
          * al abrir la información). */
-        if (!showSources) PlayerControls(
+        if (!showSources && !showGuide) PlayerControls(
             title = request.title,
             isLive = request.isLive,
             failover = failoverState,
             sourcesCount = sources.size,
+            channelPosition = ChannelZapping.positionLabel(queue, channelIndex),
+            channelCount = if (canZap) queue.size else 0,
             visible = controlsVisible,
             isPlaying = isPlaying,
             positionMs = positionMs,
@@ -428,16 +572,20 @@ private fun PlaybackSurface(
             onRewind = { seekBy(-SeekPolicy.STEP_MS) },
             onForward = { seekBy(SeekPolicy.STEP_MS) },
             onShowSources = { showSources = true },
+            onShowChannels = { openGuide() },
             onInteraction = { interactionTick++ },
             hasSubtitles = hasSubtitles,
             subtitlesOn = subtitlesOn,
             onToggleSubtitles = { toggleSubtitles() },
         )
 
-        if (failoverState.switching) {
+        if (failoverState.switching || tuning) {
             /* Por encima de los controles cuando están a la vista; pegado al
              * borde cuando no, para no tapar la barra de progreso. */
             SwitchingBadge(
+                /* Zapear y saltar de fuente se parecen, pero no son lo mismo:
+                 * el texto dice cuál está pasando. */
+                label = if (tuning) "Sintonizando…" else "Cambiando de fuente…",
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = if (controlsVisible) 196.dp else 24.dp),
@@ -465,6 +613,39 @@ private fun PlaybackSurface(
             )
         }
 
+        /* Rótulo del zapeo: arriba, translúcido, encima de todo y sin foco. */
+        banner?.let { channel ->
+            ChannelBanner(
+                channel = channel,
+                position = ChannelZapping.positionLabel(
+                    queue,
+                    ChannelZapping.indexOf(queue, channel.id),
+                ),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 30.dp),
+            )
+        }
+
+        /* ATRÁS cierra la guía **devolviendo el canal** desde el que se abrió:
+         * así se puede cotillear la parrilla sin perder lo que se veía. */
+        BackHandler(enabled = showGuide) {
+            showGuide = false
+            channelBeforeGuide?.let { previous ->
+                channelBeforeGuide = null
+                if (previous.id != request.id) onRestore(previous)
+            }
+        }
+
+        if (showGuide) {
+            ChannelGuideOverlay(
+                channels = queue,
+                currentId = request.id,
+                onTune = { channel -> tuneTo(channel, keepGuide = true) },
+                onClose = { showGuide = false },
+            )
+        }
+
         /* ATRÁS cierra la lista antes de salir del reproductor: si no, el
          * usuario tendría que pulsar dos veces sin saber por qué. */
         BackHandler(enabled = showSources) { showSources = false }
@@ -489,7 +670,10 @@ private fun PlaybackSurface(
  * experiencia no se interrumpa. Dura lo que dura el `BUFFERING`.
  */
 @Composable
-private fun SwitchingBadge(modifier: Modifier = Modifier) {
+private fun SwitchingBadge(
+    label: String = "Cambiando de fuente…",
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier
             .background(StreamflixColors.Surface.copy(alpha = 0.92f), RoundedCornerShape(percent = 50))
@@ -503,7 +687,7 @@ private fun SwitchingBadge(modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.width(12.dp))
         Text(
-            text = "Cambiando de fuente…",
+            text = label,
             color = Color.White,
             style = MaterialTheme.typography.labelLarge,
         )
