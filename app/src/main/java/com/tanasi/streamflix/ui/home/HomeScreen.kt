@@ -109,12 +109,20 @@ fun HomeScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val hero by viewModel.hero.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
+    val suggestions by viewModel.suggestions.collectAsStateWithLifecycle()
     var showSearch by remember { mutableStateOf(false) }
 
     if (showSearch) {
         CatalogSearchDialog(
             initialQuery = query,
+            suggestions = suggestions,
             onSearch = { showSearch = false; viewModel.search(it) },
+            /* Una recomendación lleva a su ficha: es lo que el usuario quiere
+             * hacer con lo que le sugieren, sin pasar por la búsqueda. */
+            onOpenDetails = { entry ->
+                showSearch = false
+                onOpenDetails(entry, emptyList())
+            },
             onDismiss = { showSearch = false },
         )
     }

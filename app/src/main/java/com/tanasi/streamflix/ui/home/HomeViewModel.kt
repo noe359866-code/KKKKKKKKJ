@@ -3,6 +3,7 @@ package com.tanasi.streamflix.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tanasi.streamflix.data.ContentClient
+import com.tanasi.streamflix.data.model.CinemetaSuggestions
 import com.tanasi.streamflix.data.model.HomeCatalog
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.Spotlight
@@ -65,6 +66,16 @@ class HomeViewModel(
     private val mutableQuery = MutableStateFlow("")
     val query: StateFlow<String> = mutableQuery.asStateFlow()
 
+    /**
+     * Recomendaciones de Cinemeta para el buscador.
+     *
+     * Se calculan **una vez** con el Home ya cargado y se quedan aunque el
+     * usuario busque: son el punto de partida del buscador, no el resultado de
+     * la búsqueda. Se rehacen al refrescar el catálogo.
+     */
+    private val mutableSuggestions = MutableStateFlow<List<MediaEntry>>(emptyList())
+    val suggestions: StateFlow<List<MediaEntry>> = mutableSuggestions.asStateFlow()
+
     init {
         load()
     }
@@ -75,6 +86,13 @@ class HomeViewModel(
     }
 
     private fun showCatalog(catalog: HomeCatalog) {
+        /* Sin búsqueda activa las filas son el catálogo, no resultados. Se
+         * queda la lista más completa que se haya visto: el Home llega por
+         * partes y la primera puede traer sólo los canales guardados. */
+        if (mutableQuery.value.isBlank()) {
+            val next = CinemetaSuggestions.from(catalog.rows)
+            if (next.size > mutableSuggestions.value.size) mutableSuggestions.value = next
+        }
         val previous = mutableHero.value
         mutableHero.value = previous?.let { catalog.spotlightFor(it.rowId, it.entry.id) } ?: catalog.featured
         mutableState.value = HomeUiState.Ready(catalog)
@@ -209,6 +227,7 @@ class HomeViewModel(
     fun refresh() {
         repository.invalidate()
         heroDetails.clear()
+        mutableSuggestions.value = emptyList()
         load()
     }
 

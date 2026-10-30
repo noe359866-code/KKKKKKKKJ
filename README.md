@@ -545,8 +545,11 @@ A changed domain, anti-bot challenge or dead video host can still break a source
   same pages where available. No private TMDB key is required.
 - The saved live-channel shelf is available immediately without a metadata
   service.
-- **Buscar** filtra las filas de Cinemeta y los canales en vivo; **Inicio**
-  limpia la búsqueda.
+- **Buscar** abre un buscador a pantalla completa con **teclado propio**
+  (nada de `TextField`: el IME de Android no se maneja con un mando) y, al lado,
+  las **recomendaciones de Cinemeta** ya cargadas en el Home, para entrar a una
+  ficha sin escribir nada. `BUSCAR` filtra las filas de Cinemeta y los canales en
+  vivo; **Inicio** limpia la búsqueda.
 - Catalogue metadata is cached on disk for one hour (live: ten minutes), with
   a bounded stale fallback for titles/artwork. Signed stream URLs have a short
   cache only and are never served stale after its expiry.

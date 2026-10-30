@@ -143,6 +143,7 @@ class CatalogRepository(
                 aspect = descriptor.posterShape,
                 items = items,
                 layout = descriptor.layout ?: CatalogRow.LAYOUT_CARDS,
+                source = descriptor.source,
             )
         }
     } catch (error: CancellationException) {

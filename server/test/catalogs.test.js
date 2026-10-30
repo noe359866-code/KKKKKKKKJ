@@ -254,6 +254,10 @@ test('el registro descarta catálogos inválidos y respeta el orden', () => {
   assert.equal(live.posterShape, 'landscape');
   assert.ok(live.extra.some((extra) => extra.name === 'genre' && extra.options.includes('Deportes')));
   assert.ok(live.extra.some((extra) => extra.name === 'search'), 'sin `search` Stremio no muestra el buscador');
+  /* La app usa `source` para recomendar sólo títulos de Cinemeta en el buscador;
+   * el resto de clientes Stremio lo ignoran. */
+  assert.equal(live.source, 'local');
+  assert.equal(manifest.find((catalog) => catalog.id === 'top' && catalog.type === 'movie').source, 'cinemeta');
 });
 
 /* -------------------------------------------------------------------------- */

@@ -44,7 +44,10 @@ para evitar mantener dos copias diferentes.
    canales guardados. Los scrapers de películas/series/anime **no añaden filas**:
    sólo resuelven el video cuando abres un título.
 4. Usa **Buscar** para filtrar las filas de Cinemeta y los canales en vivo, e
-   **Inicio** para volver a la portada.
+   **Inicio** para volver a la portada. El buscador es a pantalla completa:
+   teclado QWERTY propio a la izquierda (cada tecla es un nodo del D-Pad, sin
+   IME) y las recomendaciones de Cinemeta a la derecha; `OK` en una
+   recomendación abre su ficha directamente.
 5. Abre una ficha, elige capítulo cuando corresponda y pulsa **Reproducir**.
    No hay que elegir servidor: el reproductor pide las fuentes y salta solo a la
    siguiente si una falla. Si no se pudo extraer una lista real de episodios, se

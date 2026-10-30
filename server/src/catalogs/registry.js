@@ -329,6 +329,11 @@ export function manifestCatalogs() {
       id: catalog.id,
       name: catalog.name,
       posterShape: catalog.posterShape,
+      /* De dónde salen las metas: `cinemeta`, `local`, `live` o `remote`. Es un
+       * campo extra del protocolo (Stremio ignora lo que no conoce) y la app lo
+       * usa para recomendar sólo títulos de Cinemeta en el buscador. El motor
+       * embebido ya publica el mismo campo. */
+      source: catalog.source?.kind || null,
       extra,
     };
   });

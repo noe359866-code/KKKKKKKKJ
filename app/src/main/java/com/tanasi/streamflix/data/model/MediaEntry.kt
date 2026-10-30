@@ -124,6 +124,14 @@ data class CatalogRow(
      * `sports` pinta marcadores: liga, equipos, hora y EN VIVO.
      */
     val layout: String = LAYOUT_CARDS,
+    /**
+     * De dónde salen los títulos: `cinemeta` | `local` | `live` | `remote` |
+     * `embedded`. Lo publica el addon al describir sus catálogos; el buscador lo
+     * usa para ofrecer las recomendaciones de Cinemeta y no las de un proveedor.
+     *
+     * `null` en servidores antiguos que aún no lo publican (se deduce del id).
+     */
+    val source: String? = null,
 ) {
     val rowAspect: RowAspect
         get() = if (aspect.equals("landscape", ignoreCase = true)) RowAspect.Landscape else RowAspect.Poster
