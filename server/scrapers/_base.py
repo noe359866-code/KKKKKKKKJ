@@ -82,7 +82,11 @@ def stream(
         "isLive": is_live,
     }
     if quality:
-        item["quality"] = quality
+        # Se normaliza al vocabulario del cliente ("FullHD" → "1080p") porque es
+        # la etiqueta con la que el addon ordena y muestra los streams.
+        from _htmlkit import guess_quality  # import diferido: _htmlkit importa _base
+
+        item["quality"] = guess_quality(quality) or str(quality).strip()
     if referer:
         item["referer"] = referer
     if user_agent:

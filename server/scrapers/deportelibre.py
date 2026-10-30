@@ -73,6 +73,7 @@ from _htmlkit import (  # helpers compartidos con el resto de proveedores
     Deadline,
     absolute,
     clean_title,
+    guess_quality,
     http_get,
     media_urls,
     normalize,
@@ -561,14 +562,14 @@ def scrape(payload: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any
         if expiry is not None and expiry <= now:
             suffix += " · token caducado"
 
-        quality_match = re.search(r"(\d{3,4})p", url, re.IGNORECASE)
+        quality = guess_quality(label, url)
         display = name or LABEL
         streams.append(
             stream(
                 url=url,
                 name=f"{display}{suffix}",
                 title=f"{LABEL} · {display}{suffix}",
-                quality=(f"{quality_match.group(1)}p" if quality_match else None),
+                quality=quality,
                 referer=item.get("referer") or option.get("url") or f"{BASE_URL}/",
                 user_agent=user_agent,
                 not_web_ready=False,

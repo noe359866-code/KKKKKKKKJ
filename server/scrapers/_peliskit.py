@@ -38,11 +38,12 @@ from _animekit import (
 )
 import _tmdb
 from _base import log, stream
-from _hosters import is_download_only, resolve_all
+from _hosters import is_download_only, is_known_good, resolve_all
 from _htmlkit import (
     Deadline,
     absolute,
     clean_title,
+    guess_quality,
     host_of,
     http_get,
     is_media_url,
@@ -341,12 +342,13 @@ def search_site(
     hints: Iterable[str],
 ) -> List[Dict[str, str]]:
     """Resultados del buscador del sitio: ``[{slug, title, url}]``."""
-    from _animekit import best_hit, search_hits
+    from _animekit import STRONG_MATCH, best_match, search_hits
 
     if not (query or "").strip():
         return []
     hints = tuple(hints)
     hits: List[Dict[str, str]] = []
+    seen = set()
     for template in site.get("search_paths") or []:
         url = join(site["base"], fill(template, query=query))
         html, final_url = fetch_html(url, headers, deadline)
@@ -357,9 +359,14 @@ def search_site(
         else:
             candidates = [hit for hint in hints for hit in search_hits(html, final_url or url, hint)]
         for hit in candidates:
-            if hit["url"] not in {item["url"] for item in hits}:
+            if hit["url"] not in seen:
+                seen.add(hit["url"])
                 hits.append(hit)
-        if best_hit(query, hits):
+        # Un resultado flojo (otro título con palabras en común) no corta la
+        # búsqueda: el buscador siguiente puede ser el que acierte.
+        if best_match(query, hits)[0] >= STRONG_MATCH:
+            break
+        if deadline.expired():
             break
     return hits
 
@@ -589,7 +596,11 @@ def resolve_signals(
             usable.append(server)
             continue
         usable.append(server)
-    usable = usable[:max_servers]
+    # El tope existe para no encadenar 15 embeds, pero recortar a ciegas tiraba
+    # justo el servidor bueno cuando el sitio lista primero los rancios: los de
+    # familias que sí sabemos resolver se añaden al final (último failover).
+    extra = [server for server in usable[max_servers:] if is_known_good(server.get("url") or "")]
+    usable = usable[:max_servers] + extra[:2]
 
     signals: List[Dict[str, Any]] = []
     meta: Dict[str, Any] = {}
@@ -720,7 +731,7 @@ def build_streams(
                 user_agent=user_agent,
                 not_web_ready=False,
                 is_live=False,
-                quality=None,
+                quality=guess_quality(server, signal.get("quality"), signal["url"]),
             )
         )
     return streams
@@ -729,6 +740,46 @@ def build_streams(
 # ---------------------------------------------------------------------------
 # Driver genérico
 # ---------------------------------------------------------------------------
+
+
+def collect_servers(
+    html: str,
+    page_url: str,
+    site: Dict[str, Any],
+    headers: Dict[str, str],
+    deadline: Deadline,
+) -> List[Dict[str, Any]]:
+    """Servidores de una ficha: HTML + `extras()` propio del sitio, deduplicado."""
+    servers = harvest_servers(html, page_url, site)
+    extras = site.get("extras")
+    if callable(extras):
+        try:
+            for server in extras(html, page_url, headers, deadline) or []:
+                if server and server.get("url"):
+                    servers.append(server)
+        except Exception as exc:  # noqa: BLE001 - el respaldo genérico sigue vivo
+            log("extras failed:", site["id"], exc)
+    return dedupe_servers(servers)
+
+
+def find_by_search(
+    site: Dict[str, Any],
+    query: str,
+    headers: Dict[str, str],
+    deadline: Deadline,
+    skip_url: str = "",
+) -> str:
+    """URL de la ficha según el buscador del sitio (``""`` si no hay)."""
+    from _animekit import best_hit
+
+    if not (query or "").strip() or deadline.expired():
+        return ""
+    hits = search_site(site, query, headers, deadline, site.get("search_hints") or ())
+    hit = best_hit(query, hits)
+    if not hit or hit["url"] == skip_url:
+        return ""
+    return hit["url"]
+
 
 
 def scrape_site(payload: Dict[str, Any], site: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -805,16 +856,7 @@ def scrape_site(payload: Dict[str, Any], site: Dict[str, Any]) -> Tuple[List[Dic
     page_url = final_url or page_url
     meta["page"] = page_url
 
-    servers = harvest_servers(html, page_url, site)
-    extras = site.get("extras")
-    if callable(extras):
-        try:
-            for server in extras(html, page_url, headers, deadline) or []:
-                if server and server.get("url"):
-                    servers.append(server)
-        except Exception as exc:  # noqa: BLE001 - el respaldo genérico sigue vivo
-            log("extras failed:", site["id"], exc)
-    servers = dedupe_servers(servers)
+    servers = collect_servers(html, page_url, site, headers, deadline)
     if not servers and is_series(ref):
         # La ficha de la serie lista capítulos pero los reproductores están en
         # la página del capítulo: se sigue el enlace del episodio pedido.
@@ -827,6 +869,30 @@ def scrape_site(payload: Dict[str, Any], site: Dict[str, Any]) -> Tuple[List[Dic
             log("episode link failed:", site["id"], exc)
         if episode_url:
             meta["episode_page"] = episode_url
+    if not servers and how == "direct" and not deadline.expired():
+        # 404 blando: el sitio responde 200 con la portada o con otra ficha y no
+        # hay ni un reproductor. Se prueba el buscador del sitio una vez más.
+        query = ref.get("title_hint") or " ".join((ref.get("slug") or "").split("-"))
+        retry_url = find_by_search(site, query, headers, deadline, page_url)
+        if retry_url:
+            retry_html, retry_final = fetch_html(retry_url, headers, deadline)
+            if retry_html:
+                page_url = retry_final or retry_url
+                html = retry_html
+                servers = collect_servers(html, page_url, site, headers, deadline)
+                meta["page"] = page_url
+                meta["resolved_by"] = "search_retry"
+                if not servers and is_series(ref):
+                    episode_url = ""
+                    try:
+                        servers, episode_url = episode_link_servers(
+                            html, page_url, int(ref["season"]), int(ref["episode"]),
+                            headers, deadline, site,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        log("episode link failed:", site["id"], exc)
+                    if episode_url:
+                        meta["episode_page"] = episode_url
     # `servers` es un contador en el meta de `_hosters`; aquí van los nombres.
     meta["server_names"] = [server.get("name") for server in servers if server.get("name")]
     if not servers:

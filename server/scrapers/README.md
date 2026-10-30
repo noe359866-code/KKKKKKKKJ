@@ -40,7 +40,7 @@ Reglas:
 | Archivo | Uso |
 | --- | --- |
 | `_base.py` | Helpers compartidos: lectura de stdin, emisión de JSON, `stream()`. |
-| `_htmlkit.py` | Kit común de scraping: `Deadline`/`Budget`, `http_get`, desempaquetado de JS, `media_urls`, `sanitize_media`, tokens. |
+| `_htmlkit.py` | Kit común de scraping: `Deadline`/`Budget`, `http_get` (gzip, codificación, reintentos), desempaquetado de JS, `media_urls`, `sanitize_media`, `guess_quality`, tokens. |
 | `example_provider.py` | Demo con streams públicos (Mux / Google samples). Verifica el pipeline completo. |
 | `template_provider.py` | Plantilla comentada para un sitio real (urllib + regex, sin dependencias). |
 | `tvenvivo.py` | **Proveedor real** de `www.tvenvivo.org` (TV/deportes en directo, LATAM). Ver la sección siguiente. |
@@ -59,6 +59,28 @@ Reglas:
 | `repelis.py` | **Proveedor real** de Repelis (dominio configurable por entorno). |
 | `peliculasflix.py` | **Proveedor real** de `peliculasflix.co` (API GraphQL). |
 | `pelisjuanita.py` | **Proveedor real** de `pelisjuanita.org`. |
+
+## Resiliencia compartida (lo que ya no hay que reescribir)
+
+Todos los proveedores pasan por los mismos kits, así que una mejora ahí vale
+para los doce. Lo que hay hoy:
+
+| Pieza | Qué hace |
+| --- | --- |
+| `http_get()` | Descomprime gzip/deflate **aunque la cabecera mienta** o falte, resuelve la codificación con BOM → UTF-8 estricto → `charset` declarado → `<meta charset>` → cp1252 (los títulos latinos con `Ã©` rompían las búsquedas) y **reintenta una vez** los 429/5xx y los cortes de conexión. El reintento no alarga el presupuesto: si el primer intento ya gastó la mitad del `timeout`, no se repite. Los 4xx de verdad y los timeouts no se reintentan. |
+| `is_media_url()` | Acepta manifiestos que viajan en la consulta (`/player.php?id=7&file=master.m3u8`), no sólo rutas que acaban en `.m3u8`. |
+| `guess_quality()` + `stream()` | Deduce `4K` / `1440p` / `1080p` / `720p` / `480p` / `SD` / `CAM` de la etiqueta del servidor y de la URL, y `stream()` normaliza lo que mande el proveedor (`FullHD` → `1080p`). Si no hay pista, el campo se omite: el cliente prefiere "sin dato" a una etiqueta falsa. |
+| `best_match()` | Elige la ficha correcta **por tokens**, no por caracteres: ignora `latino`, `HD`, `1080p`, `subtitulado`, el año…, exige coincidencia de palabra (`up` ya no casa con `Upload`) y desempata por el título con menos palabras de más. Devuelve la puntuación, y `search_site()` sigue probando buscadores mientras el resultado sea flojo. |
+| `resolve_all()` | Segunda pasada para los embeds que fallaron (sólo si queda tiempo) y `meta.resolved_hosts` con las familias que sí resolvieron. |
+| `resolve_signals()` | Si el sitio publica más servidores que el tope, los de familias que sabemos resolver (`streamwish`, `filemoon`, `voe`, `streamtape`…) se conservan al final como último failover en vez de perderse. |
+| `scrape_site()` | **404 blando**: si la ficha directa responde 200 pero no trae ni un reproductor, prueba el buscador del sitio y reintenta una vez (`meta.resolved_by = "search_retry"`). |
+
+Pruebas de todo esto, offline y sin tocar la red:
+
+```bash
+python3 -m unittest discover -s app/src/test/python -v   # incluye test_scraper_kit.py
+cd server && npm test                                    # regresiones por proveedor
+```
 
 ## Añadir un proveedor
 

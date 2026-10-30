@@ -40,11 +40,13 @@ from _htmlkit import (
     Budget,
     Deadline,
     absolute,
+    guess_quality,
     host_of,
     http_get,
     is_media_url,
     media_urls,
     searchable,
+    unique,
 )
 
 #: Etiqueta legible por familia de servidor (se busca el primer acierto).
@@ -124,6 +126,30 @@ def hoster_label(url: str) -> str:
 def is_download_only(url: str) -> bool:
     host = host_of(url)
     return any(hint in host for hint in DOWNLOAD_ONLY)
+
+
+#: Servidores que hoy resuelven con más frecuencia. Si el sitio publica una
+#: lista larga se añaden al final (nunca se reordena: el orden del sitio es el
+#: que el propio sitio considera de mejor a peor).
+KNOWN_GOOD_HOSTS = (
+    "streamwish", "filemoon", "vidhide", "voe", "streamtape", "mixdrop",
+    "mp4upload", "okru", "filelions", "lulustream",
+)
+
+
+def is_known_good(url: str) -> bool:
+    """¿Es de una familia de servidores que sabemos resolver?"""
+    host = host_of(url)
+    return any(hint in host for hint in KNOWN_GOOD_HOSTS)
+
+
+def _signal(url: str, label: str, referer: str, *extra_labels: str) -> Dict[str, Any]:
+    """Señal reproducible con la calidad deducida de la etiqueta y la URL."""
+    signal: Dict[str, Any] = {"url": url, "label": label, "referer": referer}
+    quality = guess_quality(label, *extra_labels, url)
+    if quality:
+        signal["quality"] = quality
+    return signal
 
 
 def hls_variants(url: str) -> List[str]:
@@ -215,7 +241,7 @@ def resolve(
 
     # 1. Ya es una señal (algunos "servidores" apuntan al .m3u8 directamente).
     if is_media_url(url):
-        return [{"url": url, "label": label, "referer": referer or url}], {"errors": []}
+        return [_signal(url, label, referer or url)], {"errors": []}
 
     # 2. Servidores de hosting de archivos: no se pueden reproducir.
     if is_download_only(url):
@@ -223,7 +249,7 @@ def resolve(
 
     # 3. `/play/<id>` → `/m3u8/<id>` sin descargar nada.
     for variant in hls_variants(url):
-        signals.append({"url": variant, "label": "HLS", "referer": referer or url})
+        signals.append(_signal(variant, "HLS", referer or url, label))
 
     # 4. Descargar el embed (y como mucho un redirect extra) y buscar el video.
     # El navegador manda como Referer la página donde está el embed (el
@@ -260,14 +286,14 @@ def resolve(
         # Un servidor que responde con el propio vídeo (raro, pero pasa).
         if "mpegurl" in (content_type or "").lower() or "video/" in (content_type or "").lower():
             if is_media_url(final_url):
-                signals.append({"url": final_url, "label": label, "referer": current})
+                signals.append(_signal(final_url, label, current))
 
         for candidate, trusted in _candidates(body, final_url):
             if candidate.startswith("//"):
                 candidate = "https:" + candidate
             candidate = absolute(candidate, final_url)
             if candidate and (trusted or is_media_url(candidate)):
-                signals.append({"url": candidate, "label": label, "referer": current})
+                signals.append(_signal(candidate, label, current))
 
         # VOE y compañía a veces redirigen por JavaScript antes del player.
         redirect = re.search(
@@ -294,35 +320,45 @@ def resolve_all(
     deadline: Deadline,
     episode_url: str,
     parallel: int = 4,
+    second_chance: int = 2,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Resuelve en paralelo la lista de servidores de un episodio.
 
     ``servers`` es ``[{"name": "Streamwish", "url": "https://…"}]``.
     Devuelve el orden del sitio (es el que suele ir de mejor a peor) y anota en
     ``meta`` los servidores que no dieron señal.
+
+    Dos mejoras sobre "una pasada y ya": los servidores que no devolvieron nada
+    se reintentan una vez (sólo los primeros ``second_chance`` y sólo si queda
+    tiempo), porque un embed que falló por un 503 o por un deadline justo suele
+    funcionar al segundo intento; y ``meta.resolved_hosts`` deja ver qué
+    familias resolvieron, que es lo que dice si hay que tocar un extractor.
     """
     import threading
 
     servers = list(servers)
     budget = Budget(max(2, min(12, len(servers) * 2 or 4)))
     collected: List[Tuple[int, Dict[str, Any]]] = []
-    unresolved: List[str] = []
+    solved: Dict[int, List[Dict[str, Any]]] = {}
+    labels: Dict[int, str] = {}
     lock = threading.Lock()
 
-    def worker(position: int, server: Dict[str, str]) -> None:
+    def run(position: int, server: Dict[str, str]) -> None:
+        """Resuelve un servidor y guarda el resultado (vacío si no hay señal)."""
         if deadline.expired():
             return
-        found, info = resolve(
+        found, _info = resolve(
             server["url"], headers, deadline, budget, referer=episode_url
         )
+        name = server.get("name") or (found[0]["label"] if found else hoster_label(server["url"]))
         with lock:
+            solved[position] = found
+            labels[position] = name
             for signal in found:
-                collected.append((position, {**signal, "server": server.get("name") or signal["label"]}))
-            if not found:
-                unresolved.append(server.get("name") or hoster_label(server["url"]))
+                collected.append((position, {**signal, "server": name}))
 
     threads = [
-        threading.Thread(target=worker, args=(position, server), daemon=True)
+        threading.Thread(target=run, args=(position, server), daemon=True)
         for position, server in enumerate(servers)
     ]
     for start in range(0, len(threads), parallel):
@@ -331,6 +367,16 @@ def resolve_all(
             thread.start()
         for thread in batch:
             thread.join(timeout=max(1.0, deadline.remaining()))
+
+    # Segunda pasada: sólo los que fallaron y sólo si el deadline da margen.
+    retried = 0
+    for position, server in enumerate(servers):
+        if retried >= max(0, second_chance):
+            break
+        if solved.get(position) or deadline.remaining() < 1.6:
+            continue
+        retried += 1
+        run(position, server)
 
     ordered = sorted(collected, key=lambda pair: pair[0])
     signals: List[Dict[str, Any]] = []
@@ -341,4 +387,14 @@ def resolve_all(
         seen.add(signal["url"])
         signals.append(signal)
 
-    return signals, {"unresolved": unresolved, "servers": len(servers)}
+    unresolved = [
+        labels.get(position) or (servers[position].get("name") or hoster_label(servers[position]["url"]))
+        for position in range(len(servers))
+        if not solved.get(position)
+    ]
+    resolved_hosts = unique(labels[pos] for pos in range(len(servers)) if solved.get(pos))
+    return signals, {
+        "unresolved": unresolved,
+        "servers": len(servers),
+        "resolved_hosts": resolved_hosts,
+    }
