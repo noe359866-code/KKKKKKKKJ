@@ -7,11 +7,14 @@ dominios caídos) no se puede comprobar desde aquí y queda marcado como tal.
 
 Estado: CI verde (`testDebugUnitTest`, `lintDebug`, `lintRelease`,
 `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`), Node
-**280/280**, Python **105**, 23 clases de test en JVM.
+**281/281**, Python **108**, 27 archivos de test en JVM.
 
 > **Actualización (§23):** el buscador de P2 está hecho (acentos, búsqueda en
-> vivo con retardo, historial y el panel derecho con su regla probada). Lo único
-> que queda de P1 es la **EPG por canal**.
+> vivo con retardo, historial y el panel derecho con su regla probada) y la
+> **guía por canal** ya funciona con la única fuente de horarios que existe (la
+> agenda deportiva); falta la rejilla de los canales de TV, que ningún proveedor
+> publica. También caen `cuevana.SITE["base"]` y las pruebas de
+> `HomeViewModel.suggestions`.
 
 > **Actualización (§21):** los dos primeros puntos de P1 —subtítulos y pista de
 > audio— ya están implementados, y `loadLiveShelf` ya comparte una sola corrida
@@ -74,12 +77,23 @@ inglesa, el usuario no puede cambiar de pista.
 Falta: exponer `language` en `StreamSource`, y en los controles un selector de
 pista de audio (mismo patrón que el selector de fuentes).
 
-### Guía de programación por canal
+### ✅ (parcial) Guía de programación por canal
 
-Hay agenda deportiva (`tv/agenda`), pero **no hay EPG por canal**: la guía de
-canales del reproductor (§18) muestra nombre y carátula, no «ahora / después».
-Se podría derivar del mismo `_liveshelf` si los proveedores publican horarios;
-hoy no se intenta.
+> **Hecho lo que se puede sostener con datos reales.** `EpgEntry` viaja dentro de
+> la parrilla (`PlaybackChannel.epg`, por el mismo extra del `Intent`), así que
+> zapear no pide nada: la guía y el rótulo ya saben qué se emite al llegar.
+> `Epg.from()` la llena con lo único que publica horarios hoy —la **agenda
+> deportiva**: un partido es una emisión con hora, competición y estado— y
+> `Epg.line()` la escribe como «AHORA · 19:00 · Liga 1», en la tarjeta de la guía
+> y en el rótulo del cambio de canal. Sin programación no hay línea: la tarjeta
+> se queda como estaba en vez de enseñar un hueco. `EpgTest` (7 casos) incluye
+> el viaje por el `Intent`.
+>
+> Lo que **no** hay, y no se inventa: rejilla horaria de los canales de TV.
+> Ninguno de los proveedores del proyecto publica EPG (ni XMLTV ni una API de
+> programas) y desde aquí no se puede verificar un sitio nuevo. Cuando alguno lo
+> publique basta con llenar `epg` en la fila del catálogo: el transporte, el tope
+> (`Epg.MAX_ENTRIES`), el dibujo y las pruebas ya están.
 
 ### ✅ (hecho) El canal actual no se recuerda
 
@@ -144,10 +158,12 @@ Las cuatro cosas que faltaban, resueltas sin tocar el presupuesto de pantalla
   20 minutos se cacheaba 6 h y al reintentar daba 403: «no reproduce nada» sin
   ningún proveedor caído. `signedUrls.test.js` (6 casos, incluido el TTL real
   que devuelve `/stream`).
-- **`cuevana.SITE["base"]` se evalúa al importar** (`cuevana.py:150` con
-  `_bases()[0]`): `scrape()` y `main()` lo sobrescriben, así que hoy no rompe,
-  pero el `SITE` del módulo puede quedar con un dominio viejo si alguien lo usa
-  directamente.
+- ✅ **`cuevana.SITE["base"]` se evalúa al importar**: **hecho**. `SITE` ya no
+  lleva `base`; el dominio se resuelve en `cuevana.site()` con `CUEVANA_BASE` y
+  `CUEVANA_MIRRORS` **en cada llamada**, y `scrape()`/`main()` lo usan. Un
+  `SITE["base"]` congelado en el import se quedaba con el host (o el espejo) del
+  arranque y engañaba a cualquier consumidor que leyera el diccionario.
+  `ProviderSiteTest` (3 casos en `test_scraper_kit.py`).
 - ✅ **Agenda vacía sin explicación**: **hecho**. `/health` publica
   `liveShelf: { loaded, ageMs, ttlMs, channels, events, failedAgoMs, inflight }`,
   así que se distingue «no hay partidos hoy» de «la estantería no cargó».
@@ -160,8 +176,9 @@ Las cuatro cosas que faltaban, resueltas sin tocar el presupuesto de pantalla
   carga, subtítulos en el mismo estado, «sin fuentes», fallo de red, zapeo con
   la imagen anterior en pantalla (`tuning`), mismo canal sin repetir petición,
   deshacer con `restore()` y reintento.
-- **`HomeViewModel.suggestions` sin tests** (la selección pura sí está probada en
-  `CinemetaSuggestionsTest`).
+- ✅ **`HomeViewModel.suggestions` sin tests**: **hecho**.
+  `HomeViewModelSuggestionsTest` (3 casos) comprueba que salen de las filas sin
+  pedir nada más, que buscar **no** las borra y que refrescar las rehace.
 - **Nada de UI**: la guía de canales y el teclado del buscador están pensados
   para el foco del D-Pad y no hay ningún test instrumentado que compruebe el
   recorrido del foco (`app/src/androidTest` sólo tiene el smoke test del motor y
@@ -173,9 +190,13 @@ Las cuatro cosas que faltaban, resueltas sin tocar el presupuesto de pantalla
 
 ## P3 — Limpieza
 
-- `PlaybackRequest.startIndex` sólo lo usa un test: la ficha siempre manda 0
-  (no hay selección manual de servidor). O se usa para «recordar la fuente
-  buena» o se borra.
+- **`PlaybackRequest.startIndex`**: **se queda**, con contrato explícito. No es
+  código muerto: viaja del `Intent` (`EXTRA_START_INDEX`) a
+  `FailoverController.start(startIndex)` y `PlaybackRestore` lo conserva, así
+  que es el punto por el que se recuerda la fuente que funcionó. La ficha manda
+  **0** a propósito: no hay selección manual de servidor y pulsar *Play* tiene
+  que bastar. Si algún día se recuerda la fuente buena por título, se cambia el
+  valor, no la plomería.
 - ✅ ~~`WatchProgressStore.remove()` sin pantalla~~: **hecho**. La ficha muestra
   «Dejar de seguir viendo» cuando hay progreso y borra el título **y sus
   episodios** (`removeTitle` + `WatchProgress.sameTitle`).

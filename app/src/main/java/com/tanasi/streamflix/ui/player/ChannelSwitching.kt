@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tanasi.streamflix.data.model.Epg
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.PlaybackChannel
 import com.tanasi.streamflix.player.ChannelZapping
@@ -127,6 +128,20 @@ internal fun ChannelBanner(
                     style = MaterialTheme.typography.labelSmall,
                     letterSpacing = 1.4.sp,
                     color = StreamflixColors.OnSurfaceMuted,
+                )
+            }
+            /* Qué se está viendo, si la fuente lo publica (hoy: la agenda
+             * deportiva). Sin programación la línea no existe: un rótulo con un
+             * "—" es peor que un rótulo corto. */
+            Epg.line(channel.epg)?.let { line ->
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = StreamflixColors.OnSurfaceMuted.copy(alpha = 0.9f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -336,14 +351,30 @@ private fun GuideCard(
                     )
                     .padding(horizontal = 10.dp, vertical = 8.dp),
             ) {
-                Text(
-                    text = channel.title,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                /* `Column` y no dos hijos sueltos: un `Box` apilaría el nombre y
+                 * la programación en el mismo punto y se taparían. */
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = channel.title,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    /* «AHORA · 19:00 · Liga 1». La tarjeta ya tiene el nombre del
+                     * canal; esto es lo que no se puede adivinar desde el sofá. */
+                    Epg.line(channel.epg)?.let { line ->
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.82f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
     }

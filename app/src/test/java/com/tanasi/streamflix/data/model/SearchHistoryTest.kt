@@ -17,7 +17,7 @@ class SearchHistoryTest {
     @Test
     fun `lo mas reciente va primero`() {
         assertEquals(listOf("matrix", "alien"), SearchHistory.add(listOf("alien"), "matrix"))
-        assertEquals(listOf("c", "b", "a"), SearchHistory.add(listOf("b", "a"), "c"))
+        assertEquals(listOf("dune", "b", "a"), SearchHistory.add(listOf("b", "a"), "dune"))
     }
 
     @Test

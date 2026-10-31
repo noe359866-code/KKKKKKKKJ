@@ -66,9 +66,9 @@ class TvKeyboardAccentTest {
         val letters = TvKeyboardLayout.rows.flatten().toSet()
         val accents = TvKeyboardLayout.symbolRow(TvKeyboardLayout.SymbolPage.ACCENTS).toSet()
 
-        /* La Ñ está en las letras y también aquí, pero es la misma tecla útil en
-         * las dos páginas: lo que no puede pasar es que un acento choque con una
-         * letra sin tilde (Á no es A). */
-        assertEquals(setOf("Ñ", "¿", "?", "¡"), accents.intersect(letters))
+        /* La Ñ es la única tecla que comparten las dos páginas (es la misma
+         * letra y hace falta siempre). Los acentos no chocan con letras sin
+         * tilde: Á no es A, y buscarlos es distinto. */
+        assertEquals(setOf("Ñ"), accents.intersect(letters))
     }
 }

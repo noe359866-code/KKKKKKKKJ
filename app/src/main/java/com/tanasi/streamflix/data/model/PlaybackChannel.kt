@@ -24,6 +24,13 @@ data class PlaybackChannel(
     val poster: String? = null,
     /** `true` en toda la parrilla de TV; queda explícito por si hay VOD en cola. */
     val isLive: Boolean = true,
+    /**
+     * Programación conocida del canal (`Epg`). Vacía cuando la fuente no publica
+     * horarios, que hoy es el caso de todos los canales menos los partidos de la
+     * agenda deportiva: la guía lo trata como "no hay nada que contar", no como
+     * un hueco que rellenar.
+     */
+    val epg: List<EpgEntry> = emptyList(),
 )
 
 /**
@@ -47,6 +54,7 @@ fun List<MediaEntry>.toChannelQueue(limit: Int = MAX_CHANNEL_QUEUE): List<Playba
                 title = entry.title,
                 poster = entry.poster,
                 isLive = true,
+                epg = Epg.from(entry),
             )
         }
         .toList()

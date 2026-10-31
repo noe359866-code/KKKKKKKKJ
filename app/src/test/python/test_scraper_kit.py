@@ -7,6 +7,7 @@ seam the providers already expose, so the tests exercise the real code paths
 """
 import gzip
 import io
+import os
 import sys
 import unittest
 import urllib.error
@@ -876,6 +877,48 @@ class LiveKitTests(unittest.TestCase):
         self.assertEqual(meta["title"], "Canal Uno")
         # La ficha dice "otro canal": es navegación, no un reproductor.
         self.assertNotIn("/watch/2", opener.requests)
+
+
+# ---------------------------------------------------------------------------
+# Dominio de los proveedores: resuelto al usarlo, no al importar
+# ---------------------------------------------------------------------------
+
+
+class ProviderSiteTest(unittest.TestCase):
+    """El `SITE` de un proveedor no puede llevar un dominio congelado.
+
+    Los proveedores se replican en espejos y el dominio cambia cada pocos meses.
+    Si `SITE["base"]` se calcula en el import, cualquier consumidor que lea el
+    diccionario (una herramienta de diagnóstico, un registro de proveedores) se
+    queda con el host del arranque aunque `CUEVANA_BASE` diga otra cosa.
+    """
+
+    def setUp(self):
+        import cuevana
+        self.module = cuevana
+
+    def test_el_site_no_guarda_un_dominio(self):
+        self.assertNotIn("base", self.module.SITE)
+        self.assertEqual(self.module.SITE["id"], "cuevana")
+        # El resto del contrato sigue ahí: rutas, pistas y extras.
+        self.assertIn("player_hints", self.module.SITE)
+        self.assertTrue(callable(self.module.SITE["extras"]))
+
+    def test_el_dominio_se_resuelve_en_cada_llamada(self):
+        with patch.dict(os.environ, {"CUEVANA_BASE": "https://espejo.test",
+                                     "CUEVANA_MIRRORS": ""}):
+            self.assertEqual("https://espejo.test", self.module.site()["base"])
+
+        with patch.dict(os.environ, {"CUEVANA_BASE": "https://otro.test",
+                                     "CUEVANA_MIRRORS": ""}):
+            self.assertEqual("https://otro.test", self.module.site()["base"])
+
+    def test_sin_override_manda_el_dominio_por_defecto(self):
+        with patch.dict(os.environ, {"CUEVANA_BASE": "", "CUEVANA_MIRRORS": ""}):
+            config = self.module.site()
+
+        self.assertEqual(self.module.BASE, config["base"])
+        self.assertEqual(self.module.LEGACY_BASES[0], config["bases"][1])
 
 
 if __name__ == "__main__":

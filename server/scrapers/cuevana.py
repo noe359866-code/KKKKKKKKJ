@@ -147,10 +147,14 @@ def extras(html: str, page_url: str, headers: Dict[str, str], deadline: Deadline
     return servers
 
 
+#: Metadatos del sitio. **Sin `base`**: el dominio se resuelve al usarlo
+#: ([`site()`]), no al importar. Un `SITE["base"]` congelado en el import se
+#: queda con el dominio (o el espejo) que hubiera en ese instante, y un
+#: consumidor que leyera el diccionario directamente acabaría yendo a un host
+#: viejo mientras `scrape()` sí usa el bueno.
 SITE: Dict[str, Any] = {
     "id": "cuevana",
     "label": "Cuevana",
-    "base": _bases()[0],
     "home_path": "/",
     "movie_paths": ["/peliculas/{slug}", "/pelicula/{slug}", "/ver/{slug}"],
     "series_paths": [
@@ -171,13 +175,24 @@ SITE: Dict[str, Any] = {
 }
 
 
+def site() -> Dict[str, Any]:
+    """`SITE` con el dominio resuelto **ahora** (env + espejos), listo para usar.
+
+    Es una función y no un valor: `CUEVANA_BASE`/`CUEVANA_MIRRORS` se leen en
+    cada llamada, así que un despliegue puede cambiar de espejo sin reinstalar y
+    un test puede apuntar el scraper a su fixture sin tocar el import.
+    """
+    bases = _bases()
+    return {**SITE, "base": bases[0], "bases": bases}
+
+
 def scrape(payload: Dict[str, Any]) -> Any:
-    return scrape_site(payload, {**SITE, "base": _bases()[0], "bases": _bases()})
+    return scrape_site(payload, site())
 
 
 def main() -> None:
-    site = {**SITE, "base": _bases()[0], "bases": _bases()}
-    if cli(site):
+    site_config = site()
+    if cli(site_config):
         return
     run(scrape)
 
