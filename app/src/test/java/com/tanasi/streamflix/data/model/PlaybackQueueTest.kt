@@ -56,10 +56,44 @@ class PlaybackQueueTest {
     }
 
     @Test
+    fun `una fila larga se zapea entera`() {
+        /* Antes el tope eran 60 canales: una fila de 120 se zapeaba por la
+         * mitad y el resto de la parrilla era invisible. El tope de entrada son
+         * 200 y el recorte real lo decide el tamaño del extra. */
+        val row = (1..120).map { channel("tv:x:$it", "Canal $it") }
+
+        assertEquals(120, row.toChannelQueue().size)
+    }
+
+    @Test
     fun `la parrilla tiene tope para no reventar el intent`() {
-        val row = (1..200).map { channel("tv:x:$it", "Canal $it") }
+        val row = (1..(MAX_CHANNEL_QUEUE + 50)).map { channel("tv:x:$it", "Canal $it") }
 
         assertEquals(MAX_CHANNEL_QUEUE, row.toChannelQueue().size)
+    }
+
+    @Test
+    fun `el recorte es por bytes y empieza por el primer canal`() {
+        /* Canales gordos a propósito: título y póster largos y una emisión de
+         * guía cada uno, para que el JSON pase del presupuesto. */
+        val fat = (1..MAX_CHANNEL_QUEUE).map { index ->
+            PlaybackChannel(
+                id = "tv:x:$index-" + "x".repeat(120),
+                title = "Canal $index " + "y".repeat(200),
+                poster = "https://cdn.example/arte/" + "z".repeat(200) + ".jpg",
+                epg = listOf(EpgEntry(title = "Programa " + "p".repeat(120), start = "19:00", subtitle = "Liga 1")),
+            )
+        }
+
+        val encoded = PlaybackQueueCodec.encode(fat)
+        val decoded = PlaybackQueueCodec.decode(encoded)
+
+        val bytes = encoded.encodeToByteArray().size
+        assertTrue("el extra no puede pasar del presupuesto: $bytes", bytes <= PlaybackQueueCodec.MAX_BYTES)
+        assertTrue("la cola recorta, no vacía: ${decoded.size}", decoded.size in 1 until fat.size)
+        /* Lo que se queda es el principio de la parrilla, que es donde está el
+         * canal que el usuario ya estaba viendo. */
+        assertTrue(decoded.first().id.startsWith("tv:x:1-"))
     }
 
     @Test

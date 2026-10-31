@@ -39,8 +39,12 @@ data class PlaybackChannel(
  * Sólo entran los canales en directo: un carrusel de películas no es una
  * parrilla y `CH+` ahí no significa nada. Se deduplica por `id` porque el mismo
  * canal puede venir repetido (varias señales del mismo proveedor se colapsan a
- * un solo id) y se recorta para que el `Intent` no crezca sin control: 60
- * canales son ~7 KB de extra, muy por debajo del límite de un `Intent`.
+ * un solo id).
+ *
+ * El recorte se hace por **bytes** en [PlaybackQueueCodec], no por número de
+ * canales: 60 era un número mágico que dejaba sin zapear la mitad de una fila de
+ * 120 canales, y a la vez no protegía de nada si algún día cada canal llevara su
+ * programación.
  */
 fun List<MediaEntry>.toChannelQueue(limit: Int = MAX_CHANNEL_QUEUE): List<PlaybackChannel> =
     asSequence()
@@ -59,8 +63,12 @@ fun List<MediaEntry>.toChannelQueue(limit: Int = MAX_CHANNEL_QUEUE): List<Playba
         }
         .toList()
 
-/** Tope de la parrilla que viaja en el `Intent` del reproductor. */
-const val MAX_CHANNEL_QUEUE = 60
+/**
+ * Tope de **entrada** de la parrilla (canales). No es el que manda: el recorte
+ * real lo decide el tamaño del extra (`PlaybackQueueCodec.MAX_BYTES`), porque lo
+ * que rompe un `Intent` son los bytes, no los canales.
+ */
+const val MAX_CHANNEL_QUEUE = 200
 
 /**
  * Serializa la parrilla al extra del `Intent`.
@@ -79,8 +87,37 @@ object PlaybackQueueCodec {
 
     private val serializer = ListSerializer(PlaybackChannel.serializer())
 
+    /**
+     * Presupuesto del extra: 64 KB.
+     *
+     * Un `Intent` admite ~500 KB por extra y las transacciones del `Binder` ~1 MB
+     * entre todos, pero la misma parrilla viaja también en
+     * `onSaveInstanceState` (`PlaybackRestore`), así que el presupuesto se mide
+     * contra lo que aguanta el `Bundle`. Con la parrilla típica (~150 bytes por
+     * canal, más programación si la hay) entran más de 300 canales.
+     */
+    const val MAX_BYTES = 64_000
+
+    /**
+     * La parrilla serializada, recortada por la cola hasta caber en [MAX_BYTES].
+     *
+     * Se recorta **por la cola**: los primeros canales son los que el usuario
+     * está mirando y los que tienen que seguir ahí al zapear. Si un solo canal
+     * no cupiera (imposible con estos tamaños), devuelve la lista vacía y el
+     * reproductor se queda sin zapeo en vez de con un extra corrupto.
+     */
     fun encode(queue: List<PlaybackChannel>): String = runCatching {
-        json.encodeToString(serializer, queue.take(MAX_CHANNEL_QUEUE))
+        var slice = queue.take(MAX_CHANNEL_QUEUE)
+        var text = json.encodeToString(serializer, slice)
+        /* Se mide en **bytes UTF-8**, no en caracteres: un título con acentos
+         * ocupa dos bytes por letra y el `Bundle` cuenta bytes. Quitar de golpe
+         * el 10 % evita reescribir el JSON decenas de veces. */
+        while (text.encodeToByteArray().size > MAX_BYTES && slice.size > 1) {
+            val keep = maxOf(1, slice.size - maxOf(1, slice.size / 10))
+            slice = slice.take(keep)
+            text = json.encodeToString(serializer, slice)
+        }
+        if (text.encodeToByteArray().size > MAX_BYTES) "[]" else text
     }.getOrDefault("[]")
 
     /** Ante cualquier extra corrupto devuelve lista vacía: el vídeo sigue. */

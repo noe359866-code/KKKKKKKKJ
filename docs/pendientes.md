@@ -203,9 +203,12 @@ Las cuatro cosas que faltaban, resueltas sin tocar el presupuesto de pantalla
 - ✅ ~~Comentario «opt-in»~~: **hecho**. `embedded_engine.catalogs()` y
   `CatalogRepository` dicen ahora que Cinemeta viene activado de fábrica y se
   puede apagar en Ajustes.
-- La cola de canales que viaja al reproductor está topada en 60
-  (`MAX_CHANNEL_QUEUE`): una fila de 200 canales se zapea sólo por los 60
-  primeros.
+- ✅ ~~La cola de canales topada en 60~~: **hecho**. `MAX_CHANNEL_QUEUE` son
+  ahora 200 canales y el recorte real lo decide el **tamaño del extra**
+  (`PlaybackQueueCodec.MAX_BYTES` = 64 KB, recortando por la cola para no perder
+  el canal que se está viendo). Antes, una fila de 120 canales se zapeaba por la
+  mitad y el número 60 no protegía de nada si cada canal llevara guía.
+  `PlaybackQueueTest` (dos casos nuevos).
 
 ---
 
