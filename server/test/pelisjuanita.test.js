@@ -53,7 +53,75 @@ before(async () => {
       <h1>Reacher — Episodio 3</h1>
       <p>Sinopsis del capítulo.</p>
       <div class="player"><iframe src="${base}/ext/streamwish"></iframe></div>
-      <p>Reacher tira de la cuerda y descubre quién manda en Margrave.</p>
+      <p>Reacher tira de la cuerda y descubre quién manda en Margrave, mientras el
+      pueblo entero mira hacia otro lado y la Guardia Nacional empieza a moverse.
+      Un episodio de esos que se recuerdan.</p>
+      </body></html>`,
+    /* El capítulo 1x05 no tiene ruta directa: sólo se llega por el enlace de la ficha. */
+    '/serie/reacher-2022/1x05': `<html><head><title>Reacher 1x05</title></head><body>
+      <h1>Reacher — Episodio 5</h1>
+      <div class="player"><iframe src="${base}/ext/streamwish"></iframe></div>
+      </body></html>`,
+    /* Sección de anime: la ficha NO está en /pelicula/. */
+    '/anime/naruto-shippuden': `<html><head><title>Naruto Shippuden</title></head><body>
+      <h1>Naruto Shippuden</h1>
+      <p>Naruto vuelve a la aldea después de dos años de entrenamiento y todo ha
+      cambiado: Akatsuki se mueve, Sasuke sigue fuera y el examen de ascenso ya
+      no es lo importante. La aldea está en paz, pero nadie se fía del silencio
+      y el equipo 7 ya no existe como tal. Una etapa nueva que empieza con una
+      noticia que nadie quiere dar.</p>
+      <div class="player"><iframe src="${base}/ext/streamwish"></iframe></div>
+      </body></html>`,
+    /* Reproductor propio: la ficha sólo apunta a la página del sitio, que es la
+       que lista el embed de verdad. */
+    '/pelicula/doble-salto': `<html><head><title>Doble Salto</title></head><body>
+      <h1>Doble Salto</h1>
+      <p>Un doble de riesgo acepta el trabajo de su vida y descubre que la escena
+      que tiene que rodar es la misma en la que desapareció su hermano hace diez
+      años. Nada de lo que ocurre en el plató es casualidad.</p>
+      <div id="player"><iframe src="${base}/player/999"></iframe></div>
+      </body></html>`,
+    /* Embed cuyo reproductor declara el `type` y no pone extensión: la mitad
+       de los jwplayer de estos sitios. */
+    '/ext/tipado': `<html><head><title>Player</title></head><body>
+      <script>
+        var player = jwplayer("v").setup({
+          sources: [
+            { file: "${base}/cdn/abc123", type: "application/x-mpegURL" },
+            { file: "${base}/video/pelicula", type: "video/mp4" },
+            { file: "${base}/logos/poster.jpg", type: "image/jpeg" }
+          ]
+        });
+      </script>
+      </body></html>`,
+    '/pelicula/tipos-hls-mp4': `<html><head><title>Tipos HLS y MP4</title></head><body>
+      <h1>Tipos HLS y MP4</h1>
+      <p>Una película con dos servidores: uno sirve el manifiesto HLS y el otro
+      un MP4 progresivo, ninguno de los dos con extensión en la URL. Es el caso
+      que antes se perdía entero, porque la app exigía una extensión de vídeo y
+      aquí no hay ninguna a la vista. Ahora se lee el tipo que declara el
+      reproductor y, si no lo declara, se sondan los primeros bytes.</p>
+      <div class="player"><iframe src="${base}/ext/tipado"></iframe></div>
+      </body></html>`,
+    /* Sólo `og:video`, sin extensión: el scraper sonda los primeros bytes. */
+    '/ext/sonda': `<html><head><title>Sonda</title>
+      <meta property="og:video" content="${base}/cdn/sonda">
+      </head><body><p>Sin manifiesto en el HTML.</p></body></html>`,
+    '/pelicula/con-sonda': `<html><head><title>Con sonda</title></head><body>
+      <h1>Con sonda</h1>
+      <p>El embed sólo publica la meta og:video y la URL no delata el tipo, así
+      que hay que abrirla para saber que es un HLS. Sin esa sonda el cliente
+      intentaría reproducir un manifiesto como si fuera un MP4 y no se vería
+      nada, que es exactamente el fallo que había que arreglar aquí.</p>
+      <div class="player"><iframe src="${base}/ext/sonda"></iframe></div>
+      </body></html>`,
+    '/cdn/sonda': '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080\n/index.m3u8',
+    '/player/999': `<html><head><title>Reproductor</title></head><body>
+      <h1>Reproductor</h1>
+      <div class="servidores">
+        <iframe src="${base}/ext/streamwish"></iframe>
+      </div>
+      <p>Este reproductor sólo devuelve embeds, ningún manifiesto directo.</p>
       </body></html>`,
   }));
   env = { ...CLEAN, PELISJUANITA_BASE: fixture.base };
@@ -81,13 +149,64 @@ test('etiquetas con el sitio delante', async () => {
   assert.match(body.streams[0].title, /^PelisJuanita · Spider Man un Nuevo Dia 2026 · /);
 });
 
-test('serie: ficha → enlace del capítulo → reproductor', async () => {
+test('serie: abre la ruta del capítulo con dos dígitos', async () => {
   const { body } = await runScraper(SCRIPT, ask('pelisjuanita:reacher-2022:1:3'), env);
 
   assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
   assert.equal(body.meta.kind, 'series');
-  assert.equal(body.meta.episode_page, `${fixture.base}/serie/reacher-2022/1x03`);
+  assert.equal(body.meta.resolved_by, 'direct');
+  assert.equal(body.meta.page, `${fixture.base}/serie/reacher-2022/1x03`);
   assert.match(body.streams[0].name, /· T1 E3$/);
+});
+
+test('serie: si la ruta directa no existe, sigue el enlace de la ficha', async () => {
+  const { body } = await runScraper(SCRIPT, ask('pelisjuanita:reacher-2022:1:5'), env);
+
+  assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
+  assert.equal(body.meta.episode_page, `${fixture.base}/serie/reacher-2022/1x05`);
+  assert.match(body.streams[0].name, /· T1 E5$/);
+});
+
+test('anime: la ficha vive en /anime/, no en /pelicula/', async () => {
+  const { body } = await runScraper(SCRIPT, ask('pelisjuanita:naruto-shippuden'), env);
+
+  assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
+  assert.equal(body.meta.page, `${fixture.base}/anime/naruto-shippuden`);
+  assert.ok(hasUrl(body, 'cdn.example/sw/index.m3u8'), urlsOf(body).join(' '));
+});
+
+test('abre la página de reproductor del propio sitio y lee sus embeds', async () => {
+  const { body } = await runScraper(SCRIPT, ask('pelisjuanita:doble-salto'), env);
+
+  assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
+  assert.deepEqual(body.meta.opened_players, [`${fixture.base}/player/999`]);
+  assert.ok(hasUrl(body, 'cdn.example/sw/index.m3u8'), urlsOf(body).join(' '));
+  /* La página intermedia no se publica como stream: no es reproducible. */
+  assert.ok(!urlsOf(body).some((url) => url.includes('/player/999')));
+});
+
+test('extrae HLS y MP4 aunque la URL no tenga extensión', async () => {
+  const { body } = await runScraper(SCRIPT, ask('pelisjuanita:tipos-hls-mp4'), env);
+
+  assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
+  const urls = urlsOf(body);
+  assert.ok(urls.includes(`${fixture.base}/cdn/abc123`), urls.join(' '));
+  assert.ok(urls.includes(`${fixture.base}/video/pelicula`), urls.join(' '));
+  /* El póster del reproductor no es una fuente. */
+  assert.ok(!urls.some((url) => url.includes('poster.jpg')), urls.join(' '));
+
+  const byUrl = Object.fromEntries(body.streams.map((stream) => [stream.url, stream]));
+  assert.equal(byUrl[`${fixture.base}/cdn/abc123`].behaviorHints.mediaType, 'hls');
+  assert.equal(byUrl[`${fixture.base}/video/pelicula`].behaviorHints.mediaType, 'mp4');
+});
+
+test('sonda la URL sin extensión y la marca como HLS', async () => {
+  const { body } = await runScraper(SCRIPT, ask('pelisjuanita:con-sonda'), env);
+
+  assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
+  const stream = body.streams.find((item) => item.url === `${fixture.base}/cdn/sonda`);
+  assert.ok(stream, urlsOf(body).join(' '));
+  assert.equal(stream.behaviorHints.mediaType, 'hls');
 });
 
 test('el buscador del sitio resuelve un título escrito a mano', async () => {

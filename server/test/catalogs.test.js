@@ -254,20 +254,24 @@ test('el registro descarta catálogos inválidos y respeta el orden', () => {
   assert.equal(live.posterShape, 'landscape');
   assert.ok(live.extra.some((extra) => extra.name === 'genre' && extra.options.includes('Deportes')));
   assert.ok(live.extra.some((extra) => extra.name === 'search'), 'sin `search` Stremio no muestra el buscador');
+  /* La app usa `source` para recomendar sólo títulos de Cinemeta en el buscador;
+   * el resto de clientes Stremio lo ignoran. */
+  assert.equal(live.source, 'local');
+  assert.equal(manifest.find((catalog) => catalog.id === 'top' && catalog.type === 'movie').source, 'cinemeta');
 });
 
 /* -------------------------------------------------------------------------- */
 /* Integración HTTP                                                           */
 /* -------------------------------------------------------------------------- */
 
-test('GET /manifest.json publica catálogos y los recursos catalog/meta', async () => {
+test('GET /manifest.json publica catálogos y los recursos catalog/meta/subtitles', async () => {
   const res = await fetch(`${baseUrl}/manifest.json`);
   const manifest = await res.json();
 
   assert.equal(res.status, 200);
   assert.deepEqual(
     manifest.resources.map((resource) => resource.name),
-    ['stream', 'catalog', 'meta'],
+    ['stream', 'catalog', 'meta', 'subtitles'],
   );
   assert.ok(manifest.catalogs.length >= 4);
   assert.equal(manifest.catalogs[0].type, 'tv');

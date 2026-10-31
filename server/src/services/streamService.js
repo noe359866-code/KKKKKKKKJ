@@ -28,6 +28,8 @@ import { runProviderPool } from '../providers/runner.js';
 import { buildStream } from '../lib/stremio.js';
 import { parseMediaId, normalizeStreamId } from '../lib/ids.js';
 import { normalizeQuality, qualityRank } from '../lib/quality.js';
+import { buildSubtitleList } from '../lib/subtitles.js';
+import { capTtlByExpiry } from '../lib/signedUrls.js';
 import { createLogger } from '../lib/logger.js';
 
 const log = createLogger('streams');
@@ -187,7 +189,7 @@ export function buildStreamList(results, context = {}) {
  * @param {string} params.id   - Stremio video id
  * @param {boolean} [params.bypassCache] - force a fresh scrape (admin use)
  * @returns {Promise<{
- *   streams: object[], isLive: boolean, ttlMs: number, cacheKey: string,
+ *   streams: object[], subtitles: object[], isLive: boolean, ttlMs: number, cacheKey: string,
  *   cached: boolean, stale: boolean, coalesced: boolean, durationMs: number,
  *   providers: Array<{ id: string, status: string, streams: number, ms: number|null }>
  * }>}
@@ -202,8 +204,14 @@ export async function getStreams({ type, id, bypassCache = false }) {
 
   const respond = (payload) => ({
     ...payload,
+    /* Los subtítulos viajan con las fuentes (campo extra del protocolo): una
+     * sola petición resuelve el título entero, sin segundo round-trip. Va
+     * después del spread para que nunca quede `undefined`. */
+    subtitles: payload.subtitles || [],
     isLive,
-    ttlMs,
+    /* El TTL real de la entrada: si una URL firmada caduca antes, es el suyo
+     * (ver lib/signedUrls.js), no la política de 2 h/6 h. */
+    ttlMs: payload.ttlMs ?? ttlMs,
     cacheKey: key,
     durationMs: Number((Number(process.hrtime.bigint() - startedAt) / 1e6).toFixed(2)),
   });
@@ -222,11 +230,13 @@ export async function getStreams({ type, id, bypassCache = false }) {
       });
       return respond({
         streams: hit.value,
+        subtitles: hit.meta.subtitles || [],
         cached: true,
         stale: false,
         coalesced: false,
         providers: hit.meta.providers || [],
         negative: Boolean(hit.meta.negative),
+        ttlMs: hit.meta.ttlMs || ttlMs,
         ttlRemainingMs: hit.ttlRemainingMs,
       });
     }
@@ -237,11 +247,13 @@ export async function getStreams({ type, id, bypassCache = false }) {
       refreshInBackground(key, { type, id: normalizedId, parsed, isLive, ttlMs });
       return respond({
         streams: hit.value,
+        subtitles: hit.meta.subtitles || [],
         cached: true,
         stale: true,
         coalesced: false,
         providers: hit.meta.providers || [],
         negative: Boolean(hit.meta.negative),
+        ttlMs: hit.meta.ttlMs || ttlMs,
         ttlRemainingMs: 0,
       });
     }
@@ -259,6 +271,12 @@ export async function getStreams({ type, id, bypassCache = false }) {
     });
 
     const streams = buildStreamList(results, { isLive });
+    /* Los subtítulos salen del mismo scrape: `meta.subtitles` de cada proveedor
+     * (hoy novaHD) se normaliza y se cachea junto a las fuentes. */
+    const subtitles = buildSubtitleList(results);
+    /* Una URL firmada manda sobre la política: cachearla 6 h da 403 al
+     * reintentar, y el usuario lo vive como "no reproduce nada". */
+    const effectiveTtlMs = capTtlByExpiry(ttlMs, streams);
 
     const providerStatus = results.map((result) => ({
       id: result.provider.id,
@@ -277,30 +295,35 @@ export async function getStreams({ type, id, bypassCache = false }) {
         durationMs,
         timedOut,
       });
-      return { streams: [], providers: providerStatus, negative: true };
+      return { streams: [], subtitles: [], providers: providerStatus, negative: true, ttlMs };
     }
 
-    cache.set(key, streams, ttlMs, { providers: providerStatus, isLive, ttlMs, negative: false });
+    cache.set(key, streams, effectiveTtlMs, {
+      providers: providerStatus, subtitles, isLive, ttlMs: effectiveTtlMs, negative: false,
+    });
     log.info('scrape complete, cached', {
       key,
       streams: streams.length,
+      subtitles: subtitles.length,
       providers: providerStatus.filter((provider) => provider.status === 'ok').length,
       durationMs,
-      ttlHours: (ttlMs / 3_600_000).toFixed(1),
+      ttlHours: (effectiveTtlMs / 3_600_000).toFixed(2),
       timedOut,
     });
 
-    return { streams, providers: providerStatus, negative: false };
+    return { streams, subtitles, providers: providerStatus, negative: false, ttlMs: effectiveTtlMs };
   });
 
   return respond({
     streams: value.streams,
+    subtitles: value.subtitles || [],
     cached: false,
     stale: false,
     coalesced,
     providers: value.providers,
     negative: value.negative,
-    ttlRemainingMs: ttlMs,
+    ttlMs: value.ttlMs ?? ttlMs,
+    ttlRemainingMs: value.ttlMs ?? ttlMs,
   });
 }
 
@@ -321,20 +344,23 @@ function refreshInBackground(key, context) {
         isLive: context.isLive,
       });
       const streams = buildStreamList(results, { isLive: context.isLive });
+      const subtitles = buildSubtitleList(results);
+      const effectiveTtlMs = capTtlByExpiry(context.ttlMs, streams);
 
       if (streams.length === 0) {
         log.warn('background refresh returned no streams, keeping stale entry', { key });
         return streams;
       }
-      cache.set(key, streams, context.ttlMs, {
+      cache.set(key, streams, effectiveTtlMs, {
         providers: results.map((result) => ({
           id: result.provider.id,
           status: result.status,
           streams: result.streams.length,
           ms: result.durationMs,
         })),
+        subtitles,
         isLive: context.isLive,
-        ttlMs: context.ttlMs,
+        ttlMs: effectiveTtlMs,
         negative: false,
       });
       log.info('background refresh stored fresh streams', { key, streams: streams.length });

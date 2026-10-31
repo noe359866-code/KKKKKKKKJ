@@ -98,6 +98,23 @@ DETAIL_QUERY = """query getMovieLinks($id: MongoID!, $slug: String!) {
   }
 }"""
 
+#: Fichas de serie/episodio: el campo `links_online` es el mismo, pero en otras
+#: operaciones y con la temporada y el capítulo como variables. Se prueban sólo
+#: cuando la de película no devolvió enlaces (antes la temporada y el episodio
+#: del id no llegaban nunca al sitio y toda serie terminaba en `no_servers`).
+SERIES_QUERIES = {
+    "getSerieLinks": """query getSerieLinks($id: MongoID!, $slug: String!) {
+  getSerieLinks(id: $id, slug: $slug) {
+    _id name title name_es slug overview links_online __typename
+  }
+}""",
+    "getEpisodeLinks": """query getEpisodeLinks($id: MongoID!, $slug: String!, $season: Int!, $episode: Int!) {
+  getEpisodeLinks(id: $id, slug: $slug, season: $season, episode: $episode) {
+    _id name title name_es slug overview links_online __typename
+  }
+}""",
+}
+
 IFRAME_SRC_RE = re.compile(r"""<iframe[^>]+src\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
 #: Idiomas tal como los codifica el sitio.
 LANG_LABELS = {"37": "Español", "192": "Subtitulado"}
@@ -109,15 +126,16 @@ def _bases() -> List[str]:
     return env_bases(BASE, "PELICULASFLIX_BASE", "PELICULASFLIX_MIRRORS")
 
 
-def _headers(payload: Dict[str, Any]) -> Dict[str, str]:
+def _headers(payload: Dict[str, Any], base: str = "") -> Dict[str, str]:
+    origin = (base or BASE).rstrip("/")
     return {
         "User-Agent": str(payload.get("userAgent") or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                                         "AppleWebKit/537.36 (KHTML, like Gecko) "
                                                         "Chrome/126.0.0.0 Safari/537.36"),
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "es-MX,es;q=0.9,en;q=0.8",
-        "Origin": BASE,
-        "Referer": BASE + "/",
+        "Origin": origin,
+        "Referer": origin + "/",
         "x-access-platform": ACCESS_PLATFORM,
     }
 
@@ -170,11 +188,29 @@ def pick_hit(query: str, hits: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]
     return hits[0] if hits else None
 
 
-def detail(movie_id: str, slug: str, headers: Dict[str, str], deadline: Deadline) -> Dict[str, Any]:
-    """Ficha con `links_online`."""
-    data = gql(DETAIL_QUERY, "getMovieLinks", {"id": movie_id or "", "slug": slug}, headers, deadline)
-    node = (data or {}).get("getMovieLinks")
-    return node if isinstance(node, dict) else {}
+def detail(
+    movie_id: str,
+    slug: str,
+    headers: Dict[str, str],
+    deadline: Deadline,
+    season: Any = None,
+    episode: Any = None,
+) -> Dict[str, Any]:
+    """Ficha con `links_online` (película, y si hace falta serie/episodio)."""
+    variables: Dict[str, Any] = {"id": movie_id or "", "slug": slug}
+    attempts = [("getMovieLinks", DETAIL_QUERY, variables)]
+    if season is not None and episode is not None:
+        variables = {**variables, "season": int(season), "episode": int(episode)}
+        attempts.append(("getSerieLinks", SERIES_QUERIES["getSerieLinks"],
+                         {"id": movie_id or "", "slug": slug}))
+        attempts.append(("getEpisodeLinks", SERIES_QUERIES["getEpisodeLinks"], variables))
+
+    for operation, query, call_variables in attempts:
+        data = gql(query, operation, call_variables, headers, deadline)
+        node = (data or {}).get(operation)
+        if isinstance(node, dict) and node.get("links_online"):
+            return node
+    return {}
 
 
 def links_to_servers(node: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -212,7 +248,8 @@ def scrape(payload: Dict[str, Any]) -> Any:
     is_series = ref.get("season") is not None and ref.get("episode") is not None
     ref = tmdb_prepare(ref, payload, "tv" if is_series else "movie")
 
-    headers = _headers(payload)
+    base = _bases()[0]
+    headers = _headers(payload, base)
     deadline = Deadline(payload.get("timeoutMs") or 15000)
     meta: Dict[str, Any] = {"site": "peliculasflix", "kind": "series" if is_series else "movie"}
     if is_series:
@@ -236,14 +273,23 @@ def scrape(payload: Dict[str, Any]) -> Any:
 
     slug = str(hit.get("slug") or ref.get("slug") or "")
     movie_id = str(hit.get("_id") or "")
+    season, episode = ref.get("season"), ref.get("episode")
     meta["slug"] = slug
-    node = detail(movie_id, slug, headers, deadline)
+    # La ficha del sitio cambia de sección: `/pelicula/<slug>` en películas y
+    # `/serie/<slug>/<temporada>x<episodio>` (con su ficha) en series.
+    page = f"{base}/pelicula/{slug}" if not is_series else f"{base}/serie/{slug}"
+    if is_series and season is not None and episode is not None:
+        page_episode = f"{page}/{int(season)}x{int(episode)}"
+    else:
+        page_episode = page
+
+    node = detail(movie_id, slug, headers, deadline, season, episode)
     if not node:
         # Último intento: probar las variantes de slug del título.
         for variant in slug_variants(query or slug)[:2]:
             if variant == slug:
                 continue
-            node = detail("", variant, headers, deadline)
+            node = detail("", variant, headers, deadline, season, episode)
             if node:
                 slug = variant
                 break
@@ -253,7 +299,7 @@ def scrape(payload: Dict[str, Any]) -> Any:
         meta["reason"] = "no_servers" if from_search else "not_found"
         return [], meta
 
-    meta["page"] = f"{BASE}/pelicula/{slug}"
+    meta["page"] = page_episode
     servers = links_to_servers(node)
     meta["servers"] = [server["name"] for server in servers]
     if not servers:
@@ -261,7 +307,7 @@ def scrape(payload: Dict[str, Any]) -> Any:
         return [], meta
 
     signals, resolve_meta = resolve_signals(
-        servers, headers, deadline, f"{BASE}/pelicula/{slug}", parallel=4, max_servers=6
+        servers, headers, deadline, page_episode, parallel=4, max_servers=6
     )
     meta.update(resolve_meta)
     if not signals:
@@ -287,7 +333,7 @@ def list_items(query: str, limit: int = 20) -> List[Dict[str, str]]:
             "id": f"peliculasflix:{slug}",
             "slug": slug,
             "title": str(hit.get("name_es") or hit.get("title") or hit.get("name") or slug),
-            "url": f"{BASE}/pelicula/{slug}",
+            "url": f"{_bases()[0]}/pelicula/{slug}",
         })
         if len(items) >= limit:
             break

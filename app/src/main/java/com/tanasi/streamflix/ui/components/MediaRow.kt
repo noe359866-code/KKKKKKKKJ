@@ -1,11 +1,9 @@
 package com.tanasi.streamflix.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
@@ -17,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.data.model.CatalogRow
@@ -41,6 +40,8 @@ import com.tanasi.streamflix.ui.theme.StreamflixColors
  *    `LazyRow` no recorta a sus hijos: crecen por encima y por debajo sin
  *    empujar al vecino, y ese margen es el que deja ver el halo entero.
  *
+ * @param onEntryClick recibe también los títulos de la fila: son la parrilla
+ *   con la que el reproductor cambia de canal (`CH+`/`CH−`) sin volver al Home.
  * @param onEntryFocused se llama con la fila y el título al entrar en foco,
  *   para que el hero sepa de qué carrusel viene la tarjeta.
  * @param firstCardFocusRequester foco inicial del Home en TV.
@@ -50,7 +51,7 @@ import com.tanasi.streamflix.ui.theme.StreamflixColors
 fun MediaRow(
     row: CatalogRow,
     deviceProfile: DeviceProfile,
-    onEntryClick: (MediaEntry) -> Unit,
+    onEntryClick: (MediaEntry, List<MediaEntry>) -> Unit,
     onEntryFocused: (rowId: String, entry: MediaEntry) -> Unit,
     modifier: Modifier = Modifier,
     firstCardFocusRequester: FocusRequester? = null,
@@ -67,23 +68,17 @@ fun MediaRow(
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            /* Encabezado mínimo, como en tvOS: sólo el nombre de la fila. Sin
+             * barra de acento, sin contador y sin etiqueta de formato — tres
+             * adornos que competían con las carátulas y no aportaban nada. */
             Text(
                 text = row.title,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = StreamflixColors.OnSurface,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.weight(1f))
-            if (row.rowAspect == RowAspect.Landscape) {
-                /* Pista de formato discreta: en las filas 16:9 se ve menos
-                 * contenido por pantalla y el usuario agradece saber por qué. */
-                Box(
-                    modifier = Modifier.padding(start = 8.dp),
-                ) {
-                    GlassBadge(text = "16:9")
-                }
-            }
         }
 
         LazyRow(
@@ -100,20 +95,31 @@ fun MediaRow(
                 val focusRequester = if (index == 0) firstCardFocusRequester else null
                 val up = if (index == 0) focusUp else null
 
-                when (row.rowAspect) {
-                    RowAspect.Poster -> PosterCard(
+                /* Deportes: marcador con liga, equipos y hora. La fuente de datos
+                 * lo pide con `layout: "sports"`; el resto de filas no cambia. */
+                if (row.isSports) {
+                    SportsCard(
                         entry = entry,
                         deviceProfile = deviceProfile,
-                        onClick = { onEntryClick(entry) },
+                        onClick = { onEntryClick(entry, row.items) },
                         onFocused = { entry -> onEntryFocused(row.id, entry) },
                         focusUp = up,
                         focusRequester = focusRequester,
                     )
-
-                    RowAspect.Landscape -> LandscapeCard(
+                } else if (row.rowAspect == RowAspect.Poster) {
+                    PosterCard(
                         entry = entry,
                         deviceProfile = deviceProfile,
-                        onClick = { onEntryClick(entry) },
+                        onClick = { onEntryClick(entry, row.items) },
+                        onFocused = { entry -> onEntryFocused(row.id, entry) },
+                        focusUp = up,
+                        focusRequester = focusRequester,
+                    )
+                } else {
+                    LandscapeCard(
+                        entry = entry,
+                        deviceProfile = deviceProfile,
+                        onClick = { onEntryClick(entry, row.items) },
                         onFocused = { entry -> onEntryFocused(row.id, entry) },
                         focusUp = up,
                         focusRequester = focusRequester,

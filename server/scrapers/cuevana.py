@@ -69,7 +69,18 @@ from _base import log, run
 from _htmlkit import Deadline
 from _peliskit import cli, env_bases, fetch_html, harvest_servers, join, scrape_site
 
-BASE = "https://cue.cuevana3.nu"
+#: Cuevana3 se replica en decenas de dominios y cada pocos meses cambia; el que
+#: estaba por defecto (`cue.cuevana3.nu`) no respondió el 2026-10-30 y este sí
+#: (misma estructura `/peliculas/<slug>-<año>/` con `showEmbed`). `CUEVANA_BASE`
+#: y `CUEVANA_MIRRORS` siguen mandando.
+BASE = "https://cuevana3.gs"
+
+#: Espejos conocidos de la misma familia, por si el primero cae.
+LEGACY_BASES = (
+    "https://cuevana-3.fun",
+    "https://cuevana.gs",
+    "https://cue.cuevana3.nu",
+)
 
 #: `showEmbed=<base64>` — el embed real, en base64 dentro de la URL.
 SHOW_EMBED_RE = re.compile(r"""showEmbed=([A-Za-z0-9+/=_\-%]{8,})""", re.IGNORECASE)
@@ -78,7 +89,14 @@ PLAYER_TOKEN_RE = re.compile(r"""player\.php\?[^"'\s>]*?\bt=([A-Za-z0-9_\-]{16,}
 
 
 def _bases() -> List[str]:
-    return env_bases(BASE, "CUEVANA_BASE", "CUEVANA_MIRRORS")
+    """Dominio configurado (+ espejos) o, si nadie configuró nada, con la familia."""
+    bases = env_bases(BASE, "CUEVANA_BASE", "CUEVANA_MIRRORS")
+    explicit = len(bases) > 1 or bases[0] != BASE
+    if not explicit:
+        for base in LEGACY_BASES:
+            if base not in bases:
+                bases.append(base)
+    return bases
 
 
 def show_embed_servers(html: str) -> List[Dict[str, Any]]:
@@ -129,20 +147,26 @@ def extras(html: str, page_url: str, headers: Dict[str, str], deadline: Deadline
     return servers
 
 
+#: Metadatos del sitio. **Sin `base`**: el dominio se resuelve al usarlo
+#: ([`site()`]), no al importar. Un `SITE["base"]` congelado en el import se
+#: queda con el dominio (o el espejo) que hubiera en ese instante, y un
+#: consumidor que leyera el diccionario directamente acabaría yendo a un host
+#: viejo mientras `scrape()` sí usa el bueno.
 SITE: Dict[str, Any] = {
     "id": "cuevana",
     "label": "Cuevana",
-    "base": _bases()[0],
     "home_path": "/",
     "movie_paths": ["/peliculas/{slug}", "/pelicula/{slug}", "/ver/{slug}"],
     "series_paths": [
         "/series/{slug}/season/{season}/episode/{episode}",
+        "/series/{slug}/temporada/{season}/capitulo/{episode}",
+        "/series/{slug}/{season}x{episode2}",
         "/series/{slug}/{season}/{episode}",
         "/serie/{slug}/{season}/{episode}",
         "/series/{slug}",
     ],
     "search_paths": ["/?s={query}", "/search?q={query}"],
-    "search_hints": ["/peliculas/", "/pelicula/", "/series/", "/serie/"],
+    "search_hints": ["/peliculas/", "/pelicula/", "/series/", "/serie/", "/ver/"],
     "player_hints": ("embed", "player", "repro", "vimeos", "streamwish"),
     "max_servers": 6,
     "parallel": 4,
@@ -151,13 +175,24 @@ SITE: Dict[str, Any] = {
 }
 
 
+def site() -> Dict[str, Any]:
+    """`SITE` con el dominio resuelto **ahora** (env + espejos), listo para usar.
+
+    Es una función y no un valor: `CUEVANA_BASE`/`CUEVANA_MIRRORS` se leen en
+    cada llamada, así que un despliegue puede cambiar de espejo sin reinstalar y
+    un test puede apuntar el scraper a su fixture sin tocar el import.
+    """
+    bases = _bases()
+    return {**SITE, "base": bases[0], "bases": bases}
+
+
 def scrape(payload: Dict[str, Any]) -> Any:
-    return scrape_site(payload, {**SITE, "base": _bases()[0], "bases": _bases()})
+    return scrape_site(payload, site())
 
 
 def main() -> None:
-    site = {**SITE, "base": _bases()[0], "bases": _bases()}
-    if cli(site):
+    site_config = site()
+    if cli(site_config):
         return
     run(scrape)
 

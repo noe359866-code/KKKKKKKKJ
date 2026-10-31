@@ -1,0 +1,14 @@
+{
+  "$comment": "Canales curados mínimos: son el respaldo cuando el scrape no trae nada.",
+  "updatedAt": "2026-10-30",
+  "items": [
+    {
+      "id": "tv:futbolibre:espn-1",
+      "name": "ESPN 1",
+      "category": "deportes",
+      "genres": ["Deportes", "Canales"],
+      "description": "Señal deportiva.",
+      "releaseInfo": "En directo"
+    }
+  ]
+}

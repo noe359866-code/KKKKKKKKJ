@@ -14,6 +14,7 @@ import { cache } from '../cache/TtlCache.js';
 import { getProvidersMeta, getProviders } from '../providers/index.js';
 import { ttlPolicy } from '../services/streamService.js';
 import { getCatalogs } from '../catalogs/registry.js';
+import { liveShelfStatus } from '../services/catalogService.js';
 
 export const healthRouter = Router();
 
@@ -43,6 +44,10 @@ function healthPayload() {
       })),
       cinemetaBase: config.catalogs.cinemetaBase,
     },
+    /* Canales y agenda que publican los proveedores de directo: si `loaded` es
+     * false, `tv/agenda` sale vacío a propósito y no hay nada que arreglar en el
+     * cliente. */
+    liveShelf: liveShelfStatus(),
     cache: cache.stats(),
     providers: {
       ...getProvidersMeta(),

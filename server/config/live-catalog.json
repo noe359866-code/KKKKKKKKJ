@@ -1,6 +1,6 @@
 {
-  "$comment": "Canales de TV en vivo y deportes que este addon publica como catálogo 'local'. El campo id es EXACTAMENTE el id de stream (GET /stream/tv/<id>.json), de modo que pulsar una tarjeta en el cliente va directo al failover de proveedores. Para añadir canales: copia el id que imprime `npm run channels:tvenvivo` (o channels:deportelibre / channels:futbolibre) y pégalo aquí. Los ids llevan el prefijo del proveedor para que el scraping sepa a quién preguntar.",
-  "updatedAt": "2026-10-28",
+  "$comment": "Canales FIJADOS a mano. El addon ya no depende de este archivo para llenar la TV: `scrapers/_liveshelf.py` recoge los canales de todos los proveedores de directo (`npm run channels:*`) y los publica en la fila 'TV en vivo · Canales', y la agenda del día en 'Agenda deportiva'. Aquí sólo se dejan los ids que deben salir SIEMPRE y primero, aunque un sitio esté caído o cambie de índice; sus nombres bloquean duplicados de los proveedores. El campo id es EXACTAMENTE el id de stream (GET /stream/tv/<id>.json). No se ponen eventos: la agenda es dato del día y un partido caducado deja un Play muerto.",
+  "updatedAt": "2026-10-30",
   "items": [
     {
       "id": "tv:futbolibre:espn-1",
@@ -59,20 +59,28 @@
       "releaseInfo": "En directo"
     },
     {
-      "id": "tv:futbolibre:evento:final-liga-mx",
-      "name": "Final Liga MX",
-      "category": "eventos",
-      "genres": ["Fútbol", "Eventos"],
-      "description": "El último partido del torneo, con varias señales por si una se cae a mitad del segundo tiempo.",
-      "releaseInfo": "Evento en directo"
+      "id": "tv:ntv:ppv-18172",
+      "name": "NFL Network",
+      "category": "canales",
+      "genres": ["Deportes", "Canales"],
+      "description": "Canal 24/7 de la NFL en NTV: partidos, análisis y red carpet. Se resuelve con failover entre los cuatro servidores del sitio.",
+      "releaseInfo": "En directo"
     },
     {
-      "id": "tv:futbolibre:evento:clasico-nacional",
-      "name": "Clásico Nacional",
-      "category": "eventos",
-      "genres": ["Fútbol", "Eventos"],
-      "description": "El partido más visto de la liga, con señales de respaldo automáticas.",
-      "releaseInfo": "Evento en directo"
+      "id": "tv:streamcorner:nfl/nfl-network",
+      "name": "NFL Network · StreamCorner",
+      "category": "canales",
+      "genres": ["Deportes", "Canales"],
+      "description": "La misma señal desde StreamCorner, que publica varias fuentes por evento (AVAILABLE SOURCES).",
+      "releaseInfo": "En directo"
+    },
+    {
+      "id": "tv:damitv:cr-new-zealand-india",
+      "name": "Nueva Zelanda vs India (cricket)",
+      "category": "deportes",
+      "genres": ["Deportes", "Eventos"],
+      "description": "4º T20 en directo desde DAMITV, con las señales que anuncia su API pública (Willow, TNT, Sky…).",
+      "releaseInfo": "En directo"
     }
   ]
 }

@@ -5,6 +5,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.tanasi.streamflix.data.model.StreamSource
+import com.tanasi.streamflix.data.model.SubtitleTrack
 import com.tanasi.streamflix.util.AppLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -24,6 +25,12 @@ data class FailoverState(
     val switching: Boolean = false,
     val exhausted: Boolean = false,
     val fatalMessage: String? = null,
+    /**
+     * Último error del reproductor (`ERROR_CODE_…`). Se enseña al usuario
+     * cuando se agotan las fuentes: sin esto la pantalla quedaba en negro sin
+     * ninguna pista de por qué no reproducía.
+     */
+    val lastError: String? = null,
 ) {
     val hasPrevious: Boolean get() = position > 1
 }
@@ -49,6 +56,11 @@ class FailoverController(
     private val planner: FailoverPlanner,
     private val scope: CoroutineScope,
     private val stallTimeoutMs: Long = 12_000,
+    /**
+     * Subtítulos del título. Se aplican al **crear** cada `MediaSource`, así
+     * que un failover conserva las pistas sin reconstruir el reproductor.
+     */
+    private val subtitles: List<SubtitleTrack> = emptyList(),
 ) : Player.Listener {
 
     private val mutableState = MutableStateFlow(FailoverState(total = planner.total))
@@ -83,11 +95,12 @@ class FailoverController(
         if (!FailoverRules.shouldFailover(error.errorCode)) {
             /* DRM roto: cambiar de CDN no arregla nada, se avisa al usuario. */
             mutableState.update {
-                it.copy(switching = false, fatalMessage = error.errorCodeName)
+                it.copy(switching = false, fatalMessage = error.errorCodeName, lastError = error.errorCodeName)
             }
             return
         }
 
+        mutableState.update { it.copy(lastError = error.errorCodeName) }
         advance(FailoverRules.reasonFor(error.errorCode), error.errorCodeName)
     }
 
@@ -178,7 +191,7 @@ class FailoverController(
             return
         }
 
-        player.setMediaSource(MediaSources.mediaSource(context, source))
+        player.setMediaSource(MediaSources.mediaSource(context, source, subtitles))
         player.prepare()
         if (positionMs > 0L) player.seekTo(positionMs)
         player.playWhenReady = wasPlaying
@@ -209,6 +222,7 @@ class FailoverController(
             if (released) return@launch
             if (player.playbackState != Player.STATE_READY) {
                 AppLog.w("stall de %d ms, saltando de fuente", stallTimeoutMs)
+                mutableState.update { it.copy(lastError = "sin datos en ${stallTimeoutMs}ms") }
                 advance(FailoverReason.STALL, "sin datos en ${stallTimeoutMs}ms")
             }
         }

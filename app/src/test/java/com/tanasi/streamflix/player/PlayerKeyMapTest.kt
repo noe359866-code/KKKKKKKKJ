@@ -44,6 +44,21 @@ class PlayerKeyMapTest {
     }
 
     @Test
+    fun `CH mas y CH menos cambian de canal`() {
+        assertEquals(PlayerKeyAction.CHANNEL_UP, PlayerKeyMap.actionFor(Key.ChannelUp))
+        assertEquals(PlayerKeyAction.CHANNEL_DOWN, PlayerKeyMap.actionFor(Key.ChannelDown))
+    }
+
+    @Test
+    fun `los mandos sin CH usan media next y previous`() {
+        /* Muchos TV box y barras de sonido no tienen `CH+`: sus botones de
+         * pista emiten `MEDIA_NEXT`/`MEDIA_PREVIOUS` y en un directo significan
+         * lo mismo. Sin esto, esos mandos no pueden zapear. */
+        assertEquals(PlayerKeyAction.CHANNEL_UP, PlayerKeyMap.actionFor(Key.MediaNext))
+        assertEquals(PlayerKeyAction.CHANNEL_DOWN, PlayerKeyMap.actionFor(Key.MediaPrevious))
+    }
+
+    @Test
     fun `el resto de teclas no son del reproductor`() {
         assertNull(PlayerKeyMap.actionFor(Key.Q))
         assertNull(PlayerKeyMap.actionFor(Key.Back))

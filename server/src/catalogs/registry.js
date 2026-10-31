@@ -18,7 +18,7 @@
  *     "order": 2,                   // orden en el manifest y en el Home
  *     "genres": ["Action"],         // opcional: alimenta el extra genre=
  *     "source": {
- *       "kind": "cinemeta",         // cinemeta | local
+ *       "kind": "cinemeta",         // cinemeta | local | remote | live
  *       "type": "movie",            // tipo real en Cinemeta (anime -> series)
  *       "id": "top",
  *       "genre": "Animation"        // opcional: filtro fijo del origen
@@ -33,7 +33,7 @@
  * rompe el addon):
  *   - `type` debe ser uno de los tipos que declara el addon (config.addon.types);
  *   - `id` sólo admite letras, números, guion y guion bajo;
- *   - `source.kind` debe ser `cinemeta` o `local`;
+ *   - `source.kind` debe ser `cinemeta`, `local`, `remote` o `live`;
  *   - `source.type`, si existe, debe estar en CINEMETA_TYPES.
  */
 
@@ -46,7 +46,9 @@ import { createLogger } from '../lib/logger.js';
 
 const log = createLogger('catalogs');
 
-const KINDS = new Set(['cinemeta', 'local', 'remote']);
+const KINDS = new Set(['cinemeta', 'local', 'remote', 'live']);
+/*: Secciones de la estantería que construye `scrapers/_liveshelf.py`. */
+const LIVE_SECTIONS = new Set(['channels', 'events']);
 const SHAPES = new Set(['poster', 'landscape']);
 const ID_RE = /^[a-zA-Z0-9_-]{1,48}$/;
 
@@ -65,11 +67,27 @@ export const DEFAULT_CATALOGS = Object.freeze([
     source: { kind: 'local' },
   },
   {
+    type: 'tv',
+    id: 'canales',
+    name: 'TV en vivo · Canales',
+    posterShape: 'landscape',
+    order: 2,
+    source: { kind: 'live', section: 'channels' },
+  },
+  {
+    type: 'tv',
+    id: 'agenda',
+    name: 'Agenda deportiva',
+    posterShape: 'landscape',
+    order: 3,
+    source: { kind: 'live', section: 'events' },
+  },
+  {
     type: 'movie',
     id: 'top',
     name: 'Películas populares',
     posterShape: 'poster',
-    order: 2,
+    order: 4,
     source: { kind: 'cinemeta', type: 'movie', id: 'top' },
   },
   {
@@ -142,6 +160,11 @@ export function normalizeCatalog(raw, index = 0) {
     source.limit = Number.isInteger(raw.source.limit) && raw.source.limit > 0
       ? Math.min(raw.source.limit, config.catalogs.pageSize)
       : config.catalogs.pageSize;
+  } else if (sourceKind === 'live') {
+    /* Canales y agenda se recogen de los proveedores de directo; la fila sólo
+     * elige qué sección publica. */
+    const section = String(raw.source.section || 'channels').toLowerCase().trim();
+    source.section = LIVE_SECTIONS.has(section) ? section : 'channels';
   } else if (sourceKind === 'cinemeta') {
     const sourceType = String(raw.source.type || type).toLowerCase().trim();
     if (!CINEMETA_TYPES.includes(sourceType)) {
@@ -306,6 +329,11 @@ export function manifestCatalogs() {
       id: catalog.id,
       name: catalog.name,
       posterShape: catalog.posterShape,
+      /* De dónde salen las metas: `cinemeta`, `local`, `live` o `remote`. Es un
+       * campo extra del protocolo (Stremio ignora lo que no conoce) y la app lo
+       * usa para recomendar sólo títulos de Cinemeta en el buscador. El motor
+       * embebido ya publica el mismo campo. */
+      source: catalog.source?.kind || null,
       extra,
     };
   });

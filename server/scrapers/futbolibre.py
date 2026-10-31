@@ -82,6 +82,7 @@ from _htmlkit import (
     host_of,
     http_get,
     http_get_json,
+    media_kind_of_url,
     pretty_name,
     slugify,
     looks_like_player,
@@ -578,6 +579,9 @@ def build_streams(name: str, signals: List[Dict[str, Any]],
                 user_agent=user_agent,
                 not_web_ready=False,
                 is_live=True,
+                # HLS o MP4 según la URL: el cliente lo necesita para elegir el
+                # `MediaSource` cuando el CDN no pone extensión.
+                media_type=media_kind_of_url(signal["url"]),
             )
         )
     return streams

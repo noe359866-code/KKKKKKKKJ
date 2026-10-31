@@ -67,7 +67,6 @@ class CatalogFeedTest {
 
         /* El endpoint de streams es /stream/anime/tt…: el tipo publicado manda. */
         assertEquals("anime", entry.type)
-        assertEquals("anime", entry.art)
     }
 
     @Test
@@ -76,7 +75,7 @@ class CatalogFeedTest {
         val entry = meta(id = "tv:demo:espn-1", type = "tv", releaseInfo = "En directo").toEntry(descriptor)
 
         assertTrue(entry.isLive)
-        assertEquals("live", entry.art)
+        assertEquals("tv", entry.type)
         assertEquals(RowAspect.Landscape, descriptor.rowAspect)
     }
 
@@ -107,7 +106,6 @@ class CatalogFeedTest {
 
         assertEquals("Streaming Catalogs", entry.provider)
         assertEquals("movie", entry.type)
-        assertEquals("movies", entry.art)
     }
 
     @Test
@@ -171,5 +169,32 @@ class CatalogFeedTest {
         val entry = meta(id = "tt0133093", type = "movie", releaseInfo = "1999").toEntry()
         assertFalse(entry.id.contains(":"))
         assertFalse(entry.isLive)
+    }
+
+    @Test
+    fun `la etiqueta del boton de reproducir es T1 E2`() {
+        assertEquals("T1 E2", EpisodeOption(season = 1, episode = 2).playLabel)
+        /* Temporada 0 (especiales) no inventa una T. */
+        assertEquals("E3", EpisodeOption(season = 0, episode = 3).playLabel)
+        assertEquals("E3", EpisodeOption(season = 0, episode = 3).shortLabel)
+    }
+
+    @Test
+    fun `la miniatura del episodio llega a la tarjeta de la ficha`() {
+        val groups = listOf(
+            RemoteVideo(
+                id = "tt0944947:1:1",
+                season = 1,
+                episode = 1,
+                name = "Winter Is Coming",
+                overview = "El Norte recuerda.",
+                thumbnail = "https://images.metahub.space/still/medium/tt0944947/img",
+            ),
+        ).toSeasonGroups()
+
+        val episode = groups.first().episodes.first()
+        assertEquals("https://images.metahub.space/still/medium/tt0944947/img", episode.thumbnail)
+        assertEquals("Winter Is Coming", episode.name)
+        assertEquals("El Norte recuerda.", episode.overview)
     }
 }

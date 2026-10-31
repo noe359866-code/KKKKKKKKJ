@@ -20,6 +20,7 @@ import { createRateLimiter } from './middleware/rateLimit.js';
 
 import { manifestRouter } from './routes/manifest.js';
 import { streamRouter } from './routes/stream.js';
+import { subtitlesRouter } from './routes/subtitles.js';
 import { healthRouter } from './routes/health.js';
 import { adminRouter } from './routes/admin.js';
 import { proxyRouter } from './routes/proxy.js';
@@ -66,7 +67,7 @@ export function createApp(options = {}) {
   app.use(
     createRateLimiter({
       max: options.rateLimit === undefined ? config.http.rateLimitMax : options.rateLimit,
-      pathPrefixes: options.rateLimit === 0 ? null : ['/stream', '/proxy', '/catalog', '/meta'],
+      pathPrefixes: options.rateLimit === 0 ? null : ['/stream', '/subtitles', '/proxy', '/catalog', '/meta'],
     }),
   );
 
@@ -76,6 +77,7 @@ export function createApp(options = {}) {
   app.use(manifestRouter);
   app.use(catalogRouter);
   app.use(streamRouter);
+  app.use(subtitlesRouter);
   app.use(healthRouter);
   app.use(adminRouter);
   app.use(proxyRouter);

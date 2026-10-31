@@ -153,4 +153,10 @@ data class StremioPreset(
     val name: String,
     val description: String,
     val manifestUrl: String,
+    /**
+     * `true` cuando la app ya publica esos catálogos por su cuenta (Cinemeta a
+     * través del motor local). Se sigue ofreciendo en Ajustes, pero no se
+     * instala solo para no duplicar filas ni peticiones.
+     */
+    val bundled: Boolean = false,
 )

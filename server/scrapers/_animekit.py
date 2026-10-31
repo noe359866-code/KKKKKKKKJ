@@ -41,6 +41,7 @@ from _htmlkit import (
     ANCHOR_RE,
     HREF_RE,
     clean_title,
+    guess_quality,
     normalize,
     pretty_name,
     slugify,
@@ -416,31 +417,92 @@ def search_hits(html: str, page_url: str, path_hint: str) -> List[Dict[str, str]
     return hits
 
 
+#: Palabras que los sitios añaden al título y que no identifican la obra.
+MATCH_NOISE = frozenset({
+    "latino", "lat", "castellano", "esp", "espanol", "español", "subtitulado",
+    "sub", "subs", "subbed", "dubbed", "dual", "audio", "hd", "fhd", "uhd",
+    "4k", "1080p", "720p", "480p", "360p", "cam", "ts", "online", "gratis",
+    "completa", "completo", "ver", "pelicula", "peliculas", "movie", "film",
+    "mega", "torrent", "descargar", "bluray", "bdrip", "webrip", "hdtv",
+})
+
+#: Puntuación a partir de la cual no merece la pena seguir probando buscadores.
+STRONG_MATCH = 70
+
+YEAR_RE = re.compile(r"^(?:19|20)\d{2}$")
+
+
+def match_tokens(value: str) -> List[str]:
+    """Texto → tokens significativos (sin etiquetas de release ni año)."""
+    tokens = [part for part in slugify(value or "").split("-") if part]
+    keep = [
+        token for token in tokens
+        if token not in MATCH_NOISE and not YEAR_RE.match(token)
+    ]
+    return keep or tokens
+
+
+def match_score(query: str, hit: Dict[str, str]) -> int:
+    """0–100: cuánto se parece un resultado del buscador al título pedido.
+
+    Compara **por tokens**, no por caracteres: así `"up"` no coincide con
+    `"upload"` y `"dune"` no gana a `"Dune: Parte Dos"` por accidente. El 100 es
+    título idéntico; 80+ que el resultado empieza por lo pedido (la secuela o la
+    temporada del título correcto); 55–75 una coincidencia parcial razonable.
+    """
+    wanted = match_tokens(query)
+    if not wanted:
+        return 0
+    candidates = [match_tokens(hit.get("title", "")), match_tokens(hit.get("slug", ""))]
+    wanted_compact = "".join(wanted)
+    best = 0
+    for tokens in candidates:
+        if not tokens:
+            continue
+        if tokens == wanted:
+            return 100
+        if "".join(tokens) == wanted_compact:
+            best = max(best, 98)
+            continue
+        prefix = len(tokens) >= len(wanted) and tokens[:len(wanted)] == wanted
+        if prefix:
+            # Cuantos menos tokens sobren, más probable que sea la misma obra.
+            best = max(best, 84 if len(tokens) == len(wanted) else 80)
+            continue
+        overlap = len(set(wanted) & set(tokens))
+        ratio = overlap / float(len(set(wanted)))
+        if tokens[0] == wanted[0] and ratio >= 0.5:
+            best = max(best, 55 + int(20 * ratio))
+            continue
+        if len(wanted_compact) >= 5 and wanted_compact in "".join(tokens):
+            best = max(best, 50)
+    return best
+
+
+def best_match(
+    query: str, hits: Iterable[Dict[str, str]]
+) -> Tuple[int, Optional[Dict[str, str]]]:
+    """``(puntuación, resultado)`` del mejor candidato, o ``(0, None)``.
+
+    Desempate: a igual puntuación gana el título con menos palabras de más (el
+    resultado "Dune" antes que "Dune: Parte Dos" cuando se pide "Dune").
+    """
+    scored: List[Tuple[int, int, int, Dict[str, str]]] = []
+    for index, hit in enumerate(hits or []):
+        score = match_score(query, hit)
+        if not score:
+            continue
+        extra = max(0, len(match_tokens(hit.get("title", ""))) - len(match_tokens(query)))
+        scored.append((score, -extra, -index, hit))
+    if not scored:
+        return 0, None
+    scored.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+    return scored[0][0], scored[0][3]
+
+
 def best_hit(query: str, hits: Iterable[Dict[str, str]]) -> Optional[Dict[str, str]]:
     """Mejor coincidencia de una búsqueda por nombre."""
-    wanted = slugify(query)
-    if not wanted or not hits:
-        return None
-    compact = re.sub(r"[^a-z0-9]", "", wanted)
-    scored: List[Tuple[int, Dict[str, str]]] = []
-    for hit in hits:
-        slug = hit["slug"]
-        title = slugify(hit.get("title", ""))
-        compact_title = re.sub(r"[^a-z0-9]", "", title)
-        if slug == wanted or compact_title == compact:
-            score = 100
-        elif slug.startswith(wanted) or title.startswith(wanted) \
-                or compact_title.startswith(compact):
-            score = 70
-        elif wanted in slug or (compact and compact in compact_title):
-            score = 40
-        else:
-            score = 0
-        if score:
-            scored.append((score, hit))
-    if not scored:
-        return None
-    return max(scored, key=lambda pair: pair[0])[1]
+    return best_match(query, hits)[1]
 
 
 def normalize_query(value: str) -> str:
@@ -480,8 +542,10 @@ def build_streams(
                 user_agent=user_agent,
                 not_web_ready=False,
                 is_live=False,
-                # Extra: el addon lo usa como clave de agrupación de binge-watching.
-                quality=None,
+                # El addon ordena y muestra la calidad; si el sitio no la dice,
+                # se deduce de la etiqueta del servidor y de la URL.
+                quality=guess_quality(server, signal.get("quality"), signal["url"]),
+                media_type=signal.get("media_type"),
             )
         )
     return streams

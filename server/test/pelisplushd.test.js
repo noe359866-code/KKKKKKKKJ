@@ -35,11 +35,21 @@ let fixture;
 let env;
 
 before(async () => {
-  fixture = await startFixture((base) => classicSiteRoutes(base, {
-    moviePath: '/pelicula/spider-man-de-regreso-a-casa',
-    seriesPath: '/serie/the-last-of-us',
-    searchPath: '/search',
-  }));
+  fixture = await startFixture((base) => {
+    const routes = classicSiteRoutes(base, {
+      moviePath: '/pelicula/spider-man-de-regreso-a-casa',
+      seriesPath: '/serie/the-last-of-us',
+      searchPath: '/search',
+    });
+    /* Sección de anime del sitio: ficha propia y capítulos en `/anime/…`. */
+    routes['/anime/naruto'] = routes['/pelicula/spider-man-de-regreso-a-casa']
+      .replace('Spider-Man: De regreso a casa (2017)', 'Naruto (2002)')
+      .replace('<h1>Spider-Man: De regreso a casa</h1>', '<h1>Naruto</h1>');
+    routes['/anime/naruto/temporada/1/capitulo/5'] =
+      routes['/serie/the-last-of-us/temporada/1/capitulo/2']
+        .replace('The Last of Us — Episodio 2', 'Naruto — Episodio 5');
+    return routes;
+  });
   env = { ...SITE, PELISPLUSHD_BASE: fixture.base };
 });
 
@@ -190,4 +200,25 @@ test('un id IMDb sin clave TMDB se degrada sin romperse', async () => {
   assert.deepEqual(body.streams, []);
   assert.equal(reasonOf(body), 'no_id');
   assert.equal(body.meta.imdb, 'tt0145487');
+});
+
+test('sección de anime: la ficha `/anime/<slug>` abre la película', async () => {
+  const { body } = await runScraper(SCRIPT, ask('pelisplushd:naruto'), env);
+
+  assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
+  assert.equal(body.meta.page, `${fixture.base}/anime/naruto`);
+  assert.ok(hasUrl(body, 'cdn.example/sw/index.m3u8'), urlsOf(body).join(' '));
+});
+
+test('sección de anime: el capítulo vive en `/anime/<slug>/temporada/…`', async () => {
+  const { body } = await runScraper(SCRIPT, {
+    type: 'series',
+    id: 'pelisplushd:naruto:1:5',
+    provider: 'pelisplushd',
+    timeoutMs: 8000,
+  }, env);
+
+  assert.equal(reasonOf(body), undefined, JSON.stringify(body.meta));
+  assert.equal(body.meta.page, `${fixture.base}/anime/naruto/temporada/1/capitulo/5`);
+  assert.match(body.streams[0].name, /· T1 E5$/);
 });

@@ -40,12 +40,28 @@ class RoutingContentClient(
     private fun current(): ContentClient = if (settings.autonomous) embedded else remote
 
     override suspend fun catalogs(baseUrl: String): List<CatalogDescriptor> {
-        val baseCatalogs = current().catalogs(baseUrl)
+        /* Un motor caído no debe dejar el Home vacío si hay addons de Stremio
+         * instalados: se pierden las filas del motor, no las de los addons. */
+        val baseCatalogs = try {
+            current().catalogs(baseUrl)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            emptyList()
+        }
         val addons = addonManager?.getEnabledAddons().orEmpty()
         val addonCatalogs = if (stremioClient != null && addons.isNotEmpty()) {
-            stremioClient.getCatalogs(addons)
+            try {
+                stremioClient.getCatalogs(addons)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                emptyList()
+            }
         } else emptyList()
-        return baseCatalogs + addonCatalogs
+        /* El orden lo fija la fuente: Cinemeta 0..n (arte de calidad, va
+         * primero), después la TV en vivo y los addons. */
+        return (baseCatalogs + addonCatalogs).sortedBy { it.order }
     }
 
     override suspend fun catalog(
@@ -132,6 +148,10 @@ class RoutingContentClient(
         StreamsResponse(
             streams = merged,
             cacheMaxAge = baseResponse.cacheMaxAge,
+            /* Los subtítulos son del addon propio (los de terceros se piden al
+             * recurso `subtitles`, que no usamos aquí): se conservan al fusionar
+             * o el reproductor se quedaría sin pistas al activar un addon. */
+            subtitles = baseResponse.subtitles,
         )
     }
 }

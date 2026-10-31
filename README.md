@@ -5,7 +5,7 @@
   <br />
   <strong>🔄 Reborn Version</strong> - Community continuation of the original Streamflix project
   <br />
-  An open-source Android TV and mobile app for educational streaming interface, made with Android Studio, in Kotlin
+  An open-source **Android TV** app for an educational streaming interface, made with Android Studio, in Kotlin
   <br />
   <a href="https://github.com/noe359866-code/KKKKKKKKJ/actions/workflows/autonomous-checks.yml">
     <strong>Autonomous APK builds (this fork) »</strong>
@@ -40,7 +40,7 @@
 ## About the project
 
 <p align="center">
-  <img src="./.github/docs/screenshot.png" alt="Streamflix Preview">
+  <img src="./app/src/main/res/drawable-nodpi/tv_banner.png" alt="Streamflix para Android TV" width="640">
 </p>
 
 **Streamflix Reborn** is an independent continuation of the original Streamflix project created by [Lory-Stan TANASI](https://github.com/stantanasi). This reborn version maintains the same educational purpose and functionality while ensuring continued development and support.
@@ -52,7 +52,7 @@
 - **Enhanced Support**: Continued development and bug fixes by an independent developer
 - **Respectful Fork**: Built with full respect for the original creator's work
 
-Streamflix Reborn is an open-source Android TV and mobile app that provides a user interface for accessing publicly available streaming content from various third-party providers.
+Streamflix Reborn is an open-source Android TV app that provides a user interface for accessing publicly available streaming content from various third-party providers.
 
 This app is designed for educational purposes and personal use only. Users are responsible for ensuring they have proper authorization to access any content they view through this application.
 
@@ -68,16 +68,23 @@ For a production build, configure your own release signing as described below.
 
 ### Features
 
-- **Autonomous by default:** Python 3.11 and the twelve real provider scrapers run inside the APK; no Node.js server, IP address or backend deployment required
-- Direct provider catalogues, local episode discovery and on-device cache; optional Cinemeta catalogues
+- **Autonomous by default:** Python 3.11 and every real provider scraper run inside the APK; no Node.js server, IP address or backend deployment required
+- Cinemeta catalogues **on by default** (real 2:3 posters and 16:9 backdrops), followed by the open
+  live channels, local episode discovery and on-device cache
+- The scrapers are **stream resolvers only**: they publish no catalogue rows, they just
+  resolve the video when a title or episode is opened
+- *Streaming Catalogs* (Netflix, Disney+, HBO Max, Prime Video…) installed automatically on first launch
 - Optional external-server mode remains available in Settings
 - Open-source and ad-free interface
 - Aggregates content from multiple third-party providers
 - No account required for the app interface
 - Educational and personal use only
-- One APK with an adaptive UI: D-Pad-first on Android TV, touch-first on phones
+- **Android TV only**: D-Pad-first UI, no phone layout, no touch gestures
+- **Perfiles** al estilo Apple TV: avatares, hasta 6, y un "Seguir viendo" distinto por perfil
 - Multiple providers, with automatic silent failover between their streams
-- Home with horizontal carousels for Películas, Series, Anime and TV en Vivo
+- Home with horizontal carousels, starting with open live channels that play with no setup (iptv-org)
+- **Área de deportes** al estilo Apple TV: partidos de hoy con liga, equipos, hora y EN VIVO
+  (agenda de los scrapers en vivo + canales deportivos), pintados como marcador, no como póster
 
 ### Built with
 
@@ -87,7 +94,7 @@ For a production build, configure your own release signing as described below.
 - [Media3 ExoPlayer](https://developer.android.com/media/media3/exoplayer)
 - [OkHttp](https://square.github.io/okhttp) + kotlinx.serialization
 - MVVM architecture (`ViewModel` + `StateFlow`)
-- One APK for phones and Android TV
+- Android TV (Leanback) only, `LEANBACK_LAUNCHER`
 
 
 ## Stremio addon backend (Node.js)
@@ -119,6 +126,10 @@ through the official Addon protocol:
   stale-while-revalidate: a cached live `.m3u8` is served in a few milliseconds.
 - Python scraper bridge (`child_process.spawn`) invoked only on cache misses.
 - Twelve real providers ship in `server/scrapers/`, ordered by priority.
+- The shared kits (`_htmlkit`, `_hosters`, `_peliskit`, `_animekit`) carry the resilience:
+  a bounded retry on 429/5xx, charset recovery, stream quality inferred from the site's own
+  labels and title matching by tokens instead of characters — one fix there improves every
+  provider at once.
 
   **Live** (`kind: "live"`, requested as `tv:<id>`):
 
@@ -154,7 +165,16 @@ through the official Addon protocol:
   - `peliculasflix.py` — [peliculasflix.co](https://peliculasflix.co/) (15):
     `peliculasflix:<slug>` (own GraphQL API);
   - `pelisjuanita.py` — [pelisjuanita.org](https://pelisjuanita.org/) (16):
-    `pelisjuanita:spider-man-un-nuevo-dia-2026`;
+    `pelisjuanita:spider-man-un-nuevo-dia-2026`, and its own sections
+    (`/anime/<slug>`, `/wwe/<slug>`, `/serie/<slug>/1x03`); when the ficha only
+    points at the site's own `/player/<id>` page, the scraper opens it and reads
+    the embeds inside;
+  - `novahd.py` — [novahd.cc](https://novahd.cc/) (17): `novahd:155`,
+    `novahd:show:1396:1:1`, `tt0468569` or a title. It talks to NOVA's own
+    `/api/sources?tmdbId=…&type=movie|show` API and publishes **every audio
+    language of the title as its own labelled stream** (`NOVA · Español ·
+    Swift · 1080p`), best language and quality first; IMDb ids are translated
+    through Cinemeta's `moviedb_id`, so no TMDB key is needed;
 
   The anime and movie providers return **one stream per resolved server**
   (Streamwish, VOE, Filemoon, Streamtape…), in the site's order, so the
@@ -207,95 +227,177 @@ requirements, offline tests and limitations.
 | Embedded scraping | Chaquopy `17.1.0`, Python `3.11`, standard library only |
 | SDK | `minSdk 24`, `targetSdk 35`, `compileSdk 36`, JVM 17 |
 
-### Visual design
+### Arte: cero imágenes de relleno
 
-Three references, each doing one job:
+La app **no empaqueta ninguna foto, póster ni fondo de demostración**. Todo lo
+que se ve viene de la red:
 
-| Reference | What is borrowed |
-| --- | --- |
-| **Apple TV+** | a cinematic hero whose backdrop follows the focus, with a slow Ken Burns drift and three actions (Reproducir / Más información / Cambiar servidor) |
-| **Netflix** | fluid horizontal carousels, 2:3 poster cards, focus scale 1.08x and a floating "Continuar viendo" row |
-| **Prime Video** | floating state badges on the artwork (EN VIVO, quality, provider) and a quick-look details panel before playback |
-
-Everything is Compose (no XML layouts): `ui/home/HeroBanner.kt`,
-`ui/components/MediaCards.kt`, `ui/components/MediaRow.kt`,
-`ui/components/Badges.kt`, `ui/details/DetailsPanel.kt`.
-
-![Home design preview: Android TV and mobile](docs/design-preview.jpg)
-
-*(Static render of the same colours, sizes and artwork the Compose code uses —
-useful as a reference while the APK cannot be built in this environment.)*
-
-**Hero geometry (TV).** Two different numbers: the backdrop box is 0.78 of the
-screen height, but the text block is anchored at a 0.62 baseline, and that is
-exactly where the first shelf starts. That leaves the CTAs clear, one full 16:9
-row visible and the next row's title peeking — the visual cue to press DOWN.
-On phones the hero is simply the first cell of the list (0.62 of the screen).
-
-**Hero.** `HomeCatalog` + `HomeViewModel` keep a `Spotlight`: the card currently
-focused (TV) or the featured title (phone). Focusing a card swaps the backdrop
-with a 420 ms crossfade, so the hero reads like it is following intent rather
-than looping slides. The backdrop is one of four 1280×720 stills shipped in
-`res/drawable-nodpi` (`art_movies`, `art_series`, `art_anime`, `art_live`), used
-when a title has no 16:9 artwork of its own — which is the normal case for
-provider catalogues (they publish 2:3 posters only).
-
-**Cards.** One shared `ContentCard` skeleton renders both proportions, and the
-row decides which one it wants (`aspect: "poster" | "landscape"` in the
-catalogue JSON):
-
-| Row | Aspect | Content |
+| Qué | De dónde sale | Si falta |
 | --- | --- | --- |
-| Continuar viendo | 16:9 | progress bar under the artwork |
-| Películas populares | 2:3 | poster |
-| Series que enganchan | 2:3 | poster |
-| Anime en emisión | 2:3 | poster |
-| Deportes en directo | 16:9 | live channel tile |
+| Póster 2:3 | `poster` del catálogo (Cinemeta, addon, página del proveedor) | tarjeta generada: degradado determinista + iniciales + título (`ui/components/Images.kt`) |
+| Backdrop 16:9 | `backdrop` del catálogo | póster desenfocado; si tampoco hay, tarjeta generada |
+| Fondo del hero | backdrop → póster desenfocado | tarjeta generada a pantalla completa |
+| Logo de canal | `tvg-logo` de la lista, o el póster del proveedor | tarjeta generada |
 
-Focus in TV = scale 1.08 + elevation + the neon ring (`Modifier.tvFocusGlow`,
-cyan on purpose: red is already "live/brand"). The title under a card fades in
-with the focus, so an unfocused shelf stays clean.
+Regla dura: **nunca una foto de stock**. `ArtworkFallback` dibuja el degradado y
+el título con la semilla del propio título, así que una fila sin arte remoto se
+sigue leyendo y ninguna tarjeta queda en gris. Los cuatro JPEG de muestra que
+traía el proyecto (`art_movies`, `art_series`, `art_anime`, `art_live`), el
+`Artwork.kt` que los mapeaba y la captura de diseño del README se eliminaron.
 
-**Badges.** `LiveBadge` (pulsing dot), `TrendingBadge` (TOP 10),
-`QualityBadge` (4K in neon), provider chip at the bottom and a progress bar for
-resumed titles. During playback the player shows `FailoverBadge` with the source
-actually on screen ("Fuente 2 de 5"), which is where that number is truthful.
+### Diseño: Apple TV, de principio a fin
 
-**Details before playback.** Tapping a card opens `DetailsDialog`, a `Dialog`
-(its own window, so the D-Pad cannot escape to the shelf behind): backdrop
-header with rating/quality/genres, synopsis, and the **server selector** — the
-list of sources the addon returned, in its priority order, already loaded
-through `StreamsRepository`. The chosen index travels to the player as
-`PlaybackRequest.startIndex`, and the silent failover continues downward from
-there. "Cambiar servidor" in the hero opens this same panel with the focus
-already on the list.
+La interfaz copia el lenguaje de la app **Apple TV (tvOS)**, no el de Netflix.
+Cuatro reglas que se ven en todas las pantallas:
 
-### One APK, two form factors
+| Regla | Cómo se aplica |
+| --- | --- |
+| **Negro puro** | `#000000` de fondo (no un gris azulado): la foto es lo único que brilla |
+| **El acento es el blanco** | botones primarios en cápsula blanca con texto negro; el resto, vidrio translúcido al 12 % |
+| **Un solo rojo** | sólo para "EN VIVO"; ni el foco ni los títulos usan rojo |
+| **Foco fino** | anillo blanco de 2 dp + halo mínimo + escala 1,05 (tvOS no usa neón) |
 
-`core/DeviceProfile.kt` decides once (in `Application.onCreate`) whether the app
-is running on a TV:
+Geometría y jerarquía:
 
-```text
-UI_MODE_TYPE_TELEVISION               -> TV
-FEATURE_LEANBACK or FEATURE_TELEVISION and no touchscreen -> TV
-otherwise                             -> touch
+- **Hero** a sangre, anclado abajo a la izquierda: estado, título en 44 sp con
+  interletraje negativo, línea de metadatos (`★ 8.2 · 4K · 2026 · 1 h 52 min`),
+  sinopsis de tres líneas y dos cápsulas — **▶ Reproducir** (blanca, la única
+  clara de la pantalla) y *Más información*. No hay botón de *Fuentes*: el
+  reproductor elige servidor por su cuenta.
+- **Deriva Ken Burns** del backdrop (escala 1 → 1,06 en 20 s) en una animación
+  infinita sobre `graphicsLayer`: no recompone, así que un TV box barato no sufre.
+- **Filas** con encabezado mínimo (sólo el nombre, 22 sp). Se eliminaron la barra
+  de acento, el contador de títulos y la etiqueta "16:9" que sólo añadían ruido.
+- **Tarjetas** de 10 dp de radio; el título debajo siempre se lee (atenuado al
+  62 % y blanco pleno al enfocar), en vez de aparecer de la nada.
+- **Canales en vivo**: el logotipo se pinta con `ContentScale.Fit` para no
+  recortar la marca; el cine se recorta a sangre.
+
+### Ficha del título: página de película de Apple TV
+
+Al abrir una tarjeta no se elige servidor: se ve la ficha y se pulsa
+**Reproducir**. El reproductor pide las fuentes y salta solo a la siguiente si
+una falla.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│              [backdrop a sangre, dos velos]                  │
+│  SERIE · 2011 · 8,9 · 4K                                     │
+│  Juego de tronos                                             │
+│  Sinopsis de tres líneas…                                    │
+│  ( ▶ Reproducir · T1 E2 )    ( Cerrar )                      │
+│  Buscamos la mejor fuente; si falla, pasamos a la siguiente. │
+├──────────────────────────────────────────────────────────────┤
+│  Episodios                             ( T1 )( T2 )( T3 )   │
+│  ┌────────┐ ┌────────┐ ┌────────┐                            │
+│  │ [img]  │ │ [img]  │ │ [img]  │  ← 16:9 con T1 E2 y título │
+│  └────────┘ └────────┘ └────────┘                            │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-The result is published through `LocalDeviceProfile`, so every composable reads
-it without touching the `Context`:
+- **Botón principal**: cápsula blanca con el triángulo dibujado en `Canvas` y el
+  capítulo elegido detrás (`Reproducir · T1 E2`); el foco arranca ahí.
+- **Episodios**: tarjetas 16:9 con miniatura real de Cinemeta (si no hay, se
+  dibuja el número, nunca una imagen de otro capítulo), etiqueta `T1 E2`, nombre
+  y sinopsis corta. La elegida lleva borde blanco y ✓; la fila se desplaza sola
+  al cambiar de temporada.
+- **Temporadas** en píldoras a la derecha del encabezado (sólo si hay más de una).
+- **Sin lista publicada**: dos contadores `− 1 +` para temporada y episodio y una
+  cápsula *Ver este episodio* — nada de teclados en la TV.
+- Se eliminaron la lista de servidores, el chip "elegido" y el `AlertDialog` de
+  reintento: la ficha no pregunta nada que el reproductor pueda resolver.
 
-- **TV** — larger cards (196×292 dp), 48 dp side margins, typography scaled
-  ×1.15–1.25, and every card draws a red focus ring plus an 8 % scale-up when
-  the D-Pad lands on it. The first card of the top row grabs focus on purpose:
-  without it a remote does nothing until the user guesses to press a key. The
-  player overlay chips (Fuentes / Volver) get the same treatment.
-- **Touch** — compact cards (128×192 dp), 16 dp margins, ripple instead of a
-  focus ring.
+Referencias de otros proyectos abiertos de TV (Jellyfin Android TV, SmartTube,
+Kodi) para lo que no se ve: foco inicial siempre definido, `Back` predecible,
+ningún gesto táctil y ningún menú contextual inalcanzable con el mando.
 
-`AndroidManifest.xml` declares `android.software.leanback` and
-`android.hardware.touchscreen` as `required="false"` and registers both
-`LAUNCHER` and `LEANBACK_LAUNCHER`, so the same APK shows up on a phone and in
-the Android TV home row.
+Todo es Compose (sin layouts XML): `ui/home/HeroBanner.kt`,
+`ui/components/MediaCards.kt`, `ui/components/MediaRow.kt`,
+`ui/components/Badges.kt`, `ui/details/DetailsPanel.kt`, `ui/theme/`.
+
+### Perfiles: ¿quién está viendo?
+
+En una tele del salón no ve lo mismo un adulto que un niño. La app tiene
+perfiles propios (no hace falta cuenta):
+
+- **Selector al arrancar** (`ui/profile/ProfileGate.kt`): avatares redondos de
+  128 dp con las iniciales y un degradado de la paleta de Apple, "Añadir perfil"
+  y **Editar** para borrar. El foco es el mismo anillo blanco que en las tarjetas.
+- **Hasta 6 perfiles**; el nombre se escribe con el teclado del sistema (Android
+  TV lo pone a pantalla completa), sin reinventarlo con una cuadrícula letra a letra.
+- **"Seguir viendo" por perfil**: al salir del reproductor se guarda la posición
+  (`WatchProgressStore`, clave por perfil) y esa fila — 16:9, con barra de
+  progreso y "1 h 00 min restantes" — aparece **la primera** en el Home del perfil
+  que entra. Por debajo de 15 s no se guarda nada; a falta de 90 s se da por vista.
+- **Cambiar de perfil** desde el avatar de la barra superior, sin cerrar la app.
+- El último perfil usado se recuerda: al encender la tele se entra directo a él.
+
+### Sólo Android TV
+
+`core/DeviceProfile.kt` es TV-only: `isTelevision = true`, `hasTouchScreen =
+false`, `requiresDpadFocus = true`. No hay ramas de móvil, ni hero de teléfono,
+ni `pointerInput`, ni rotaciones especiales.
+
+- Tarjetas grandes (200×300 dp póster / 360×203 dp 16:9), 48 dp de margen
+  lateral y tipografía ×1.15–1.25.
+- Toda tarjeta dibuja anillo de foco rojo y escala 8 % al enfocarse; el foco
+  inicial de cada pantalla está definido (hero → primera fila → rejilla).
+- `AndroidManifest.xml`: `android.software.leanback` **required="true"**,
+  `android.hardware.touchscreen` **required="false"** y un único intent-filter,
+  `LEANBACK_LAUNCHER`. El APK no aparece en el cajón de apps de un teléfono.
+- `PlayerActivity` fuerza inmersivo con `DpadKeys.applyImmersive` (rama API 30+
+  con `WindowInsetsController` y rama legacy) y el reproductor no tiene gestos
+  táctiles: play/pausa, avance, retroceso, fuentes y subtítulos por D-Pad.
+
+### Canales abiertos sin configurar nada (iptv-org)
+
+Para que la app reproduzca algo **el primer día, sin claves ni addons**, se
+sincroniza la lista pública [iptv-org/iptv](https://github.com/iptv-org/iptv)
+(emisión libre, HLS) desde el motor Python:
+
+- Filas: `iptvorg` (abiertos del mundo + México/España/Argentina/Colombia/Chile/
+  Perú), `bundled_live` con los canales fijados a mano y `canales` con **todos**
+  los que publican los proveedores de directo (ver abajo).
+- Ids `iptvorg:<base64url de la URL>`: `streams()` los decodifica y devuelve la
+  URL tal cual, con `isLive` y el `User-Agent` del reproductor. **No pasan por
+  ningún proveedor ni scraper**, así que no dependen de una web caída.
+- Sólo se aceptan `.m3u8`/`.mpd`, se descartan los marcados `[Geo-blocked]` y se
+  deduplica por URL (tope 120 por lista). Caché de 6 h y respaldo de 7 días.
+- Si la red del televisor no alcanza `api.github.com`, quedan siete canales
+  empaquetados (ADN 40, Azteca Internacional, Imagen TV, Las Estrellas,
+  TeleFormula, Teleritmo, Popcorn Central) con su URL de HLS verificada.
+
+### TV y agenda deportiva con canales (sin tocar JSON)
+
+La TV no se llena a mano: `server/scrapers/_liveshelf.py` pregunta a cada
+proveedor de directo por su índice (`load_index` / `load_channels` / `load_agenda`),
+normaliza lo que devuelve y deduplica. El mismo constructor lo usan el motor del
+APK (fila `canales` y `deportes`) y el servidor (`/catalog/tv/canales.json` y
+`/catalog/tv/agenda.json`), así que las dos mitades del proyecto enseñan la misma
+lista.
+
+```
+proveedor            qué aporta
+──────────────────   ─────────────────────────────────────────────
+futbolibre           canales del sitio + agenda del día (liga, hora, estado)
+damitv               índice de eventos: partidos con equipos y liga
+ntv · streamcorner   canales/eventos del índice (`/watch/…`, `/stream/…`)
+tvenvivo · deportelibre · livelive24   canales
+```
+
+- **Canales**: se publican todos, con su proveedor en la tarjeta y sin repetir
+  el mismo nombre dos veces (`ESPN 1` de Fútbol Libre y de DAMITV es una sola
+  tarjeta). Los canales de `live-catalog.json` van **primero** y bloquean
+  duplicados: son el subconjunto que debe salir siempre, aunque un sitio caiga.
+- **Agenda deportiva**: partidos de todos los proveedores con programación, en
+  directo primero y luego por hora. Cada tarjeta lleva liga, equipos, hora,
+  estado y el proveedor que la sirve. **No** se siembra con partidos del JSON:
+  un partido caducado sería un Play muerto.
+- Si el scrape no trae nada, la fila de canales cae a la lista curada (servidor)
+  o a la última copia buena de canales (app) y la de agenda se queda vacía:
+  mejor vacía que con el partido de ayer.
+- Caché: 20 min en el motor del APK y 15 min en el servidor (`CATALOG_LIVE_TTL_MINUTES`),
+  con 2,5 s de presupuesto por proveedor (`CATALOG_LIVE_TIMEOUT_MS`).
 
 ### Player and automatic failover
 
@@ -314,42 +416,79 @@ except for `MediaSources`, which is the only place that knows about Media3:
 4. DRM errors are the one exception: another CDN cannot fix a license, so the
    user is told instead of being bounced around (`FailoverRules`).
 
-### Player controls (D-Pad first)
+### Reproductor: diseñado sólo para Android TV
 
-The player doesn't use Media3's built-in controller (`useController = false`);
-`ui/player/PlayerControls.kt` draws its own, because the stock one documents no
-behaviour for the direction keys and can't share the app's focus language.
+El reproductor no usa el controlador de Media3 (`useController = false`):
+`ui/player/PlayerControls.kt` dibuja el suyo, con el lenguaje de la app Apple TV
+y **sin una sola línea pensada para el dedo** (no hay `pointerInput` ni barra que
+se arrastre).
 
-| Key | Action |
+Tres zonas sobre el vídeo, con velos en degradado (no cajas):
+
+| Zona | Contenido |
 | --- | --- |
-| `OK` / `ENTER` / `SPACE` / gamepad `A` | play / pause |
-| `◀` / `▶` (and `MEDIA_REWIND` / `MEDIA_FAST_FORWARD`) | −10 s / +10 s (VOD only) |
-| `▼` / `▲` | show the controls and move the focus into them |
-| `BACK` | hide the controls; a second press leaves the player |
-| tap (phone) | show / hide the controls |
+| Arriba | título en 26 sp, chip **EN VIVO** y `Fuente 2 de 5 · Gnula` |
+| Centro | botones redondos: **−10**, **▶/⏸** (blanco, 108 dp), **+10**, **Fuentes** y **CC** |
+| Abajo | barra de progreso con tiempos `0:42 / 1:58:30` y la chuleta de teclas |
 
-Details that matter on a sofa:
+Decisiones de salón:
 
-- everything fades out after **4 s** while playing, and only while the focus is
-  still on the video surface — if you are walking the buttons they stay put;
-- while the controls are hidden, `OK` pauses and the arrows seek **without**
-  bringing the UI back, so the failover and normal playback stay unobtrusive;
-- `LEFT`/`RIGHT` never steal the event when a button is focused: there they move
-  the focus between buttons, as expected;
-- the seek arithmetic lives in `player/SeekPolicy.kt` (clamped to `0..duration`,
-  unknown duration = no upper bound) and is unit-tested;
-- live channels hide the seek buttons and the progress bar: an HLS live window
-  has no duration to show, and seeking it only triggers a rebuffer.
+- **El icono de play/pausa se dibuja en `Canvas`** (triángulo y dos barras): sin
+  `material-icons-extended` y sin glifos `▶`/`❚❚`, que algunos TV boxes pintan
+  como cajas.
+- **Botones circulares con anillo blanco** y escala 1,08 al enfocar: el mismo
+  foco que las tarjetas del Home, así que el salto del catálogo al vídeo no
+  cambia de lenguaje.
+- **Todo fade a los 4 s** mientras se reproduce y el foco sigue en el vídeo. Si
+  el usuario está recorriendo los botones, se quedan.
+- **Subtítulos**: el botón `CC` sólo aparece si el manifiesto trae pistas de
+  texto; activa/desactiva `TRACK_TYPE_TEXT` en el propio `ExoPlayer`.
+- **Directo**: se ocultan −10/+10 y la barra de progreso (una ventana HLS no
+  tiene duración que enseñar); queda el chip EN VIVO y "Señal en directo".
+- **Reanuda donde se quedó**: la tarjeta de "Seguir viendo" viaja con
+  `PlaybackRequest.startPositionMs` y el `FailoverController` arranca ahí; si
+  el usuario cambia de capítulo en la ficha, empieza desde el principio.
+- **Selector de fuentes como panel lateral de tvOS**: entra por la derecha
+  (donde tvOS pone "Información"), deja el vídeo visible a la izquierda y cada
+  fuente es una tarjeta enfocable con número de failover, proveedor, `HLS · 1080p`
+  y una marca ✓ en la que se está usando. El foco arranca en la **fuente en
+  uso**, no en la primera. Sin `AlertDialog` de Material: en una TV los botones
+  de 40 dp y las listas que no se desplazan no se pueden usar.
+- **Cuando todo falla**, panel de vidrio con *Reintentar* (foco inicial) ·
+  *Elegir fuente* · *Volver*. ATRÁS sale del reproductor, no del aviso.
+- **Cambiar de canal sin salir** (TV en vivo): la tarjeta de un canal abre el
+  reproductor directamente —la ficha de un canal no tiene nada que elegir— y
+  desde ahí `CH+`/`CH−` recorren la fila entera, con vuelta al llegar al final.
+  Cada zapeo deja un **rótulo** arriba (canal y `3 de 12`) que se va solo a los
+  2,6 s, y el vídeo anterior sigue en pantalla hasta que engancha la señal nueva:
+  no hay fundido a negro entre canales.
+- **Guía de canales**: `▲` (o el botón *Canales*) abre la parrilla sobre la
+  franja inferior, con el vídeo visible arriba. Recorrerla con `◀ ▶` **cambia de
+  canal al instante**, sin confirmar; `OK` la cierra en el canal elegido y
+  `ATRÁS` la cierra **devolviendo el canal desde el que se abrió**.
+- **La parrilla es la fila que estabas viendo**, no todo el catálogo: el
+  `PlaybackRequest` viaja con `queue` (ids, títulos y carátulas) y el canal en
+  uso se localiza por `id`, no por posición. Si el catálogo se reordena entre
+  abrir y zapear, sigues apuntando al mismo canal.
 
-The red ring + halo is `Modifier.tvFocusGlow` (`ui/theme/Focus.kt`), the Compose
-equivalent of the classic pair of XML state drawables:
+Teclas:
 
-```text
-res/color/card_focus.xml + android:focusable="true"   →  Modifier.tvFocusGlow(progress)
-```
+| Tecla | Acción |
+| --- | --- |
+| `OK` / `ENTER` / `SPACE` / gamepad `A` | play / pausa |
+| `◀` / `▶` | −10 s / +10 s en VOD; en directo con parrilla, canal anterior/siguiente (con el foco en un botón mueven el foco) |
+| `▼` | sacar los controles y llevar el foco a ellos |
+| `▲` | en directo con parrilla abre la **guía de canales**; si no, saca los controles |
+| `CH+` / `CH−` | canal siguiente / anterior en directo, con vuelta (sin salir del vídeo) |
+| `MEDIA_NEXT` / `MEDIA_PREVIOUS` | lo mismo, para mandos sin `CH+`/`CH−` |
+| `MEDIA_PLAY_PAUSE` / `MEDIA_FAST_FORWARD` / `MEDIA_REWIND` | **siempre** funcionan, aunque el foco esté en un botón, en la guía o en la lista de fuentes |
+| `BACK` | cierra la guía (devolviendo el canal), cierra la lista de fuentes, luego oculta los controles, luego sale |
 
-Both the home cards and the player buttons use it, so the focus style is
-identical in the catalogue and on top of the video.
+La aritmética del zapeo vive en `player/ChannelZapping.kt` (vuelta en los
+extremos y canal fuera de la parrilla) y la del salto en
+`player/SeekPolicy.kt` (acotada a
+`0..duration`, duración desconocida = sin tope) y la tabla de teclas en
+`player/PlayerKeyMap.kt`; ambas se prueban en JVM, sin emulador.
 
 ### Per-source HTTP headers
 
@@ -360,12 +499,26 @@ into a `DefaultHttpDataSource.Factory` (adding a derived `Origin` and allowing
 cross-protocol redirects), and each source gets its own factory, since the
 `Referer` changes hop by hop.
 
+### HLS and MP4, even without an extension
+
+Half of the providers serve the manifest at a URL that does not say what it is
+(`https://cdn/v/abc123`), and many players declare the type in the page
+(`sources: [{file: "…", type: "application/x-mpegURL"}]`). The scrapers now
+extract those sources by their declared type, resolve relative paths, and probe
+the first bytes of anything still ambiguous; each stream then carries
+`behaviorHints.mediaType` (`hls` / `dash` / `mp4`). The in-app engine keeps
+extension-less media (it only drops pages and images) and
+`MediaSources.mediaSource()` uses the hint to build an `HlsMediaSource`,
+`DashMediaSource` or `ProgressiveMediaSource`. Without that chain, a perfectly
+good HLS link was discarded before it reached ExoPlayer.
+
 ### Autonomous mode and optional server
 
 **Ajustes → Autónomo · En este dispositivo** is the default, including after an
 upgrade from the old server-only build. First launch does not ask for a URL.
-Catalogues are queried directly from the bundled providers. Cinemeta rows are
-an explicit opt-in, not a requirement for browsing provider catalogues.
+Catalogue rows come from Cinemeta (explicit opt-in) and the open live channels;
+the bundled scrapers only resolve streams. Cinemeta is optional, not a
+requirement for watching anything.
 
 An external server can still be selected in **Ajustes → Servidor externo**.
 Only that mode uses `DEFAULT_ADDON_BASE_URL` / the saved URL. Returning to local
@@ -377,21 +530,34 @@ A changed domain, anti-bot challenge or dead video host can still break a source
 
 ### Home catalogue
 
-- The twelve provider definitions and curated live-channel IDs are packaged
+- **Canales abiertos primero.** La fila `iptvorg` (iptv-org, HLS libre) es la
+  primera del Inicio y se reproduce sin cuenta, sin addon y sin proveedor; ver
+  *Canales abiertos sin configurar nada*.
+- The provider definitions and curated live-channel IDs are packaged
   from `server/config/`; the demo Python providers and server-only third-party
   addon configuration are excluded.
-- Native Python calls scrape the provider home/search pages for movies, series,
+- **Los scrapers no publican filas.** Su portada no tiene orden, arte ni
+  sinopsis, así que sólo resuelven streams: al abrir un título o episodio, el
+  motor busca esa ficha por nombre en cada scraper y devuelve los enlaces. Un
+  pedido de catálogo con su id responde `{"metas": []}` (contrato, no error).
+- Native Python calls scrape the provider search pages for movies, series,
   anime, live channels and sports. Posters and episode lists come from those
   same pages where available. No private TMDB key is required.
 - The saved live-channel shelf is available immediately without a metadata
-  service. Other shelves appear incrementally as providers answer.
-- **Buscar** queries the providers; **Inicio** clears the search.
+  service.
+- **Buscar** abre un buscador a pantalla completa con **teclado propio**
+  (nada de `TextField`: el IME de Android no se maneja con un mando) y, al lado,
+  las **recomendaciones de Cinemeta** ya cargadas en el Home, para entrar a una
+  ficha sin escribir nada. `BUSCAR` filtra las filas de Cinemeta y los canales en
+  vivo; **Inicio** limpia la búsqueda.
 - Catalogue metadata is cached on disk for one hour (live: ten minutes), with
   a bounded stale fallback for titles/artwork. Signed stream URLs have a short
   cache only and are never served stale after its expiry.
-- The details sheet discovers numbered episodes; if no list is published,
-  series/anime offer explicit manual season/episode selection rather than
-  inventing a list or playing episode one silently.
+- The details sheet discovers numbered episodes and shows them as 16:9 cards
+  with thumbnails, season pills and a white **Reproducir** capsule (no server
+  picker: playback starts at source 0 and the player fails over on its own); if
+  no list is published, series/anime offer explicit manual season/episode
+  selection rather than inventing a list or playing episode one silently.
 - Per-source Referer, User-Agent, Origin and Cookie headers survive into Media3.
   Both HLS and DASH modules are included.
 
@@ -413,7 +579,7 @@ python3 scripts/verify-embedded-apk.py app/build/outputs/apk/debug/app-debug.apk
 # Offline tests of the actual engine + existing Python scrapers:
 python3 -m unittest discover -s app/src/test/python -v
 
-# Device/emulator smoke test: native Python + all twelve imports, no backend:
+# Device/emulator smoke test: native Python + every bundled provider, no backend:
 ./gradlew :app:connectedDebugAndroidTest
 
 # Optional backend regressions (separate from the Android runtime):
@@ -429,8 +595,8 @@ libraries; a small file size is never used as proof of completeness.
 
 ### Release build (APK + AAB)
 
-One signed artifact installs on both a phone and an Android TV box (see
-[One APK, two form factors](#one-apk-two-form-factors)).
+One signed artifact installs on an Android TV box or TV stick (see
+[Sólo Android TV](#sólo-android-tv)).
 
 ```bash
 ./scripts/release-android.sh       # autonomous APK + AAB + package verification

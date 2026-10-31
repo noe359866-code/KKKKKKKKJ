@@ -2,7 +2,7 @@
 
 ## Qué cambia
 
-El APK incluye el intérprete **Python 3.11** (Chaquopy 17.1.0), los doce
+El APK incluye el intérprete **Python 3.11** (Chaquopy 17.1.0), todos los
 scrapers reales de `server/scrapers/`, sus helpers, el registro de proveedores
 y los identificadores de canales guardados. No basta con copiar los `.py` como
 assets: `ChaquopyRuntime` inicia el intérprete y el motor importa cada módulo
@@ -35,20 +35,111 @@ para evitar mantener dos copias diferentes.
 
 ## Cómo usarla
 
-1. Instala el APK en Android TV o móvil con **Android 7.0 / API 24 o posterior**.
+1. Instala el APK en un **Android TV / TV box / Fire TV** con **Android 7.0 /
+   API 24 o posterior**. La app es sólo de televisión: declara
+   `android.software.leanback` como requisito y no instala en teléfonos.
 2. Abre la app: entra en modo autónomo sin pedir IP o dominio.
-3. Aparece la fila de canales guardados; las filas consultadas directamente a
-   los proveedores se añaden conforme responden.
-4. Usa **Buscar** para consultar los proveedores por título/canal y **Inicio**
-   para volver a la portada.
-5. Abre una ficha, elige capítulo cuando corresponda, selecciona una fuente
-   y reproduce. Si no se pudo extraer una lista real de episodios, se permite
-   indicar temporada y episodio manualmente; no se fabrica una lista.
+3. La primera fila es **Canales abiertos** (iptv-org, HLS libre): se reproduce
+   con el mando sin claves, sin addon y sin proveedor. Debajo aparece la fila de
+   canales guardados. Los scrapers de películas/series/anime **no añaden filas**:
+   sólo resuelven el video cuando abres un título.
+4. Usa **Buscar** para filtrar las filas de Cinemeta y los canales en vivo, e
+   **Inicio** para volver a la portada. El buscador es a pantalla completa:
+   teclado QWERTY propio a la izquierda (cada tecla es un nodo del D-Pad, sin
+   IME) y las recomendaciones de Cinemeta a la derecha; `OK` en una
+   recomendación abre su ficha directamente.
+5. Abre una ficha, elige capítulo cuando corresponda y pulsa **Reproducir**.
+   No hay que elegir servidor: el reproductor pide las fuentes y salta solo a la
+   siguiente si una falla. Si no se pudo extraer una lista real de episodios, se
+   permite indicar temporada y episodio con dos contadores; no se fabrica una
+   lista.
+
+### Ficha del título (TV)
+
+La ficha es la página de película de Apple TV: backdrop a sangre con dos velos,
+tipo y nota en insignias, título grande, sinopsis de tres líneas y **una sola
+cápsula blanca** — *Reproducir* (con el capítulo detrás: `T1 E2`) — más *Cerrar*.
+
+- **Sin lista de servidores.** Antes había que elegir fuente antes de ver nada;
+  ahora el botón hace todo y el failover decide. La ficha sólo elige *qué*
+  capítulo se reproduce.
+- **Episodios** como tarjetas 16:9 con la miniatura real del proveedor, etiqueta
+  `T1 E2`, nombre y sinopsis corta. La elegida lleva borde blanco y ✓; al cambiar
+  de temporada la fila se desplaza al capítulo elegido.
+- **Temporadas** en píldoras a la derecha del encabezado, sólo si hay más de una.
+- **Sin lista publicada**: contadores `− 1 +` de temporada y episodio y una
+  cápsula *Ver este episodio*. Nada de `TextField` con teclado del sistema.
+
+### Reproductor (TV)
+
+Los controles son propios (no el `PlayerView` de Media3): título y fuente en
+uso arriba, botones redondos en el centro (título · **−10** · **▶/⏸** · **+10** ·
+**Fuentes** · **CC** si hay subtítulos) y barra de progreso con tiempos abajo.
+Se ocultan solos a los 4 s y las teclas multimedia del mando funcionan siempre.
+
+El **selector de fuentes** es el panel lateral del reproductor de tvOS: entra por
+la derecha, el vídeo sigue viéndose a la izquierda y cada fuente es una tarjeta
+enfocable con su número de failover, el proveedor, `HLS · 1080p` y una marca ✓
+en la que está en uso. El foco arranca en esa misma, así que ATRÁS sale sin
+mover nada; OK cambia de fuente sin salir del vídeo.
+
+**Cambiar de canal** es lo propio de la TV en vivo y no pasa por el Home:
+`CH+`/`CH−` (o `MEDIA_NEXT`/`MEDIA_PREVIOUS` en mandos sin esas teclas) saltan
+al canal siguiente/anterior de la misma fila, con vuelta en los extremos. Cada
+salto pinta un rótulo arriba con el nombre y `3 de 12` que desaparece solo, y la
+imagen del canal anterior se mantiene hasta que resuelve la señal nueva. `▲`
+abre la guía (franja inferior, vídeo visible) donde `◀ ▶` sintonizan al instante,
+`OK` cierra y `ATRÁS` vuelve al canal desde el que se abrió. La tarjeta de un
+canal del Home entra al reproductor en una sola pulsación: la ficha no tiene
+nada que elegir.
+
+### Perfiles
+
+Al arrancar, la app pregunta **¿Quién está viendo?** con avatares redondos (hasta
+seis perfiles). Cada perfil guarda su propio **Seguir viendo**: la posición se
+apunta al salir del reproductor y la fila aparece la primera en el Home de esa
+persona. El avatar de la barra superior cambia de perfil sin cerrar la app y el
+último usado se recuerda para el siguiente encendido.
 
 En **Ajustes** se puede activar **Añadir catálogos de Cinemeta**. Es opcional:
-las filas de los proveedores y la TV guardada no dependen de ese servicio.
+las filas de TV en vivo no dependen de ese servicio.
 Los títulos IMDb de Cinemeta se traducen a nombres antes de invocar los
 scrapers, sin necesitar una clave privada de TMDB.
+
+### Deportes (área propia)
+
+La última fila del Home es **Agenda deportiva**, con el dibujo del Sports de
+Apple TV: no son pósters 2:3 sino marcadores. Justo encima, **TV en vivo ·
+Canales** recoge los canales de todos los proveedores de directo.
+
+- **Datos reales, no inventados**: se leen de la agenda del día que publican los
+  scrapers en vivo (`futbolibre` y `damitv`, vía `_liveshelf.py`), con título,
+  competición, hora y estado. `"Liga 1: Cienciano vs Atlético Grau"` se parte en
+  liga y equipos, y un registro sin equipos ni hora se trata como canal.
+- Cada tarjeta enseña la competición en mayúsculas, los dos equipos con sus
+  iniciales, la hora y, si el partido ya empezó, el chip **EN VIVO**.
+- Los partidos programados **no** se marcan como directos: la meta viaja con
+  `onAir: false` y la app no los pinta como emisión en curso.
+- También entran los canales deportivos de la lista pública (ESPN, TUDN, MLB,
+  DAZN…) cuando aparecen. El partido se reproduce con su id de siempre
+  (`tv:futbolibre:evento:<slug>`), así que el failover no cambia.
+- Sin agenda no hay fila: se prefiere un Home sin deportes a enseñar el partido
+  de ayer. La caché es de 10 minutos y no tiene respaldo rancio.
+
+### Scrapers: sólo resuelven streams
+
+Los scrapers de `server/scrapers/` (películas, series, anime y directo) no publican
+filas de catálogo. Sus listados son de mejor esfuerzo —sin póster 2:3, sin
+sinopsis, con títulos repetidos— y ensuciaban la portada. Ahora sólo se usan
+para **resolver el stream**:
+
+- `GET /stream/movie/tt0944947.json` → el motor traduce el id IMDb a título y
+  cada scraper busca esa ficha en su propio buscador.
+- `GET /catalog/:type/<id-de-scraper>.json` devuelve `{"metas": []}`: no es un
+  error, es el contrato. Si un cliente viejo pide esa fila, se le responde vacío.
+- La portada queda con Cinemeta (si está activo), la TV en vivo y el área de
+  deportes; el catálogo del servidor (`server/config/catalogs.json`) sigue
+  igual: sin filas de proveedores.
 
 ### Addons de Stremio (v3)
 
@@ -96,8 +187,9 @@ al servidor ni envía consultas a un backend configurado anteriormente.
 - Los dominios, las estructuras HTML, los enlaces firmados y la disponibilidad
   de las fuentes pueden cambiar. Un bloqueo geográfico, CAPTCHA, contenido DRM
   o una fuente caída no se elimina por integrar Python.
-- Los parsers de catálogo son de mejor esfuerzo. No todos los sitios publican
-  pósters, sinopsis o listas completas de episodios en HTML.
+- Los parsers de los scrapers son de mejor esfuerzo: buscan la ficha por
+  título y no todos los sitios publican pósters, sinopsis o listas completas de
+  episodios en HTML. No fabrican filas de catálogo: sólo resuelven streams.
 - Los scripts incluidos son estáticos; actualizar un scraper o un dominio
   predeterminado requiere una nueva compilación del APK. No hay actualización
   de código ejecutable descargado de terceros.
@@ -151,7 +243,7 @@ al elegir manualmente el modo servidor. Sin keystore, el release queda sin
 firmar y no será instalable hasta firmarlo; el debug se firma automáticamente.
 
 El verificador inspecciona el APK real: comprueba el archivo de módulos Python,
-los doce scrapers y sus helpers, las bibliotecas nativas de las tres ABIs y la
+todos los scrapers y sus helpers, las bibliotecas nativas de las tres ABIs y la
 exclusión de los scrapers de demostración. No considera «completo» un APK
 únicamente porque su ZIP contenga archivos `.py`.
 

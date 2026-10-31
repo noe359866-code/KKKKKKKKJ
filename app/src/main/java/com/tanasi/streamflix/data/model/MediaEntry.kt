@@ -47,16 +47,10 @@ data class MediaEntry(
     val id: String,
     val type: String,
     val title: String,
-    /** Póster 2:3 (TMDB o el proveedor). Si falta o falla, se usa [art]. */
+    /** Póster 2:3 (Cinemeta o el proveedor). Si falta o falla, se genera uno. */
     val poster: String? = null,
-    /** Backdrop 16:9 para el hero. Si falta, se usa [art]. */
+    /** Backdrop 16:9 para el hero. Si falta, se usa el póster desenfocado. */
     val backdrop: String? = null,
-    /**
-     * Clave del arte local de respaldo: `movies`, `series`, `anime` o `live`.
-     * Se resuelve en `ui/components/Artwork.kt`, porque un JSON no puede
-     * contener `R.drawable.*`.
-     */
-    val art: String? = null,
     val year: Int? = null,
     val subtitle: String? = null,
     /** Sólo informativo: de qué proveedor salió (lo pinta la tarjeta). */
@@ -72,12 +66,34 @@ data class MediaEntry(
     @SerialName("trending") val trending: Boolean = false,
     /** Canal en emisión continua. */
     @SerialName("live") val live: Boolean = false,
+    /**
+     * Estado explícito del directo cuando el tipo no basta (fila `deportes`):
+     * un partido de hoy que aún no ha empezado es `tv` pero no está al aire.
+     * `null` = dedúcelo del tipo, como el resto de las filas.
+     */
+    @SerialName("onAir") val onAir: Boolean? = null,
+    /** Equipos del partido (sólo deportes). El título ya es "A vs B". */
+    @SerialName("home") val homeTeam: String? = null,
+    @SerialName("away") val awayTeam: String? = null,
+    /** Competición: "Liga 1", "MLB", "NBA"… Sólo deportes. */
+    @SerialName("league") val league: String? = null,
+    /** Hora de comienzo del partido ("19:00"). Sólo deportes. */
+    @SerialName("startTime") val startTime: String? = null,
     /** 0-100 para las tarjetas de "Continuar viendo". */
     @SerialName("progressPercent") val progressPercent: Int? = null,
+    /**
+     * Milisegundo en el que se quedó este título. Sólo lo rellena "Seguir
+     * viendo" (`WatchProgress.toEntry`): al pulsar esa tarjeta el reproductor
+     * arranca ahí en vez de desde el principio. No viaja en el JSON.
+     */
+    @kotlinx.serialization.Transient val resumePositionMs: Long = 0L,
 ) {
     val mediaType: MediaType get() = MediaType.fromWire(type) ?: MediaType.Movie
 
-    val isLive: Boolean get() = live || mediaType == MediaType.Live
+    val isLive: Boolean get() = onAir ?: (live || mediaType == MediaType.Live)
+
+    /** Fila de deportes con dos equipos: la tarjeta se pinta como marcador. */
+    val isMatch: Boolean get() = !homeTeam.isNullOrBlank() && !awayTeam.isNullOrBlank()
 
     /** "Acción · Aventura · 2026 · 2 h 08 min" (sin huecos). */
     val metaLine: String
@@ -103,9 +119,29 @@ data class CatalogRow(
     /** `poster` (2:3) o `landscape` (16:9). */
     val aspect: String = "poster",
     val items: List<MediaEntry> = emptyList(),
+    /**
+     * Cómo se pinta la fila. `cards` (por defecto) usa las tarjetas de arte;
+     * `sports` pinta marcadores: liga, equipos, hora y EN VIVO.
+     */
+    val layout: String = LAYOUT_CARDS,
+    /**
+     * De dónde salen los títulos: `cinemeta` | `local` | `live` | `remote` |
+     * `embedded`. Lo publica el addon al describir sus catálogos; el buscador lo
+     * usa para ofrecer las recomendaciones de Cinemeta y no las de un proveedor.
+     *
+     * `null` en servidores antiguos que aún no lo publican (se deduce del id).
+     */
+    val source: String? = null,
 ) {
     val rowAspect: RowAspect
         get() = if (aspect.equals("landscape", ignoreCase = true)) RowAspect.Landscape else RowAspect.Poster
+
+    val isSports: Boolean get() = layout.equals(LAYOUT_SPORTS, ignoreCase = true)
+
+    companion object {
+        const val LAYOUT_CARDS = "cards"
+        const val LAYOUT_SPORTS = "sports"
+    }
 }
 
 /**
@@ -114,15 +150,34 @@ data class CatalogRow(
  * @param startIndex fuente elegida en la hoja de detalles (0 = la de mayor
  *   prioridad). El failover continúa desde ahí hacia abajo.
  */
-fun MediaEntry.playbackRequest(startIndex: Int = 0) = PlaybackRequest(
+fun MediaEntry.playbackRequest(
+    startIndex: Int = 0,
+    /**
+     * Parrilla de la fila de la que salió la tarjeta (ver
+     * [toChannelQueue]). Sólo se usa para zapear con `CH+`/`CH−` dentro del
+     * reproductor; en películas y series va vacía.
+     */
+    queue: List<PlaybackChannel> = emptyList(),
+) = PlaybackRequest(
     id = id,
     type = type,
     title = title,
     isLive = isLive,
     startIndex = startIndex,
+    poster = poster,
+    backdrop = backdrop,
+    startPositionMs = resumePositionMs,
+    queue = queue,
 )
 
-/** Lo que el reproductor necesita saber para abrir un título. */
+/**
+ * Lo que el reproductor necesita saber para abrir un título.
+ *
+ * `@Serializable` por [PlaybackRestore]: es lo que se guarda en
+ * `onSaveInstanceState` para volver al mismo canal y al mismo segundo si el
+ * sistema mata el proceso mientras se ve algo.
+ */
+@Serializable
 data class PlaybackRequest(
     val id: String,
     val type: String,
@@ -133,6 +188,24 @@ data class PlaybackRequest(
      * (`0` = la de mayor prioridad; el failover sigue desde ahí hacia abajo).
      */
     val startIndex: Int = 0,
+    /**
+     * Arte del título. No hace falta para reproducir; viaja para poder pintar
+     * la tarjeta de "Seguir viendo" sin volver a pedir el catálogo.
+     */
+    val poster: String? = null,
+    val backdrop: String? = null,
+    /** Posición de arranque: 0 salvo que venga de "Seguir viendo". */
+    val startPositionMs: Long = 0L,
+    /**
+     * Parrilla de canales de la que salió este título, en el orden en que el
+     * usuario la vio. Es lo que permite `CH+`/`CH−` y la guía sin volver al
+     * Home; vacía en películas, series y cuando se abre desde fuera.
+     *
+     * El canal **actual** se localiza aquí por `id`, no por posición: si el
+     * catálogo se reordena entre abrir y zapear, seguimos apuntando al mismo
+     * canal.
+     */
+    val queue: List<PlaybackChannel> = emptyList(),
 )
 
 /** Tanto :temporada:episodio como los ids de anime proveedor:slug:episodio. */

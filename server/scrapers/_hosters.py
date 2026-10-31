@@ -40,11 +40,16 @@ from _htmlkit import (
     Budget,
     Deadline,
     absolute,
+    guess_quality,
     host_of,
     http_get,
+    http_peek,
     is_media_url,
+    media_kind_of_url,
     media_urls,
     searchable,
+    typed_media_urls,
+    unique,
 )
 
 #: Etiqueta legible por familia de servidor (se busca el primer acierto).
@@ -84,6 +89,9 @@ HOSTER_LABELS: Tuple[Tuple[str, str], ...] = (
 DOWNLOAD_ONLY = (
     "mega.nz", "mediafire", "1fichier", "zippyshare", "drive.google",
     "youtube.com", "youtu.be", "facebook.com", "instagram.com",
+    # JkAnime publica sus descargas en `c1.jkplayers.com/d/<id>`: es el mismo
+    # archivo que el reproductor, pero por HTTP de descarga (no es un medio).
+    "jkplayers",
 )
 
 #: `id="ideoooolink"` de Streamtape.
@@ -124,6 +132,78 @@ def hoster_label(url: str) -> str:
 def is_download_only(url: str) -> bool:
     host = host_of(url)
     return any(hint in host for hint in DOWNLOAD_ONLY)
+
+
+#: Servidores que hoy resuelven con más frecuencia. Si el sitio publica una
+#: lista larga se añaden al final (nunca se reordena: el orden del sitio es el
+#: que el propio sitio considera de mejor a peor).
+KNOWN_GOOD_HOSTS = (
+    "streamwish", "filemoon", "vidhide", "voe", "streamtape", "mixdrop",
+    "mp4upload", "okru", "filelions", "lulustream",
+)
+
+
+def is_known_good(url: str) -> bool:
+    """¿Es de una familia de servidores que sabemos resolver?"""
+    host = host_of(url)
+    return any(hint in host for hint in KNOWN_GOOD_HOSTS)
+
+
+#: Sondas de tipo por servidor: leer los primeros bytes de una URL sin
+#: extensión no puede costar más que esto.
+MAX_PROBES = 2
+PROBE_SIZE = 2048
+
+
+def media_type_of_response(content_type: str) -> str:
+    """`Content-Type` de la respuesta → tipo de medio (o ``"html"``)."""
+    text = (content_type or "").lower()
+    if not text:
+        return ""
+    if "mpegurl" in text or "m3u8" in text:
+        return "hls"
+    if "dash" in text or "mpd" in text:
+        return "dash"
+    if "video/mp4" in text or "video/x-m4v" in text:
+        return "mp4"
+    if "video/" in text:
+        return "mp4"
+    if "text/html" in text or "application/xhtml" in text:
+        return "html"
+    return ""
+
+
+def probe_media_kind(url: str, headers: Dict[str, str], deadline: Deadline) -> str:
+    """``"hls"`` / ``"dash"`` / ``"mp4"`` / ``"html"`` / ``""`` leyendo la cabecera.
+
+    Se usa con las fuentes cuya URL no delata el tipo (`https://cdn/v/abc123`).
+    Saber que es HLS importa: ExoPlayer sin extensión intentaría abrirlo como
+    progresivo y no reproduciría nada. Y si lo que hay es una página HTML, el
+    candidato se descarta en vez de ofrecerlo como stream.
+    """
+    head = http_peek(url, headers, deadline.remaining(cap=4.0), PROBE_SIZE)
+    if not head:
+        return ""
+    stripped = head.lstrip(b"\xef\xbb\xbf \t\r\n")
+    if stripped[:7].upper() == b"#EXTM3U":
+        return "hls"
+    if b"<MPD" in head or (b"<?xml" in stripped[:64] and b"MPD" in head[:512]):
+        return "dash"
+    if len(head) >= 8 and head[4:8] == b"ftyp":
+        return "mp4"
+    lowered = head[:512].lower()
+    if b"<!doctype" in lowered or b"<html" in lowered:
+        return "html"
+    return ""
+
+
+def _signal(url: str, label: str, referer: str, *extra_labels: str) -> Dict[str, Any]:
+    """Señal reproducible con la calidad deducida de la etiqueta y la URL."""
+    signal: Dict[str, Any] = {"url": url, "label": label, "referer": referer}
+    quality = guess_quality(label, *extra_labels, url)
+    if quality:
+        signal["quality"] = quality
+    return signal
 
 
 def hls_variants(url: str) -> List[str]:
@@ -182,6 +262,9 @@ def _candidates(html: str, page_url: str) -> List[Tuple[str, bool]]:
     found.extend((url, True) for url in _streamtape(html))
     found.extend((url, True) for url in MP4_FIELD_RE.findall(text))
     found.extend((url, True) for url in _okru(html))
+    # `file: "…", type: "application/x-mpegURL"`: el `type` es la prueba de que
+    # es vídeo aunque la URL no acabe en `.m3u8`/`.mp4`.
+    found.extend((url, True) for url, _kind in typed_media_urls(html, page_url))
     found.extend((url, False) for url in media_urls(html, page_url))
 
     out: List[Tuple[str, bool]] = []
@@ -212,10 +295,15 @@ def resolve(
     label = hoster_label(url)
     signals: List[Dict[str, Any]] = []
     errors: List[str] = []
+    kinds: Dict[str, str] = {}
 
     # 1. Ya es una señal (algunos "servidores" apuntan al .m3u8 directamente).
     if is_media_url(url):
-        return [{"url": url, "label": label, "referer": referer or url}], {"errors": []}
+        signal = _signal(url, label, referer or url)
+        kind = media_kind_of_url(url)
+        if kind:
+            signal["media_type"] = kind
+        return [signal], {"errors": []}
 
     # 2. Servidores de hosting de archivos: no se pueden reproducir.
     if is_download_only(url):
@@ -223,7 +311,9 @@ def resolve(
 
     # 3. `/play/<id>` → `/m3u8/<id>` sin descargar nada.
     for variant in hls_variants(url):
-        signals.append({"url": variant, "label": "HLS", "referer": referer or url})
+        signal = _signal(variant, "HLS", referer or url, label)
+        signal["media_type"] = "hls"
+        signals.append(signal)
 
     # 4. Descargar el embed (y como mucho un redirect extra) y buscar el video.
     # El navegador manda como Referer la página donde está el embed (el
@@ -258,16 +348,24 @@ def resolve(
             continue
 
         # Un servidor que responde con el propio vídeo (raro, pero pasa).
-        if "mpegurl" in (content_type or "").lower() or "video/" in (content_type or "").lower():
+        declared = media_type_of_response(content_type)
+        if declared and declared != "html":
             if is_media_url(final_url):
-                signals.append({"url": final_url, "label": label, "referer": current})
+                signal = _signal(final_url, label, current)
+                signal["media_type"] = declared
+                signals.append(signal)
+            kinds[final_url] = declared
 
         for candidate, trusted in _candidates(body, final_url):
             if candidate.startswith("//"):
                 candidate = "https:" + candidate
             candidate = absolute(candidate, final_url)
             if candidate and (trusted or is_media_url(candidate)):
-                signals.append({"url": candidate, "label": label, "referer": current})
+                signals.append(_signal(candidate, label, current))
+
+        # El `type` que declara el embed manda sobre la extensión.
+        for typed_url, kind in typed_media_urls(body, final_url):
+            kinds.setdefault(typed_url, kind)
 
         # VOE y compañía a veces redirigen por JavaScript antes del player.
         redirect = re.search(
@@ -276,16 +374,30 @@ def resolve(
         if redirect and redirect.group(1) not in seen and fetched < max_docs:
             pending.insert(0, redirect.group(1))
 
-    # 5. Deduplicar conservando el orden.
+    # 5. Tipo de cada señal (extensión → lo que declare el embed → sonda) y
+    #    fuera las que resultan ser una página.
     out: List[Dict[str, Any]] = []
     seen_urls = set()
+    probes = 0
     for signal in signals:
-        if signal["url"] in seen_urls:
+        target = signal["url"]
+        if target in seen_urls:
             continue
-        seen_urls.add(signal["url"])
+        kind = signal.get("media_type") or kinds.get(target) or media_kind_of_url(target)
+        if not kind and probes < MAX_PROBES and deadline.remaining() > 2.0:
+            probes += 1
+            kind = probe_media_kind(target, request_headers, deadline)
+            if kind == "html":
+                errors.append("not_media")
+                log("hoster", target, "-> html, descartado")
+                continue
+        if kind:
+            signal["media_type"] = kind
+        seen_urls.add(target)
         out.append(signal)
 
-    return out, {"errors": errors, "label": label, "fetched": fetched}
+    return out, {"errors": unique(errors), "label": label, "fetched": fetched,
+                 "probes": probes}
 
 
 def resolve_all(
@@ -294,35 +406,45 @@ def resolve_all(
     deadline: Deadline,
     episode_url: str,
     parallel: int = 4,
+    second_chance: int = 2,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Resuelve en paralelo la lista de servidores de un episodio.
 
     ``servers`` es ``[{"name": "Streamwish", "url": "https://…"}]``.
     Devuelve el orden del sitio (es el que suele ir de mejor a peor) y anota en
     ``meta`` los servidores que no dieron señal.
+
+    Dos mejoras sobre "una pasada y ya": los servidores que no devolvieron nada
+    se reintentan una vez (sólo los primeros ``second_chance`` y sólo si queda
+    tiempo), porque un embed que falló por un 503 o por un deadline justo suele
+    funcionar al segundo intento; y ``meta.resolved_hosts`` deja ver qué
+    familias resolvieron, que es lo que dice si hay que tocar un extractor.
     """
     import threading
 
     servers = list(servers)
     budget = Budget(max(2, min(12, len(servers) * 2 or 4)))
     collected: List[Tuple[int, Dict[str, Any]]] = []
-    unresolved: List[str] = []
+    solved: Dict[int, List[Dict[str, Any]]] = {}
+    labels: Dict[int, str] = {}
     lock = threading.Lock()
 
-    def worker(position: int, server: Dict[str, str]) -> None:
+    def run(position: int, server: Dict[str, str]) -> None:
+        """Resuelve un servidor y guarda el resultado (vacío si no hay señal)."""
         if deadline.expired():
             return
-        found, info = resolve(
+        found, _info = resolve(
             server["url"], headers, deadline, budget, referer=episode_url
         )
+        name = server.get("name") or (found[0]["label"] if found else hoster_label(server["url"]))
         with lock:
+            solved[position] = found
+            labels[position] = name
             for signal in found:
-                collected.append((position, {**signal, "server": server.get("name") or signal["label"]}))
-            if not found:
-                unresolved.append(server.get("name") or hoster_label(server["url"]))
+                collected.append((position, {**signal, "server": name}))
 
     threads = [
-        threading.Thread(target=worker, args=(position, server), daemon=True)
+        threading.Thread(target=run, args=(position, server), daemon=True)
         for position, server in enumerate(servers)
     ]
     for start in range(0, len(threads), parallel):
@@ -331,6 +453,16 @@ def resolve_all(
             thread.start()
         for thread in batch:
             thread.join(timeout=max(1.0, deadline.remaining()))
+
+    # Segunda pasada: sólo los que fallaron y sólo si el deadline da margen.
+    retried = 0
+    for position, server in enumerate(servers):
+        if retried >= max(0, second_chance):
+            break
+        if solved.get(position) or deadline.remaining() < 1.6:
+            continue
+        retried += 1
+        run(position, server)
 
     ordered = sorted(collected, key=lambda pair: pair[0])
     signals: List[Dict[str, Any]] = []
@@ -341,4 +473,14 @@ def resolve_all(
         seen.add(signal["url"])
         signals.append(signal)
 
-    return signals, {"unresolved": unresolved, "servers": len(servers)}
+    unresolved = [
+        labels.get(position) or (servers[position].get("name") or hoster_label(servers[position]["url"]))
+        for position in range(len(servers))
+        if not solved.get(position)
+    ]
+    resolved_hosts = unique(labels[pos] for pos in range(len(servers)) if solved.get(pos))
+    return signals, {
+        "unresolved": unresolved,
+        "servers": len(servers),
+        "resolved_hosts": resolved_hosts,
+    }

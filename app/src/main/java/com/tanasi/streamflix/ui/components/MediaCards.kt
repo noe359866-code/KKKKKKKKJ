@@ -30,6 +30,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tanasi.streamflix.core.DeviceProfile
@@ -116,10 +117,18 @@ fun LandscapeCard(
         widthDp = deviceProfile.landscapeWidthDp,
         aspectRatio = 16f / 9f,
     ) {
+        /* Un canal en vivo casi siempre publica un logotipo cuadrado: se
+         * ajusta (Fit) en vez de recortarlo, para que se lea la marca. Un
+         * backdrop real 16:9 sí se recorta a sangre. */
+        val logoOnly = entry.backdrop.isNullOrBlank()
+        val fitLogo = entry.isLive && logoOnly
         BackdropImage(
             url = entry.backdrop ?: entry.poster,
-            artKey = entry.art,
-            modifier = Modifier.fillMaxSize(),
+            entry = entry,
+            contentScale = if (fitLogo) ContentScale.Fit else ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(if (fitLogo) 24.dp else 0.dp),
         )
     }
 }
@@ -149,8 +158,9 @@ private fun ContentCard(
         animationSpec = tween(durationMillis = 140),
         label = "cardFocus",
     )
+    /* tvOS crece poco (5 %) y levanta el borde: la foto no debe bailar. */
     val scale by animateFloatAsState(
-        targetValue = if (isTv && focused) 1.08f else 1f,
+        targetValue = if (isTv && focused) 1.05f else 1f,
         animationSpec = tween(durationMillis = 140),
         label = "cardScale",
     )
@@ -178,7 +188,7 @@ private fun ContentCard(
                     scaleX = scale
                     scaleY = scale
                     /* Elevación real: la tarjeta enfocada "flota" sobre la fila. */
-                    shadowElevation = if (isTv && focused) 20.dp.toPx() else 0f
+                    shadowElevation = if (isTv && focused) 12.dp.toPx() else 0f
                     this.shape = shape
                 }
                 .tvFocusGlow(progress = focusProgress, cornerRadius = Dimens.cardCornerRadius)
@@ -226,8 +236,9 @@ private fun ContentCard(
             }
         }
 
-        /* Título bajo la tarjeta. En TV aparece con el foco (Netflix); en móvil
-         * está siempre porque no hay cursor que lo revele. */
+        /* Título bajo la tarjeta: siempre legible, pero atenuado hasta que la
+         * tarjeta recibe el foco (tvOS). Que aparezca de la nada obligaba a
+         * mover el mando para saber qué era cada cosa. */
         Text(
             text = entry.title,
             style = MaterialTheme.typography.labelLarge,
@@ -236,17 +247,19 @@ private fun ContentCard(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .padding(top = 8.dp, start = 2.dp, end = 2.dp)
-                .graphicsLayer { alpha = if (isTv) focusProgress else 1f },
+                .graphicsLayer { alpha = if (isTv) 0.62f + 0.38f * focusProgress else 1f },
         )
         Text(
-            text = entry.subtitle ?: entry.year?.toString().orEmpty(),
+            text = entry.subtitle?.takeIf { it.isNotBlank() }
+                ?: entry.metaLine.takeIf { it.isNotBlank() }
+                ?: entry.year?.toString().orEmpty(),
             style = MaterialTheme.typography.labelMedium,
             color = StreamflixColors.OnSurfaceMuted,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .padding(start = 2.dp, end = 2.dp)
-                .graphicsLayer { alpha = if (isTv) focusProgress * 0.9f else 1f },
+                .graphicsLayer { alpha = if (isTv) 0.45f + 0.25f * focusProgress else 1f },
         )
     }
 }

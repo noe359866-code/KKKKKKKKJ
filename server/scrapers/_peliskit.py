@@ -38,15 +38,18 @@ from _animekit import (
 )
 import _tmdb
 from _base import log, stream
-from _hosters import is_download_only, resolve_all
+from _hosters import is_download_only, is_known_good, resolve_all
 from _htmlkit import (
     Deadline,
     absolute,
     clean_title,
+    guess_quality,
     host_of,
     http_get,
     is_media_url,
+    media_kind_of_url,
     player_links,
+    typed_media_urls,
     slugify,
     unescape_markup,
     unique,
@@ -67,7 +70,8 @@ TYPE_TOKENS = {
 KNOWN_PROVIDERS = {
     "gnula", "cuevana", "pelisplushd", "pelisplus", "repelis", "peliculasflix",
     "pelisjuanita", "comodin", "animeflv", "jkanime", "monoschinos",
-    "tvenvivo", "deportelibre", "futbolibre",
+    "tvenvivo", "deportelibre", "futbolibre", "livelive24", "damitv", "ntv",
+    "streamcorner", "novahd",
 }
 
 IMDB_RE = re.compile(r"^tt\d{6,9}$", re.IGNORECASE)
@@ -235,13 +239,26 @@ def fetch_html(
     return body or "", final_url or url
 
 
+def _padded(value: Any) -> str:
+    """`3` → `"03"` (las rutas de capítulo suelen ir con dos dígitos)."""
+    text = str(value if value is not None else "")
+    return text.zfill(2) if text.isdigit() else text
+
+
 def fill(template: str, **values: Any) -> str:
-    """`\"/pelicula/{slug}\"` + slug → URL absoluta codificada."""
+    """`\"/pelicula/{slug}\"` + slug → URL absoluta codificada.
+
+    Además de `{slug}`, `{season}`, `{episode}` y `{query}`, las plantillas
+    pueden usar `{season2}` / `{episode2}` cuando el sitio numera con dos
+    dígitos (`/serie/x/1x03`).
+    """
     try:
         return template.format(
             slug=values.get("slug", ""),
             season=values.get("season", ""),
             episode=values.get("episode", ""),
+            season2=_padded(values.get("season")),
+            episode2=_padded(values.get("episode")),
             query=urllib.parse.quote_plus(str(values.get("query", ""))),
         )
     except (KeyError, IndexError):
@@ -341,12 +358,13 @@ def search_site(
     hints: Iterable[str],
 ) -> List[Dict[str, str]]:
     """Resultados del buscador del sitio: ``[{slug, title, url}]``."""
-    from _animekit import best_hit, search_hits
+    from _animekit import STRONG_MATCH, best_match, search_hits
 
     if not (query or "").strip():
         return []
     hints = tuple(hints)
     hits: List[Dict[str, str]] = []
+    seen = set()
     for template in site.get("search_paths") or []:
         url = join(site["base"], fill(template, query=query))
         html, final_url = fetch_html(url, headers, deadline)
@@ -357,9 +375,14 @@ def search_site(
         else:
             candidates = [hit for hint in hints for hit in search_hits(html, final_url or url, hint)]
         for hit in candidates:
-            if hit["url"] not in {item["url"] for item in hits}:
+            if hit["url"] not in seen:
+                seen.add(hit["url"])
                 hits.append(hit)
-        if best_hit(query, hits):
+        # Un resultado flojo (otro título con palabras en común) no corta la
+        # búsqueda: el buscador siguiente puede ser el que acierte.
+        if best_match(query, hits)[0] >= STRONG_MATCH:
+            break
+        if deadline.expired():
             break
     return hits
 
@@ -421,14 +444,28 @@ def page_for(
 
     slugs = [slug] + [item for item in (ref.get("slug_candidates") or []) if item != slug]
     # Las plantillas de capítulo van primero, pero la ficha de la serie (la
-    # última) siempre se prueba: hay sitios que sólo tienen ficha.
-    ordered = list(dict.fromkeys(templates[:3] + templates[-1:]))
-    attempts = 0
+    # última) siempre se prueba: hay sitios que sólo tienen ficha. `ficha_paths`
+    # añade las demás fichas del sitio (p. ej. `/anime/<slug>` además de
+    # `/serie/<slug>`), sin gastar los primeros intentos en ellas.
+    #   1-3: los capítulos más probables   4: la ficha del título
+    #   5+:  las demás fichas y las variantes de capítulo que quedaban fuera
+    ordered = list(dict.fromkeys(
+        templates[:3]
+        + templates[-1:]
+        + list(site.get("ficha_paths") or [])
+        + templates[3:]
+    ))
+    # Presupuesto global de pedidos: el primer slug recorre las plantillas y,
+    # si el id traía variantes de slug (`slug-2024`, `slug-latino`), también se
+    # prueban (antes el tope se agotaba con el primer slug).
+    budget = 7
     for candidate_slug in [value for value in slugs if value][:3]:
+        if budget <= 0 or deadline.expired():
+            break
         for template in ordered:
-            attempts += 1
-            if attempts > 5:
+            if budget <= 0 or deadline.expired():
                 break
+            budget -= 1
             candidate = join(
                 site["base"],
                 fill(template, slug=candidate_slug, season=season, episode=episode),
@@ -439,12 +476,9 @@ def page_for(
                 return final_url or candidate, "direct"
 
     query = ref.get("title_hint") or " ".join(slug.split("-"))
-    hits = search_site(site, query, headers, deadline, site.get("search_hints") or ())
-    from _animekit import best_hit
-
-    hit = best_hit(query, hits)
-    if hit:
-        return hit["url"], "search"
+    found = find_by_search(site, query, headers, deadline)
+    if found:
+        return found, "search"
     return "", "not_found"
 
 
@@ -482,6 +516,19 @@ def _clean_embed(value: str, page_url: str) -> str:
     if not raw.lower().startswith(("http://", "https://")):
         return ""
     return raw
+
+
+#: Archivos que nunca son un reproductor (se colaban desde los literales JS).
+STATIC_SUFFIXES = (
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".css", ".js",
+    ".woff", ".woff2", ".ttf", ".pdf", ".zip", ".txt",
+)
+
+
+def looks_like_static(url: str) -> bool:
+    """¿Es una imagen/CSS/JS y no un reproductor? (dominio `.zip` aparte)."""
+    path = urllib.parse.urlparse(url or "").path.lower()
+    return path.endswith(STATIC_SUFFIXES)
 
 
 def harvest_servers(
@@ -547,11 +594,20 @@ def harvest_servers(
         if url:
             servers.append(server_entry("", url))
 
+    # 4b. Fuentes con `type` explícito: en los sitios que inyectan jwplayer en
+    #     la propia ficha, esto **ya es** el vídeo (la URL puede no tener
+    #     extensión, y antes se perdía entera).
+    for typed_url, kind in typed_media_urls(text, page_url):
+        servers.append({**server_entry("", typed_url), "media_type": kind})
+
     # 5. URLs de reproductor plausibles (última red de seguridad).
     for url in player_links(text, page_url, site.get("player_hints") or ()):
         servers.append(server_entry("", url))
 
     skip = tuple(skip_hosts) or tuple(site.get("skip_hosts") or ())
+    # `sources: [{file: "…", type: "application/x-mpegURL"}]`: la URL no tiene
+    # por qué acabar en `.m3u8`, pero el `type` dice que eso ya es el vídeo.
+    typed = dict(typed_media_urls(text, page_url))
     cleaned: List[Dict[str, Any]] = []
     for server in dedupe_servers(servers):
         url = server["url"]
@@ -559,9 +615,16 @@ def harvest_servers(
             continue
         if is_media_url(url):
             # Un .m3u8/.mp4 directo no hay que resolverlo: entra tal cual.
-            cleaned.append({**server, "direct": True})
+            kind = media_kind_of_url(url)
+            cleaned.append({**server, "direct": True, **({"media_type": kind} if kind else {})})
             continue
         if not url.lower().startswith(("http://", "https://")):
+            continue
+        kind = typed.get(url)
+        if kind:
+            cleaned.append({**server, "direct": True, "media_type": kind})
+            continue
+        if looks_like_static(url):
             continue
         cleaned.append(server)
     return cleaned
@@ -589,15 +652,23 @@ def resolve_signals(
             usable.append(server)
             continue
         usable.append(server)
-    usable = usable[:max_servers]
+    # El tope existe para no encadenar 15 embeds, pero recortar a ciegas tiraba
+    # justo el servidor bueno cuando el sitio lista primero los rancios: los de
+    # familias que sí sabemos resolver se añaden al final (último failover).
+    extra = [server for server in usable[max_servers:] if is_known_good(server.get("url") or "")]
+    usable = usable[:max_servers] + extra[:2]
 
     signals: List[Dict[str, Any]] = []
     meta: Dict[str, Any] = {}
     remote = [server for server in usable if not is_media_url(server["url"])]
     inline = [server for server in usable if is_media_url(server["url"])]
     for server in inline:
-        signals.append({"url": server["url"], "server": server.get("name") or host_of(server["url"]),
-                        "referer": page_url})
+        kind = server.get("media_type") or media_kind_of_url(server["url"])
+        signal = {"url": server["url"], "server": server.get("name") or host_of(server["url"]),
+                  "referer": page_url}
+        if kind:
+            signal["media_type"] = kind
+        signals.append(signal)
     if remote:
         found, info = resolve_all(remote, headers, deadline, page_url, parallel=parallel)
         signals.extend(found)
@@ -638,15 +709,21 @@ def candidate_episode_links(html: str, season: int, episode: int) -> List[str]:
         f"t{season} e{episode}", f"t{season}e{episode}",
         f"{season}x{episode}", f"{season}x{padded}",
     ]
+    # `/[ver]/one-piece-1180` o `.../episodio/1180`: el número al final, sin
+    # que `1` case con `1180` (`(?!\d)`).
+    tail_re = re.compile(r"""(?:[-_/])(0*%d)(?!\d)""" % episode)
     links: List[str] = []
     for match in EPISODE_LINK_RE.finditer(html or ""):
         href = match.group(1).strip()
         label = " ".join(VISIBLE_RE.sub(" ", match.group(2)).split()).lower()
         haystack = f"{href.lower()} {label}"
-        if any(variant in haystack.replace(" ", "") or variant in haystack for variant in variants) \
-                or any(variant in haystack for variant in text_variants):
-            if href not in links:
-                links.append(href)
+        matched = (
+            any(variant in haystack.replace(" ", "") or variant in haystack for variant in variants)
+            or any(variant in haystack for variant in text_variants)
+            or bool(tail_re.search(href.lower()))
+        )
+        if matched and href not in links:
+            links.append(href)
     return links
 
 
@@ -664,14 +741,19 @@ def episode_link_servers(
     Muchos sitios listan los capítulos en la ficha pero sólo ponen reproductores
     en la página de cada capítulo. Devuelve `(servidores, url_del_capitulo)`.
     """
-    for href in candidate_episode_links(html, season, episode)[:3]:
+    # Cinco enlaces y no tres: las fichas largas listan el capítulo varias veces
+    # (idiomas, espejos) y el primero puede estar muerto. `collect_servers` y no
+    # `harvest_servers` para que el `extras()` del sitio (su API) también cuente.
+    for href in candidate_episode_links(html, season, episode)[:5]:
+        if deadline.expired():
+            break
         url = absolute(href, page_url)
         if not url.lower().startswith(("http://", "https://")):
             continue
         sub_html, final_url = fetch_html(url, headers, deadline)
         if not sub_html:
             continue
-        servers = harvest_servers(sub_html, final_url or url, site)
+        servers = collect_servers(sub_html, final_url or url, site or {}, headers, deadline)
         if servers:
             return servers, final_url or url
     return [], ""
@@ -720,7 +802,8 @@ def build_streams(
                 user_agent=user_agent,
                 not_web_ready=False,
                 is_live=False,
-                quality=None,
+                quality=guess_quality(server, signal.get("quality"), signal["url"]),
+                media_type=signal.get("media_type"),
             )
         )
     return streams
@@ -729,6 +812,191 @@ def build_streams(
 # ---------------------------------------------------------------------------
 # Driver genérico
 # ---------------------------------------------------------------------------
+
+
+def fallback_episode_servers(
+    html: str,
+    page_url: str,
+    site: Dict[str, Any],
+    headers: Dict[str, str],
+    deadline: Deadline,
+    episode: int,
+    anime_url: str = "",
+    season: int = 1,
+    max_pages: int = 2,
+) -> Tuple[List[Dict[str, Any]], str]:
+    """Otra puerta al mismo episodio cuando su página no trae reproductores.
+
+    Los sitios de anime dejan episodios sin botones de servidor (o los cargan
+    sólo en la ficha del anime). Se prueba, en orden: la ficha del anime y los
+    enlaces al episodio pedido que aparezcan en ella (`/ver/one-piece-1180`,
+    `episodio-1180`, `1x1180`…), con un tope de páginas y el deadline.
+
+    Devuelve ``(servidores, url_de_la_página_que_los_tenía)``.
+    """
+    queue: List[str] = []
+    if anime_url and anime_url != page_url:
+        queue.append(anime_url)
+    for href in candidate_episode_links(html, season, episode):
+        url = absolute(href, page_url)
+        if url and url != page_url and url not in queue:
+            queue.append(url)
+
+    pages = 0
+    while queue and pages < max_pages and not deadline.expired():
+        url = queue.pop(0)
+        pages += 1
+        body, final_url = fetch_html(url, headers, deadline)
+        if not body:
+            continue
+        servers = collect_servers(body, final_url or url, site, headers, deadline)
+        if servers:
+            return servers, final_url or url
+        for href in candidate_episode_links(body, season, episode):
+            candidate = absolute(href, final_url or url)
+            if candidate and candidate != page_url and candidate not in queue:
+                queue.append(candidate)
+    return [], ""
+
+
+
+def collect_servers(
+    html: str,
+    page_url: str,
+    site: Dict[str, Any],
+    headers: Dict[str, str],
+    deadline: Deadline,
+) -> List[Dict[str, Any]]:
+    """Servidores de una ficha: HTML + `extras()` propio del sitio, deduplicado."""
+    servers = harvest_servers(html, page_url, site)
+    extras = site.get("extras")
+    if callable(extras):
+        try:
+            for server in extras(html, page_url, headers, deadline) or []:
+                if server and server.get("url"):
+                    servers.append(server)
+        except Exception as exc:  # noqa: BLE001 - el respaldo genérico sigue vivo
+            log("extras failed:", site["id"], exc)
+    return dedupe_servers(servers)
+
+
+#: Rutas donde los sitios alojan su propio reproductor intermedio
+#: (`/player/<id>`, `/reproductor/<hash>`, `/embed/<id>`…).
+PLAYER_PAGE_HINTS = ("/player", "/reproductor", "/embed", "/ver/", "/play/", "/video/")
+
+
+def looks_like_own_player(url: str, base: str) -> bool:
+    """¿Es una página del propio sitio que puede listar los servidores?
+
+    Descarta lo que ya sabemos resolver (`_hosters` se encarga de esas familias)
+    y lo que no es una página (`mega.nz`, `.m3u8`, `.jpg`…).
+    """
+    if not url or is_media_url(url) or is_download_only(url) or is_known_good(url):
+        return False
+    path = urllib.parse.urlparse(url).path.lower()
+    # Hace falta que la ruta delate un reproductor: abrir "cualquier página del
+    # mismo dominio" gastaba el presupuesto en fichas y listados.
+    return any(hint in path for hint in PLAYER_PAGE_HINTS)
+
+
+def expand_player_pages(
+    servers: List[Dict[str, Any]],
+    page_url: str,
+    site: Dict[str, Any],
+    headers: Dict[str, str],
+    deadline: Deadline,
+    max_pages: int = 2,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Abre las páginas de reproductor del propio sitio y lee sus servidores.
+
+    Algunos sitios (PelisJuanita entre ellos) ponen un `<iframe>` a su propia
+    página `/player/<id>` que a su vez lista los embeds externos. `_hosters` vería
+    esa página, no encontraría ningún `.m3u8` y la daría por irresoluble, así que
+    aquí se abre **una** vez más —sólo para el propio sitio, sólo las primeras
+    ``max_pages`` y sólo si queda tiempo— y sus servidores se colocan justo
+    detrás, con lo que el failover sigue el orden del sitio.
+
+    Devuelve ``(servidores, meta)`` con `meta["opened_players"]` para saber qué
+    páginas se abrieron.
+    """
+    if not servers or max_pages <= 0:
+        return servers, {}
+    base = site.get("base") or page_url
+    opened: List[str] = []
+    out: List[Dict[str, Any]] = []
+    for server in servers:
+        url = server.get("url") or ""
+        if len(opened) < max_pages and not deadline.expired() and looks_like_own_player(url, base):
+            opened.append(url)
+            html, final_url = fetch_html(url, headers, deadline)
+            found = [
+                item for item in harvest_servers(html, final_url or url, site) if item.get("url")
+            ] if html else []
+            if found:
+                # La página del reproductor no es una señal: se sustituye por
+                # los embeds que contiene, en su mismo hueco del failover.
+                out.extend(found)
+                continue
+        out.append(server)
+    if not opened:
+        return servers, {}
+    return dedupe_servers(out), {"opened_players": opened}
+
+
+#: Año "(2026)" o suelto, y paréntesis finales: los buscadores no los indexan.
+YEAR_NOISE_RE = re.compile(r"\([^)]*\)|\b(?:19|20)\d{2}\b")
+
+
+def fallback_queries(query: str, limit: int = 2) -> List[str]:
+    """Consultas alternativas cuando el título tal cual no aparece.
+
+    Muchos buscadores indexan "Spider-Man" pero no "Spider-Man: No Way Home
+    (2021)": se prueban la versión sin año/paréntesis y las primeras palabras.
+    """
+    original = " ".join((query or "").split())
+    if not original:
+        return []
+    cleaned = " ".join(YEAR_NOISE_RE.sub(" ", original).split())
+    candidates = [original]
+    if cleaned:
+        candidates.append(cleaned)
+        candidates.append(" ".join(cleaned.split()[:4]))
+    out: List[str] = []
+    for candidate in candidates:
+        if not candidate:
+            continue
+        if candidate.lower() not in {item.lower() for item in out}:
+            out.append(candidate)
+    return out[:max(1, limit)]
+
+
+def find_by_search(
+    site: Dict[str, Any],
+    query: str,
+    headers: Dict[str, str],
+    deadline: Deadline,
+    skip_url: str = "",
+) -> str:
+    """URL de la ficha según el buscador del sitio (``""`` si no hay).
+
+    Si el título completo no da una coincidencia fuerte, se reintenta con las
+    variantes de `fallback_queries` mientras quede tiempo.
+    """
+    from _animekit import STRONG_MATCH, best_match
+
+    if not (query or "").strip():
+        return ""
+    for candidate in fallback_queries(query):
+        if deadline.expired():
+            break
+        hits = search_site(site, candidate, headers, deadline, site.get("search_hints") or ())
+        score, hit = best_match(query, hits)
+        if not hit:
+            score, hit = best_match(candidate, hits)
+        if hit and hit["url"] != skip_url and score >= STRONG_MATCH:
+            return hit["url"]
+    return ""
+
 
 
 def scrape_site(payload: Dict[str, Any], site: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -805,16 +1073,7 @@ def scrape_site(payload: Dict[str, Any], site: Dict[str, Any]) -> Tuple[List[Dic
     page_url = final_url or page_url
     meta["page"] = page_url
 
-    servers = harvest_servers(html, page_url, site)
-    extras = site.get("extras")
-    if callable(extras):
-        try:
-            for server in extras(html, page_url, headers, deadline) or []:
-                if server and server.get("url"):
-                    servers.append(server)
-        except Exception as exc:  # noqa: BLE001 - el respaldo genérico sigue vivo
-            log("extras failed:", site["id"], exc)
-    servers = dedupe_servers(servers)
+    servers = collect_servers(html, page_url, site, headers, deadline)
     if not servers and is_series(ref):
         # La ficha de la serie lista capítulos pero los reproductores están en
         # la página del capítulo: se sigue el enlace del episodio pedido.
@@ -827,6 +1086,39 @@ def scrape_site(payload: Dict[str, Any], site: Dict[str, Any]) -> Tuple[List[Dic
             log("episode link failed:", site["id"], exc)
         if episode_url:
             meta["episode_page"] = episode_url
+    if not servers and how == "direct" and not deadline.expired():
+        # 404 blando: el sitio responde 200 con la portada o con otra ficha y no
+        # hay ni un reproductor. Se prueba el buscador del sitio una vez más.
+        query = ref.get("title_hint") or " ".join((ref.get("slug") or "").split("-"))
+        retry_url = find_by_search(site, query, headers, deadline, page_url)
+        if retry_url:
+            retry_html, retry_final = fetch_html(retry_url, headers, deadline)
+            if retry_html:
+                page_url = retry_final or retry_url
+                html = retry_html
+                servers = collect_servers(html, page_url, site, headers, deadline)
+                meta["page"] = page_url
+                meta["resolved_by"] = "search_retry"
+                if not servers and is_series(ref):
+                    episode_url = ""
+                    try:
+                        servers, episode_url = episode_link_servers(
+                            html, page_url, int(ref["season"]), int(ref["episode"]),
+                            headers, deadline, site,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        log("episode link failed:", site["id"], exc)
+                    if episode_url:
+                        meta["episode_page"] = episode_url
+    # Algunos sitios esconden los embeds detrás de su propia página de
+    # reproductor: se abre ésa antes de dar la ficha por vacía.
+    expand = int(site.get("expand_players") or 0)
+    if servers and expand > 0:
+        servers, expand_meta = expand_player_pages(
+            servers, page_url, site, headers, deadline, max_pages=expand
+        )
+        meta.update(expand_meta)
+
     # `servers` es un contador en el meta de `_hosters`; aquí van los nombres.
     meta["server_names"] = [server.get("name") for server in servers if server.get("name")]
     if not servers:

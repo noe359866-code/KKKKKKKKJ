@@ -63,11 +63,26 @@ def versionNameValue = resolve(['VERSION_NAME', 'versionName']) ?: '1.1.0'
 
 // AGP no aplica de forma fiable assets.exclude a directorios externos. Generar
 // una carpeta con lista blanca evita empaquetar catalogs.json y sus addons.
+def embeddedAssetsDir = layout.buildDirectory.dir('generated/embeddedAssets')
 def generateEmbeddedAssets = tasks.register('generateEmbeddedAssets', Sync) {
     from(rootProject.file('server/config')) {
         include 'providers.json', 'live-catalog.json'
     }
-    into layout.buildDirectory.dir('generated/embeddedAssets')
+    into embeddedAssetsDir
+    /* El servidor conserva los proveedores de demostración para sus pruebas,
+     * pero el APK no debe llevarlos: se filtra la copia empaquetada. */
+    doLast {
+        def packaged = new File(embeddedAssetsDir.get().asFile, 'providers.json')
+        if (packaged.exists()) {
+            def root = new groovy.json.JsonSlurper().parse(packaged)
+            def all = root.providers ?: []
+            def kept = all.findAll { !String.valueOf(it.id).startsWith('demo-') }
+            if (kept.size() != all.size()) {
+                root.providers = kept
+                packaged.text = groovy.json.JsonOutput.toJson(root)
+            }
+        }
+    }
 }
 
 android {

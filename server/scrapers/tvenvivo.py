@@ -58,7 +58,7 @@ import urllib.request
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from _base import DEFAULT_USER_AGENT, default_headers, log, run, stream
-from _htmlkit import open_url
+from _htmlkit import guess_quality, media_kind_of_url, open_url
 
 # ---------------------------------------------------------------------------
 # Configuración (todo sobreescribible por env para pruebas)
@@ -722,17 +722,20 @@ def scrape(payload: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any
     streams: List[Dict[str, Any]] = []
     for position, item in enumerate(resolved, start=1):
         media_url = item["url"]
-        quality_match = re.search(r"(\d{3,4})p", media_url, re.IGNORECASE)
+        # La calidad se deduce también de la etiqueta de la opción ("HD", "FHD"),
+        # no sólo del `1080p` que a veces va en la URL.
+        quality = guess_quality(item.get("label"), media_url)
         option = f"Opción {position}"
         streams.append(
             stream(
                 url=media_url,
                 name=f"{name} · {option}",
                 title=f"{LABEL} · {name} · {option}",
-                quality=(f"{quality_match.group(1)}p" if quality_match else None),
+                quality=quality,
                 referer=item.get("referer") or page_url,
                 user_agent=user_agent,
                 is_live=True,
+                media_type=media_kind_of_url(media_url),
             )
         )
 

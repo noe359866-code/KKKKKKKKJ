@@ -151,7 +151,8 @@ copiar la URL y ver el estado de la caché en vivo.
 | `GET` | `/catalog/:type/:id.json` | Catálogo Stremio (Cinemeta + TV en vivo local). Admite `search=`, `genre=`, `skip=`. |
 | `GET` | `/meta/:type/:id.json` | Ficha enriquecida; en series incluye los episodios. |
 | `GET` | `/catalogs.json` | Qué filas publica el addon (extensión propia para la app Android). |
-| `GET` | `/stream/:type/:id.json` | Fuentes de video ordenadas por prioridad. |
+| `GET` | `/stream/:type/:id.json` | Fuentes de video ordenadas por prioridad, con `subtitles[]` (campo extra). |
+| `GET` | `/subtitles/:type/:id.json` | Subtítulos del mismo scrape (recurso `subtitles` del protocolo). |
 | `GET` | `/health` · `/healthz` | Estado, métricas de caché y proveedores. |
 | `GET` | `/proxy?url=…` | Proxy HLS opcional con `Referer`/`UA` y reescritura de segmentos. |
 | `GET` | `/admin/cache` | Estadísticas y claves (requiere `ADMIN_TOKEN`). |
@@ -174,7 +175,8 @@ curl -s http://localhost:7000/manifest.json | jq
   "resources": [
     { "name": "stream", "types": ["movie", "series", "anime", "tv"] },
     { "name": "catalog", "types": ["movie", "series", "anime", "tv"] },
-    { "name": "meta", "types": ["movie", "series", "anime", "tv"] }
+    { "name": "meta", "types": ["movie", "series", "anime", "tv"] },
+    { "name": "subtitles", "types": ["movie", "series", "anime", "tv"] }
   ],
   "catalogs": [
     {
@@ -187,6 +189,20 @@ curl -s http://localhost:7000/manifest.json | jq
         { "name": "skip", "isRequired": false },
         { "name": "genre", "options": ["Deportes", "Canales", "Eventos"], "isRequired": false }
       ]
+    },
+    {
+      "type": "tv",
+      "id": "canales",
+      "name": "TV en vivo · Canales",
+      "posterShape": "landscape",
+      "extra": [ …search, skip, genre["Deportes", "Canales"] ]
+    },
+    {
+      "type": "tv",
+      "id": "agenda",
+      "name": "Agenda deportiva",
+      "posterShape": "landscape",
+      "extra": [ …search, skip, genre["Deportes", "Eventos"] ]
     }
   ]
 }
@@ -195,6 +211,24 @@ curl -s http://localhost:7000/manifest.json | jq
 > `idPrefixes` se omite a propósito en el recurso `catalog`: los canales en vivo
 > usan ids como `tv:futbolibre:espn-1`, que no empiezan por `tt`. Declarar el
 > prefijo escondería esas filas en Stremio.
+
+### TV en vivo y agenda deportiva: tres filas, dos orígenes
+
+| Fila | Origen | Qué enseña |
+| --- | --- | --- |
+| `tv/live` | `config/live-catalog.json` (`kind: local`) | Los canales **fijados a mano**. Es el respaldo: si todo lo demás falla, sigue ahí. |
+| `tv/canales` | `kind: "live"` → `scrapers/_liveshelf.py` | Todos los canales que publican los proveedores de directo, deduplicados. |
+| `tv/agenda` | `kind: "live"` → `scrapers/_liveshelf.py` | Los partidos de hoy con liga, equipos, hora, estado y proveedor. |
+
+La estantería se construye una vez por ventana (`CATALOG_LIVE_TTL_MINUTES`, 15
+min) y se comparte con el motor del APK, que usa el mismo `_liveshelf.py`. Si el
+scrape no trae nada, `tv/canales` cae a la lista curada y `tv/agenda` se queda
+vacía a propósito: un partido de ayer pintado como "Hoy" es una tarjeta muerta.
+
+```bash
+curl -s "http://localhost:7000/catalog/tv/canales.json" | jq '.metas | length'
+python3 scrapers/_liveshelf.py --json --section events | jq '.items[0]'
+```
 
 ### Catálogos
 
@@ -280,6 +314,8 @@ Extras del protocolo, como segmentos de path:
 ```bash
 curl -s "http://localhost:7000/catalog/movie/top/search=matrix.json" | jq '.metas[0]'
 curl -s "http://localhost:7000/catalog/tv/live/genre=Deportes.json" | jq '.metas[].name'
+curl -s "http://localhost:7000/catalog/tv/canales.json" | jq '.metas[].name'   # todos los canales
+curl -s "http://localhost:7000/catalog/tv/agenda.json" | jq '.metas[0]'        # partidos de hoy
 curl -s "http://localhost:7000/meta/series/tt0944947:1:2.json" | jq '.meta.selectedVideo'
 ```
 
@@ -339,7 +375,8 @@ curl -s "http://localhost:7000/stream/tv/demo-live.json" | jq
           "Referer": "https://demo.local/",
           "User-Agent": "Mozilla/5.0 (Linux; Android 12; Android TV) …"
         },
-        "isLive": true
+        "isLive": true,
+        "mediaType": "hls"
       }
     }
   ],
@@ -359,6 +396,10 @@ Ida y vuelta con la app Android:
 - `behaviorHints.requestHeaders` → ExoPlayer los aplica vía
   `DefaultHttpDataSource`/`OkHttpDataSource` (necesario para providers con
   *hotlink protection*).
+- `behaviorHints.mediaType` (`hls` / `dash` / `mp4`) → cuando la URL no tiene
+  extensión, es lo que decide si se abre como `HlsMediaSource`,
+  `DashMediaSource` o `ProgressiveMediaSource`. Sin esa pista un `.m3u8` en
+  `/v/abc123` se intentaría reproducir como MP4 y no se vería nada.
 - El **orden del array es la lista de failover**: el cliente intenta
   `streams[0]`, y si falla pasa a `streams[1]`, etc.
 - Cabeceras útiles de diagnóstico: `X-Cache: HIT|STALE|MISS|COALESCED`,
@@ -541,7 +582,7 @@ anotan en `meta.unresolved`. Detalles y variables de entorno en
 
 ### Proveedores reales de películas y series (VOD)
 
-Seis sitios `kind: "vod"`, del 11 al 16 en prioridad:
+Siete sitios `kind: "vod"`, del 11 al 17 en prioridad:
 
 | Prioridad | Proveedor (`id`) | Sitio | Id de ejemplo |
 | --- | --- | --- | --- |
@@ -551,12 +592,14 @@ Seis sitios `kind: "vod"`, del 11 al 16 en prioridad:
 | 14 | `repelis` | dominio por `REPELIS_BASE` | `repelis:spider-man-de-regreso-a-casa` |
 | 15 | `peliculasflix` | [peliculasflix.co](https://peliculasflix.co/) | `peliculasflix:spider-man-de-regreso-a-casa` |
 | 16 | `pelisjuanita` | [pelisjuanita.org](https://pelisjuanita.org/) | `pelisjuanita:spider-man-un-nuevo-dia-2026` |
+| 17 | `novahd` | [novahd.cc](https://novahd.cc/) | `novahd:155` · `novahd:show:1396:1:1` |
 
 ```bash
 curl -s "http://localhost:7000/stream/movie/gnula:street-fighter.json" | jq
 curl -s "http://localhost:7000/stream/series/pelisplushd:the-last-of-us:1:2.json" | jq
 npm run movies:gnula -- "street fighter"    # buscar e imprimir ids
 npm run movies:pelisjuanita -- "reacher"
+npm run movies:novahd -- "dark knight"
 ```
 
 Cada película devuelve **un stream por servidor resuelto** (Streamwish, VOE,

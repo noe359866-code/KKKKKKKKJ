@@ -72,6 +72,7 @@ from _animekit import (
 from _base import DEFAULT_USER_AGENT, default_headers, log, run
 from _hosters import resolve_all
 from _htmlkit import Deadline, clean_title, http_get, pretty_name, unescape_markup
+from _peliskit import fallback_episode_servers
 
 # ---------------------------------------------------------------------------
 # Configuración
@@ -80,10 +81,41 @@ from _htmlkit import Deadline, clean_title, http_get, pretty_name, unescape_mark
 LABEL = "AnimeFLV"
 PROVIDER = "animeflv"
 
-BASE_URL = os.getenv("ANIMEFLV_BASE", "https://www3.animeflv.net").rstrip("/")
+#: El dominio histórico (`www3.animeflv.net`) dejó de servir vídeos en 2026: sus
+#: fichas siguen online pero los episodios responden "Actualmente no hay
+#: vídeos". Comprobado el 2026-10-30. El primero de la lista es el que hoy
+#: entrega episodios; los demás rotan cada pocos meses, por eso se prueban en
+#: orden hasta que una página de episodio responda.
+BASE_URL = os.getenv("ANIMEFLV_BASE", "https://vww.animeflv.one").rstrip("/")
+LEGACY_BASES = (
+    "https://animeflv.one",
+    "https://animeflv.or.at",
+    "https://animeflv.ba",
+    "https://animeflv.my",
+    "https://www3.animeflv.net",
+)
 VER_PATH = os.getenv("ANIMEFLV_VER_PATH", "/ver/{slug}-{episode}")
 ANIME_PATH = os.getenv("ANIMEFLV_ANIME_PATH", "/anime/{slug}")
 SEARCH_PATH = os.getenv("ANIMEFLV_SEARCH_PATH", "/browse?q={query}")
+
+
+def _bases() -> List[str]:
+    """Dominio configurado, espejos de entorno y los históricos conocidos.
+
+    Si el usuario fija `ANIMEFLV_BASE`/`ANIMEFLV_MIRRORS` se respeta al pie de la
+    letra (ni un pedido a los dominios históricos): así el proveedor se puede
+    apuntar a un espejo propio —o a un fixture— sin fugas a la red.
+    """
+    configured = [BASE_URL]
+    configured += [item.strip().rstrip("/") for item in
+                   os.getenv("ANIMEFLV_MIRRORS", "").split(",") if item.strip()]
+    explicit = bool(os.getenv("ANIMEFLV_BASE") or os.getenv("ANIMEFLV_MIRRORS"))
+    candidates = configured if explicit else configured + list(LEGACY_BASES)
+    bases: List[str] = []
+    for base in candidates:
+        if base and base not in bases:
+            bases.append(base)
+    return bases
 
 #: Tope de servidores que se resuelven por episodio.
 MAX_SERVERS = int(os.getenv("ANIMEFLV_MAX_SERVERS", "6"))
@@ -180,16 +212,16 @@ def parse_episodes(html: str) -> List[int]:
     return sorted(set(numbers))
 
 
-def episode_url(slug: str, episode: int) -> str:
-    return f"{BASE_URL}{VER_PATH.format(slug=slug, episode=int(episode))}"
+def episode_url(slug: str, episode: int, base: str = "") -> str:
+    return f"{base or BASE_URL}{VER_PATH.format(slug=slug, episode=int(episode))}"
 
 
-def series_url(slug: str) -> str:
-    return f"{BASE_URL}{ANIME_PATH.format(slug=slug)}"
+def series_url(slug: str, base: str = "") -> str:
+    return f"{base or BASE_URL}{ANIME_PATH.format(slug=slug)}"
 
 
-def search_url(query: str) -> str:
-    return f"{BASE_URL}{SEARCH_PATH.format(query=urllib.parse.quote_plus(query))}"
+def search_url(query: str, base: str = "") -> str:
+    return f"{base or BASE_URL}{SEARCH_PATH.format(query=urllib.parse.quote_plus(query))}"
 
 
 def looks_blocked(html: str) -> bool:
@@ -210,9 +242,11 @@ def fetch(page_url: str, headers: Dict[str, str], deadline: Deadline) -> Optiona
         return None
 
 
-def find_slug(query: str, headers: Dict[str, str], deadline: Deadline) -> Optional[Dict[str, str]]:
+def find_slug(
+    query: str, headers: Dict[str, str], deadline: Deadline, base: str = ""
+) -> Optional[Dict[str, str]]:
     """Búsqueda por nombre cuando el slug del id no existe (`/browse?q=`)."""
-    found = fetch(search_url(query), headers, deadline)
+    found = fetch(search_url(query, base), headers, deadline)
     if not found:
         return None
     html, final_url = found
@@ -246,19 +280,33 @@ def scrape(payload: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any
     if not ref.get("slug") and not ref.get("url"):
         return [], {**meta, "reason": "no_id"}
 
-    # 1. Página del episodio (o la URL tal cual si el id era una URL).
-    page = ref.get("url") or episode_url(ref["slug"], ref.get("episode") or 1)
+    # 1. Página del episodio (o la URL tal cual si el id era una URL). Se prueban
+    #    los espejos en orden: el dominio histórico ya no entrega episodios.
+    episode = ref.get("episode") or 1
+    active_base = ""
+    found: Optional[Tuple[str, str]] = None
+    page = ref.get("url") or ""
+    for candidate_base in ([BASE_URL] if ref.get("url") else _bases()):
+        if deadline.expired():
+            break
+        page = ref.get("url") or episode_url(ref["slug"], episode, candidate_base)
+        found = fetch(page, headers, deadline)
+        if found:
+            active_base = candidate_base
+            if candidate_base and candidate_base != BASE_URL:
+                meta["base"] = candidate_base
+                meta["base_rotated"] = True
+            break
     meta["page"] = page
-    found = fetch(page, headers, deadline)
 
     # 2. Si el slug no existe, se intenta la búsqueda por nombre.
     if found is None and ref.get("slug"):
-        hit = find_slug(normalize_query(ref["slug"]), headers, deadline)
+        hit = find_slug(normalize_query(ref["slug"]), headers, deadline, active_base)
         if hit:
             meta["resolved_from_search"] = hit["slug"]
             meta["title"] = hit.get("title")
             ref = {**ref, "slug": hit["slug"]}
-            page = episode_url(hit["slug"], ref.get("episode") or 1)
+            page = episode_url(hit["slug"], episode, active_base)
             meta["page"] = page
             found = fetch(page, headers, deadline)
 
@@ -277,6 +325,21 @@ def scrape(payload: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any
 
     # 4. Servidores → señales.
     servers = parse_servers(html, final_url)
+    if not servers and ref.get("slug"):
+        # Episodio sin botones: la ficha del anime puede tener el reproductor o
+        # un enlace al mismo episodio en otra ruta (`/ver/one-piece-1180-…`).
+        servers, servers_page = fallback_episode_servers(
+            html,
+            final_url,
+            {"extras": lambda body, url, hdrs, dl: parse_servers(body, url)},
+            headers,
+            deadline,
+            episode=int(ref.get("episode") or 1),
+            anime_url=series_url(ref["slug"], active_base),
+        )
+        if servers:
+            meta["servers_from"] = servers_page
+            meta["servers_via"] = "anime_page"
     meta["servers"] = [server["name"] for server in servers]
     if not servers:
         return [], {**meta, "reason": "no_servers"}

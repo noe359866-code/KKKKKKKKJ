@@ -15,8 +15,9 @@ from _base import default_headers
 from _htmlkit import Deadline, clean_title, http_get, pretty_name
 
 ANIME = frozenset(("animeflv", "jkanime", "monoschinos"))
-LIVE = frozenset(("futbolibre", "deportelibre", "tvenvivo"))
-MOVIES = frozenset(("gnula", "cuevana", "pelisplushd", "repelis", "peliculasflix", "pelisjuanita"))
+LIVE = frozenset(("futbolibre", "deportelibre", "tvenvivo", "livelive24", "damitv",
+                       "ntv", "streamcorner"))
+MOVIES = frozenset(("gnula", "cuevana", "pelisplushd", "repelis", "peliculasflix", "pelisjuanita", "novahd"))
 MODULES = ANIME | LIVE | MOVIES
 NON_TITLES = frozenset(("anime", "animes", "directorio", "buscar", "busqueda", "search", "browse",
                         "programacion", "horario", "calendario", "generos", "genero", "login",
@@ -147,6 +148,13 @@ def cards(provider: str, html: str, page: str, media_type: str, label: str) -> L
 
 
 def catalogue(provider: Dict[str, Any], media_type: str, query: str = "") -> List[Dict[str, Any]]:
+    """Tarjetas que publica hoy la portada de un scraper (listado o búsqueda).
+
+    **No se expone como catálogo del motor**: los scrapers sólo resuelven
+    streams (ver `Engine.streams`). Esta función queda como herramienta interna
+    para buscar la ficha de un título y para las pruebas de los parsers; el
+    contrato público es `{"metas": []}` para cualquier id de proveedor.
+    """
     name, label = provider["id"], provider["label"]
     module = module_for(name)
     headers = default_headers(provider)

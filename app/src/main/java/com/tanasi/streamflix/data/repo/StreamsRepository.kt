@@ -1,6 +1,7 @@
 package com.tanasi.streamflix.data.repo
 
 import com.tanasi.streamflix.data.model.StreamSource
+import com.tanasi.streamflix.data.model.SubtitleTrack
 import com.tanasi.streamflix.data.model.StreamsResponse
 import com.tanasi.streamflix.data.ContentClient
 import com.tanasi.streamflix.data.remote.AddonException
@@ -9,7 +10,12 @@ import kotlinx.coroutines.CancellationException
 
 /** Resultado de pedir fuentes: siempre una lista, nunca una excepción suelta. */
 sealed interface StreamsResult {
-    data class Ready(val sources: List<StreamSource>, val cacheMaxAgeSeconds: Long? = null) : StreamsResult
+    data class Ready(
+        val sources: List<StreamSource>,
+        val cacheMaxAgeSeconds: Long? = null,
+        /** Pistas de texto que resolvió el mismo scrape (puede ser vacío). */
+        val subtitles: List<SubtitleTrack> = emptyList(),
+    ) : StreamsResult
     data object Empty : StreamsResult
     data class Failure(val message: String) : StreamsResult
 }
@@ -34,7 +40,7 @@ class StreamsRepository(
             val response = client.streams(baseUrl, type, id)
             val sources = normalize(response)
             if (sources.isEmpty()) StreamsResult.Empty
-            else StreamsResult.Ready(sources, response.cacheMaxAge)
+            else StreamsResult.Ready(sources, response.cacheMaxAge, normalizeSubtitles(response))
         } catch (error: CancellationException) {
             throw error
         } catch (error: AddonException) {
@@ -61,6 +67,22 @@ class StreamsRepository(
                 sources += source.copy(index = sources.size)
             }
             return sources
+        }
+
+        /**
+         * Subtítulos utilizables: descarta los que no son HTTP(S) o que no
+         * tienen un formato que Media3 sepa leer, y quita duplicados por URL
+         * (dos proveedores repiten el mismo CDN).
+         */
+        fun normalizeSubtitles(response: StreamsResponse): List<SubtitleTrack> {
+            val seen = HashSet<String>(response.subtitles.size)
+            val tracks = ArrayList<SubtitleTrack>(response.subtitles.size)
+            response.subtitles.forEach { dto ->
+                val track = dto.toTrack() ?: return@forEach
+                if (!seen.add(track.url)) return@forEach
+                tracks += track
+            }
+            return tracks
         }
     }
 }

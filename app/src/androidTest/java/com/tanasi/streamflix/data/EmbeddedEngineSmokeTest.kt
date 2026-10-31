@@ -19,11 +19,12 @@ import java.util.concurrent.TimeUnit
 import org.junit.Assert.fail
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** No backend and no Internet: proves native Python and all twelve scripts load on Android. */
+/** No backend and no Internet: proves native Python and every bundled script load on Android. */
 @RunWith(AndroidJUnit4::class)
 class EmbeddedEngineSmokeTest {
     @Test
@@ -34,15 +35,63 @@ class EmbeddedEngineSmokeTest {
         val runtime = ChaquopyRuntime(app)
         val health = Json.parseToJsonElement(runtime.call("health", "{}")).jsonObject
         assertEquals("embedded", health["mode"]?.jsonPrimitive?.content)
-        assertEquals(12, health["providers"]?.jsonArray?.size)
+        // La lista sale del registro empaquetado: añadir un proveedor no debe
+        // obligar a tocar el test, pero sí tiene que llegar al APK.
+        val registry = Json.parseToJsonElement(
+            app.assets.open("providers.json").bufferedReader().use { it.readText() }
+        ).jsonObject
+        val expected = registry["providers"]!!.jsonArray
+            .map { it.jsonObject }
+            .filter { it["enabled"]?.jsonPrimitive?.content != "false" }
+            .map { it["id"]!!.jsonPrimitive.content }
+            .filterNot { it.startsWith("demo") }
+            .toSet()
+        val shipped = health["providers"]!!.jsonArray.map { it.jsonPrimitive.content }.toSet()
+        assertEquals(expected, shipped)
+        assertTrue(expected.containsAll(setOf("livelive24", "damitv", "ntv", "streamcorner")))
         assertTrue(health["python"]!!.jsonPrimitive.content.startsWith("3.11."))
         val client = EmbeddedContentClient(runtime)
         val descriptors = client.catalogs("")
         assertTrue(descriptors.isNotEmpty())
         assertFalse(descriptors.any { it.source == "cinemeta" })
+        // Los scrapers no publican filas: sólo resuelven streams. La Home lleva
+        // canales abiertos, los fijados a mano, los que recoge `_liveshelf` y la
+        // agenda deportiva.
+        assertEquals(listOf("iptvorg", "bundled_live", "canales", "deportes"), descriptors.map { it.id })
+        assertEquals("sports", descriptors.last().layout)
+        assertTrue(descriptors.none { it.id in health["providers"]!!.jsonArray.map { p -> p.jsonPrimitive.content } })
         val channels = client.catalog("", "tv", "bundled_live")!!.metas
         assertTrue(channels.isNotEmpty())
         assertTrue(channels.all { it.type == "tv" })
+    }
+
+    /**
+     * El requisito que rompió la versión anterior: la app tiene que reproducir
+     * algo sin cuenta, sin addon y sin red de proveedores. La fila `iptvorg`
+     * devuelve canales abiertos y cada id se resuelve a una URL HLS directa,
+     * sin pasar por ningún scraper. Aquí se corre sin Internet: el motor cae a
+     * la copia empaquetada y aun así hay fuentes reproducibles.
+     */
+    @Test
+    fun openChannelsPlayWithNoProviderAndNoNetwork() = runBlocking {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        val client = EmbeddedContentClient(ChaquopyRuntime(app))
+
+        val rows = client.catalogs("")
+        assertTrue("La fila de canales abiertos debe existir", rows.any { it.id == "iptvorg" })
+        assertEquals("iptvorg", rows.first { it.id == "iptvorg" }.id)
+
+        val channels = client.catalog("", "tv", "iptvorg")!!.metas
+        assertTrue("Sin red debe quedar la lista empaquetada", channels.isNotEmpty())
+        assertTrue(channels.all { it.type == "tv" })
+        assertTrue(channels.all { it.id.startsWith("iptvorg:") })
+
+        val streams = client.streams("", "tv", channels.first().id)!!.streams
+        assertTrue("Cada canal abierto tiene que dar al menos una fuente", streams.isNotEmpty())
+        val url = streams.first().url
+        assertTrue(url.startsWith("https://") || url.startsWith("http://"))
+        assertTrue("Un canal en vivo se marca como tal", streams.first().isLive)
+        assertNotNull(streams.first().toSource(0))
     }
 
     @Test

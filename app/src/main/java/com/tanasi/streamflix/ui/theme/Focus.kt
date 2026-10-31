@@ -10,7 +10,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 
 /**
- * "Selector de foco" de Android TV, en Compose.
+ * "Selector de foco" de Android TV, en Compose, con el aspecto de tvOS:
+ * anillo blanco fino + halo apenas visible + escala (la aplica el llamador).
  *
  * En una app basada en `View` esto serían dos `res/drawable` gemelos
  * (`background.xml` y `background_focused.xml`) metidos en
@@ -40,12 +41,12 @@ fun Modifier.tvFocusGlow(
         val radius = cornerRadius.toPx()
         val stroke = ringWidth.toPx()
 
-        /* Halo: tres trazos concéntricos, cada vez más anchos y más tenues.
-         * Es el "brillo" que en TV delata dónde está el cursor a 3 metros. */
-        repeat(3) { layer ->
-            val spread = stroke * (layer + 1) * 1.4f
+        /* Halo: dos trazos concéntricos muy tenues. tvOS no dibuja un neón de
+         * color: levanta el brillo del borde y deja que la foto siga mandando. */
+        repeat(2) { layer ->
+            val spread = stroke * (layer + 1) * 1.8f
             drawRoundRect(
-                color = color.copy(alpha = 0.20f * alpha / (layer + 1)),
+                color = color.copy(alpha = 0.16f * alpha / (layer + 1)),
                 topLeft = Offset(-spread / 2f, -spread / 2f),
                 size = Size(size.width + spread, size.height + spread),
                 cornerRadius = CornerRadius(radius + spread / 2f),

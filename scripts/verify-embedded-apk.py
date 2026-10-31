@@ -9,10 +9,12 @@ import sys
 import zipfile
 
 PROVIDERS = {
-    "futbolibre", "deportelibre", "tvenvivo", "animeflv", "jkanime", "monoschinos",
+    "futbolibre", "deportelibre", "tvenvivo", "livelive24", "damitv", "ntv",
+    "streamcorner", "animeflv", "jkanime", "monoschinos",
     "gnula", "cuevana", "pelisplushd", "repelis", "peliculasflix", "pelisjuanita",
+    "novahd",
 }
-HELPERS = {"embedded_engine", "_embedded_cache", "_embedded_catalogs", "_android_http", "_base", "_htmlkit", "_hosters", "_animekit", "_peliskit", "_tmdb"}
+HELPERS = {"embedded_engine", "_embedded_cache", "_embedded_catalogs", "_android_http", "_base", "_htmlkit", "_hosters", "_animekit", "_peliskit", "_livekit", "_liveshelf", "_tmdb"}
 ABIS = {"armeabi-v7a", "arm64-v8a", "x86_64"}
 
 
@@ -37,8 +39,24 @@ def verify(path: Path):
                     raise ValueError(f"Missing Python native library: {abi}/{library}")
         if "assets/catalogs.json" in names:
             raise ValueError("Server-only third-party addon configuration must not be bundled")
+        # Un APK "completo" pero con la configuración vacía arranca y no
+        # reproduce nada: eso es exactamente el fallo que se reportó. Se
+        # comprueba el contenido, no sólo que el archivo exista.
+        providers = json.loads(apk.read("assets/providers.json").decode("utf-8"))
+        enabled = [item for item in providers.get("providers", [])
+                   if item.get("enabled", True) and item.get("id") in PROVIDERS]
+        if len(enabled) != len(PROVIDERS):
+            raise ValueError(f"providers.json has {len(enabled)} enabled scrapers, expected {len(PROVIDERS)}")
+        demos = [item.get("id") for item in providers.get("providers", [])
+                 if str(item.get("id", "")).startswith("demo-")]
+        if demos:
+            raise ValueError(f"Demo providers must not ship in the APK: {demos}")
+        live = json.loads(apk.read("assets/live-catalog.json").decode("utf-8"))
+        channels = live.get("metas") or live.get("channels") or live.get("items") or []
+        if not channels:
+            raise ValueError("live-catalog.json is empty: the TV en vivo shelf would render with no channels")
     return {"apk": path.name, "bytes": path.stat().st_size, "MiB": round(path.stat().st_size / 1024**2, 2),
-            "embeddedProviders": sorted(PROVIDERS), "abis": sorted(ABIS)}
+            "embeddedProviders": sorted(PROVIDERS), "liveChannels": len(channels), "abis": sorted(ABIS)}
 
 
 if __name__ == "__main__":

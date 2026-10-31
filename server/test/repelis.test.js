@@ -103,6 +103,14 @@ test('todos los dominios caídos → [] con motivo, exit 0', async () => {
   assert.equal(code, 0);
   assert.deepEqual(body.streams, []);
   assert.equal(reasonOf(body), 'not_found');
+  /* Sin espejo configurado, el vacío explica que el dominio por defecto está caído. */
+  assert.match(body.meta.hint, /REPELIS_BASE o REPELIS_MIRRORS/);
+});
+
+test('con espejos configurados el aviso del dominio por defecto no aparece', async () => {
+  const { body } = await runScraper(SCRIPT, ask('repelis:spider-man-de-regreso-a-casa'), env);
+
+  assert.equal(body.meta.hint, undefined, JSON.stringify(body.meta));
 });
 
 test('rechaza payloads en directo', async () => {

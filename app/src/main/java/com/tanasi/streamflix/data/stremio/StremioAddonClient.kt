@@ -43,6 +43,12 @@ class StremioAddonClient(
 
     /**
      * Construye los CatalogDescriptors publicados por los addons habilitados.
+     *
+     * Un addon como *Streaming Catalogs* declara decenas de catálogos (una fila
+     * por plataforma y por tipo). Publicarlas todas convertiría el Home en una
+     * lista interminable y multiplicaría las peticiones, así que se ordenan por
+     * popularidad conocida y se recortan a [MAX_CATALOGS_PER_ADDON]: el resto
+     * sigue accesible desde la búsqueda del addon.
      */
     fun getCatalogs(addons: List<StremioAddon>): List<CatalogDescriptor> {
         val result = mutableListOf<CatalogDescriptor>()
@@ -50,7 +56,11 @@ class StremioAddonClient(
         for (addon in addons) {
             if (!addon.enabled) continue
             if (!addon.supportsResource("catalog")) continue
-            for (cat in addon.catalogs) {
+            val catalogs = addon.catalogs
+                .filter { it.type.equals("movie", true) || it.type.equals("series", true) || it.type.equals("tv", true) }
+                .sortedBy { preferenceOf(it.id) }
+                .take(MAX_CATALOGS_PER_ADDON)
+            for (cat in catalogs) {
                 val catName = cat.name?.takeIf { it.isNotBlank() } ?: cat.id
                 val shape = if (cat.type.equals("tv", ignoreCase = true)) "landscape" else "poster"
                 result += CatalogDescriptor(
@@ -65,6 +75,12 @@ class StremioAddonClient(
             }
         }
         return result
+    }
+
+    /** Posición en la lista de plataformas conocidas; lo desconocido va al final. */
+    private fun preferenceOf(catalogId: String): Int {
+        val index = PREFERRED_CATALOG_IDS.indexOf(catalogId.lowercase())
+        return if (index >= 0) index else PREFERRED_CATALOG_IDS.size
     }
 
     /**
@@ -181,6 +197,15 @@ class StremioAddonClient(
     companion object {
         const val PREFIX_ADDON = "addon:"
         const val ADDON_STREAM_TIMEOUT_MS = 8000L
+
+        /** Filas que aporta cada addon al Home como máximo. */
+        const val MAX_CATALOGS_PER_ADDON = 8
+
+        /** Plataformas que la gente espera ver primero en el Home. */
+        private val PREFERRED_CATALOG_IDS = listOf(
+            "netflix", "nfx", "disney", "dnp", "hbo", "hbm", "max", "prime", "pmp",
+            "apple", "atp", "paramount", "pcp", "star", "stz", "crunchyroll", "cru",
+        )
 
         fun encodeCatalogId(addonId: String, catalogId: String): String =
             "$PREFIX_ADDON$addonId:$catalogId"

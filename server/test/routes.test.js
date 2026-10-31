@@ -167,6 +167,9 @@ test('GET /health exposes cache and provider status', async () => {
   assert.ok(body.providers.enabled.length >= 1);
   assert.equal(body.addon.liveTtlHours, 2);
   assert.equal(body.addon.vodTtlHours, 6);
+  /* Si la agenda sale vacía, aquí está el porqué (cargada o no, y cuándo). */
+  assert.equal(typeof body.liveShelf.loaded, 'boolean');
+  assert.equal(typeof body.liveShelf.channels, 'number');
 });
 
 test('GET /proxy rejects private targets', async () => {

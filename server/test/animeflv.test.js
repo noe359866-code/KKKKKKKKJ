@@ -94,8 +94,17 @@ function routesFor(baseUrl) {
       { name: 'mega', embed: 'https://mega.nz/file/abc123' },
       { name: 'hqq', path: '/ext/offline' },
     ]),
-    /* Un episodio "que existe" pero sin servidores. */
+    /* Un episodio "que existe" pero sin servidores: la ficha tiene el enlace. */
     '/ver/one-piece-1179': '<html><body><h1>One Piece</h1><p>Sin servidores</p></body></html>',
+    '/ver/one-piece-1179-latino':
+      '<html><body><h1>One Piece</h1><div class="player"><iframe src="/ext/streamwish"></iframe></div></body></html>',
+    /* Ficha del anime: lista el episodio 1179 en otra ruta, nada del 1176. */
+    '/anime/one-piece': `<html><body><h1>One Piece</h1><ul class="ListEpisodios">
+  <li><a href="/ver/one-piece-1179-latino"><span class="Capi">Episodio 1179</span></a></li>
+  <li><a href="/ver/one-piece-1180"><span class="Capi">Episodio 1180</span></a></li>
+</ul></body></html>`,
+    /* Episodio sin servidores y sin enlace en la ficha. */
+    '/ver/one-piece-1176': '<html><body><h1>One Piece</h1><p>Sin servidores</p></body></html>',
     /* Segundo episodio, usado por el respaldo por búsqueda. */
     '/ver/one-piece-1': episodePage(baseUrl, [{ name: 'sw', path: '/ext/streamwish' }]),
     '/browse': searchPage(baseUrl, [['one-piece', 'One Piece']]),
@@ -221,11 +230,35 @@ test('falls back to the site search when the slug is unknown', async () => {
   assert.ok(body.streams.length >= 1);
 });
 
-test('an episode without servers degrades to an empty result', async () => {
+test('an episode whose own page has no servers is rescued from the anime page', async () => {
+  /* /ver/one-piece-1179 no trae botones; la ficha enlaza -latino, que sí. */
   const { code, body } = await runScraper(ask('animeflv:one-piece:1179'));
+
+  assert.equal(code, 0);
+  assert.equal(body.meta.servers_via, 'anime_page');
+  assert.match(body.meta.servers_from, /one-piece-1179-latino$/);
+  assert.ok(body.streams.length >= 1);
+  assert.match(body.streams[0].url, /m3u8/);
+});
+
+test('an episode without servers and without a link degrades to an empty result', async () => {
+  const { code, body } = await runScraper(ask('animeflv:one-piece:1176'));
   assert.equal(code, 0);
   assert.deepEqual(body.streams, []);
   assert.equal(body.meta.reason, 'no_servers');
+});
+
+test('rota a los espejos cuando el dominio configurado no responde', async () => {
+  /* El dominio histórico murió en 2026: si el primero cae, se prueba el espejo. */
+  const { code, body } = await runScraper(ask('animeflv:one-piece:1180'), {
+    ANIMEFLV_BASE: 'http://127.0.0.1:1',
+    ANIMEFLV_MIRRORS: base,
+  });
+
+  assert.equal(code, 0);
+  assert.equal(body.meta.base, base);
+  assert.equal(body.meta.base_rotated, true);
+  assert.ok(body.streams.length >= 1);
 });
 
 test('unreachable site returns [] with a reason instead of crashing', async () => {

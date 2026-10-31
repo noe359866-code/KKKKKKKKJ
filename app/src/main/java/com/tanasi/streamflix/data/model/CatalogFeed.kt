@@ -39,6 +39,11 @@ data class CatalogDescriptor(
     @SerialName("source") val source: String? = null,
     /** Nombre del addon de origen cuando [source] es `remote`. */
     @SerialName("provider") val provider: String? = null,
+    /**
+     * Pista de presentación que manda la fuente: `cards` (por defecto) o
+     * `sports` para la fila de deportes, que se pinta como marcador.
+     */
+    @SerialName("layout") val layout: String? = null,
 ) {
     /** Forma de las tarjetas, decidida por la fuente de datos. */
     val rowAspect: RowAspect
@@ -53,14 +58,6 @@ data class CatalogDescriptor(
      */
     val rowId: String get() = "remote:$type/$id"
 
-    /** Clave del arte local de respaldo (`movies`, `series`, `anime`, `live`). */
-    val artKey: String
-        get() = when (mediaType) {
-            MediaType.Live -> "live"
-            MediaType.Anime -> "anime"
-            MediaType.Series -> "series"
-            MediaType.Movie -> "movies"
-        }
 }
 
 /**
@@ -116,6 +113,16 @@ data class RemoteMeta(
      * filas; las de Cinemeta se reconocen por el id `tt…`.
      */
     @SerialName("sourceName") val sourceName: String? = null,
+    /**
+     * Deportes: equipos, competición y estado. [onAir] distingue el partido que
+     * ya empezó del que aún no, aunque los dos sean `tv`.
+     */
+    @SerialName("home") val home: String? = null,
+    @SerialName("away") val away: String? = null,
+    @SerialName("league") val league: String? = null,
+    @SerialName("startTime") val startTime: String? = null,
+    @SerialName("status") val status: String? = null,
+    @SerialName("onAir") val onAir: Boolean? = null,
     @SerialName("videos") val videos: List<RemoteVideo> = emptyList(),
 ) {
     val mediaType: MediaType get() = MediaType.fromWire(type) ?: MediaType.Movie
@@ -125,18 +132,17 @@ data class RemoteMeta(
     /**
      * Convierte la meta en la tarjeta que pinta el Home.
      *
-     * @param descriptor catálogo del que salió: presta la forma y la clave de
-     *   arte local (las metas de Cinemeta traen póster remoto, pero si la red
-     *   falla al cargarlo la tarjeta cae al `drawable` de la app).
+     * @param descriptor catálogo del que salió: presta la etiqueta de origen.
+     *   Las metas traen póster remoto; si la red falla al cargarlo, la tarjeta
+     *   usa el arte generado a partir del título.
      */
     fun toEntry(descriptor: CatalogDescriptor? = null): MediaEntry = MediaEntry(
         id = id,
         /* Se conserva el tipo PUBLICADO: es el que acepta `/stream/{type}/{id}`. */
         type = type,
         title = name.ifBlank { id },
-        poster = poster,
-        backdrop = background,
-        art = descriptor?.artKey ?: artKeyFor(type),
+        poster = normalizeArtworkUrl(poster),
+        backdrop = normalizeArtworkUrl(background),
         year = year ?: releaseInfo?.let { info -> parseYear(info) },
         subtitle = releaseInfo,
         synopsis = description,
@@ -144,6 +150,11 @@ data class RemoteMeta(
         rating = rating,
         runtime = runtime,
         live = mediaType == MediaType.Live,
+        onAir = onAir,
+        homeTeam = home?.takeIf { it.isNotBlank() },
+        awayTeam = away?.takeIf { it.isNotBlank() },
+        league = league?.takeIf { it.isNotBlank() },
+        startTime = startTime?.takeIf { it.isNotBlank() },
         provider = providerLabel(descriptor),
     )
 
@@ -158,16 +169,21 @@ data class RemoteMeta(
             ?: if (id.startsWith("tt")) "Cinemeta" else null
 
     private companion object {
-        fun artKeyFor(type: String): String = when (MediaType.fromWire(type)) {
-            MediaType.Live -> "live"
-            MediaType.Anime -> "anime"
-            MediaType.Series -> "series"
-            else -> "movies"
-        }
-
         fun parseYear(releaseInfo: String): Int? =
             Regex("(\\d{4})").find(releaseInfo)?.groupValues?.getOrNull(1)?.toIntOrNull()
     }
+}
+
+/**
+ * Normaliza la URL de una imagen.
+ *
+ * Varios proveedores publican el póster como URL relativa al protocolo
+ * (`//cdn.sitio/x.jpg`), que Coil no sabe resolver y deja la tarjeta sin arte.
+ * Una cadena vacía se convierte en `null` para que la UI use el respaldo.
+ */
+internal fun normalizeArtworkUrl(url: String?): String? {
+    val value = url?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return if (value.startsWith("//")) "https:$value" else value
 }
 
 /** Un episodio tal como lo devuelve Cinemeta a través de `/meta`. */
@@ -196,12 +212,17 @@ data class EpisodeOption(
     val episode: Int,
     val name: String? = null,
     val overview: String? = null,
+    /** Miniatura 16:9 del episodio (Cinemeta la publica para casi todas las series). */
+    val thumbnail: String? = null,
 ) {
     /** "T1 · E2" */
     val label: String get() = "T$season · E$episode"
 
     /** "E2" para los chips compactos de la TV. */
     val shortLabel: String get() = "E$episode"
+
+    /** "T1 E2" para el botón de reproducir de la ficha (temporada 0 = sin T). */
+    val playLabel: String get() = if (season <= 0) "E$episode" else "T$season E$episode"
 
     fun idFor(baseId: String): String = "$baseId:$season:$episode"
 }
@@ -228,6 +249,7 @@ fun List<RemoteVideo>.toSeasonGroups(): List<SeasonGroup> =
                 episode = it.episode ?: 0,
                 name = it.name?.takeIf { name -> name.isNotBlank() },
                 overview = it.overview,
+                thumbnail = normalizeArtworkUrl(it.thumbnail),
             )
         }
         .distinctBy { it.season to it.episode }
