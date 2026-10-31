@@ -18,6 +18,26 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/**
+ * Resultado de la búsqueda **mientras se escribe** (panel derecho del buscador).
+ *
+ * Se mantiene aparte de [HomeUiState] a propósito: teclear una letra no puede
+ * vaciar el Home ni, si la consulta no encuentra nada, dejar una pantalla de
+ * error detrás del teclado. El Home se queda como está y el panel del buscador
+ * enseña lo suyo.
+ */
+sealed interface SearchPreview {
+    /** Menos de dos caracteres: aún no hay nada que buscar. */
+    data object Idle : SearchPreview
+
+    data object Loading : SearchPreview
+
+    /** La consulta no encontró nada (o la red falló): el panel no grita, espera. */
+    data object Empty : SearchPreview
+
+    data class Ready(val entries: List<MediaEntry>) : SearchPreview
+}
+
 sealed interface HomeUiState {
     data object Loading : HomeUiState
     data class Ready(val catalog: HomeCatalog) : HomeUiState
@@ -76,6 +96,12 @@ class HomeViewModel(
     private val mutableSuggestions = MutableStateFlow<List<MediaEntry>>(emptyList())
     val suggestions: StateFlow<List<MediaEntry>> = mutableSuggestions.asStateFlow()
 
+    /** Lo que encuentra la búsqueda en vivo, para el panel del buscador. */
+    private val mutablePreview = MutableStateFlow<SearchPreview>(SearchPreview.Idle)
+    val preview: StateFlow<SearchPreview> = mutablePreview.asStateFlow()
+
+    private var previewJob: Job? = null
+
     init {
         load()
     }
@@ -83,6 +109,50 @@ class HomeViewModel(
     fun search(value: String) {
         mutableQuery.value = value.trim().take(150)
         load()
+    }
+
+    /**
+     * Búsqueda en vivo: se llama en cada pulsación y se espera a que el usuario
+     * deje de teclear ([SEARCH_DEBOUNCE_MS]).
+     *
+     * No toca [state]: el Home se queda detrás del buscador con lo que ya tenía.
+     * La consulta que acabe ganando queda en la caché del repositorio, así que
+     * pulsar `BUSCAR` después es instantáneo (misma clave de búsqueda).
+     */
+    fun preview(value: String) {
+        val query = value.trim().replace(Regex("\\s+"), " ").take(150)
+        previewJob?.cancel()
+        if (query.length < PREVIEW_MIN_LENGTH) {
+            mutablePreview.value = SearchPreview.Idle
+            return
+        }
+        previewJob = viewModelScope.launch {
+            delay(SEARCH_DEBOUNCE_MS)
+            mutablePreview.value = SearchPreview.Loading
+            val entries = try {
+                when (val result = repository.load(query)) {
+                    is CatalogResult.Ready -> result.catalog.rows
+                        .flatMap { row -> row.items }
+                        .distinctBy { entry -> entry.type to entry.id }
+                        .take(PREVIEW_LIMIT)
+                    /* Una búsqueda sin resultados no es un error: es una lista
+                     * vacía. Tampoco se pinta el mensaje de fallo: el usuario
+                     * está escribiendo, no pidiendo explicaciones. */
+                    is CatalogResult.Failure -> emptyList()
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                emptyList()
+            }
+            mutablePreview.value = if (entries.isEmpty()) SearchPreview.Empty else SearchPreview.Ready(entries)
+        }
+    }
+
+    /** Cierra el panel de búsqueda: la vista previa deja de tener sentido. */
+    fun clearPreview() {
+        previewJob?.cancel()
+        mutablePreview.value = SearchPreview.Idle
     }
 
     private fun showCatalog(catalog: HomeCatalog) {
@@ -237,5 +307,21 @@ class HomeViewModel(
 
         /** Tope del mapa de fichas ya pedidas: el Home no crece sin límite. */
         const val HERO_CACHE_LIMIT = 80
+
+        /**
+         * Espera antes de buscar mientras se escribe (ms).
+         *
+         * Con el mando se teclea despacio, pero un nombre de tres palabras son
+         * veinte pulsaciones: 350 ms deja pasar la ráfaga de una palabra sin
+         * lanzar una carga de catálogo por letra. El repositorio cachea por
+         * consulta, así que la que gane también sirve para `BUSCAR`.
+         */
+        const val SEARCH_DEBOUNCE_MS = 350L
+
+        /** Una letra sola no busca: devuelve medio catálogo y no dice nada. */
+        const val PREVIEW_MIN_LENGTH = 2
+
+        /** Tope de resultados en el panel: es una vista previa, no una parrilla. */
+        const val PREVIEW_LIMIT = 12
     }
 }

@@ -6,6 +6,7 @@ import com.tanasi.streamflix.data.RoutingContentClient
 import com.tanasi.streamflix.data.local.ChaquopyRuntime
 import com.tanasi.streamflix.data.local.ProfileStore
 import com.tanasi.streamflix.data.local.EmbeddedContentClient
+import com.tanasi.streamflix.data.local.SearchHistoryStore
 import com.tanasi.streamflix.data.local.WatchProgressStore
 import com.tanasi.streamflix.data.remote.AddonClient
 import com.tanasi.streamflix.data.repo.CatalogRepository
@@ -53,6 +54,8 @@ object ServiceLocator {
 
     @Volatile
     private var progressStoreInstance: WatchProgressStore? = null
+
+    private var searchHistoryInstance: SearchHistoryStore? = null
 
     private val json: Json = Json {
         ignoreUnknownKeys = true
@@ -124,6 +127,13 @@ object ServiceLocator {
                 .also { progressStoreInstance = it }
         }
 
+    /** Historial del buscador (una lista por dispositivo, no por perfil). */
+    fun searchHistory(context: Context): SearchHistoryStore =
+        searchHistoryInstance ?: synchronized(this) {
+            searchHistoryInstance ?: SearchHistoryStore(context.applicationContext)
+                .also { searchHistoryInstance = it }
+        }
+
     /** Sólo para tests de instrumentación: deja el contenedor como recién creado. */
     fun reset() {
         synchronized(this) {
@@ -136,6 +146,7 @@ object ServiceLocator {
             stremioClientInstance = null
             profileStoreInstance = null
             progressStoreInstance = null
+            searchHistoryInstance = null
         }
     }
 }

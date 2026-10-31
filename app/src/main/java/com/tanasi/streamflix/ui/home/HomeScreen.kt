@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -51,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.core.LocalDeviceProfile
+import com.tanasi.streamflix.di.ServiceLocator
 import com.tanasi.streamflix.data.model.CatalogRow
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.toChannelQueue
@@ -112,13 +114,34 @@ fun HomeScreen(
     val hero by viewModel.hero.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val suggestions by viewModel.suggestions.collectAsStateWithLifecycle()
+    val searchPreview by viewModel.preview.collectAsStateWithLifecycle()
     var showSearch by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    /* El historial vive en el dispositivo, no en el ViewModel: se lee al abrir
+     * el buscador y se escribe al buscar, así que siempre está al día sin
+     * arrastrar un `SharedPreferences` dentro del ViewModel. */
+    var recentSearches by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(showSearch) {
+        if (showSearch) recentSearches = ServiceLocator.searchHistory(context).recent()
+    }
 
     if (showSearch) {
         CatalogSearchDialog(
             initialQuery = query,
             suggestions = suggestions,
-            onSearch = { showSearch = false; viewModel.search(it) },
+            preview = searchPreview,
+            onPreview = viewModel::preview,
+            onClearPreview = viewModel::clearPreview,
+            recentSearches = recentSearches,
+            onForgetSearches = {
+                recentSearches = ServiceLocator.searchHistory(context).clear()
+            },
+            onSearch = {
+                recentSearches = ServiceLocator.searchHistory(context).remember(it)
+                showSearch = false
+                viewModel.search(it)
+            },
             /* Una recomendación lleva a su ficha: es lo que el usuario quiere
              * hacer con lo que le sugieren, sin pasar por la búsqueda. */
             onOpenDetails = { entry ->

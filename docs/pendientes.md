@@ -7,7 +7,11 @@ dominios caídos) no se puede comprobar desde aquí y queda marcado como tal.
 
 Estado: CI verde (`testDebugUnitTest`, `lintDebug`, `lintRelease`,
 `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`), Node
-**272/272**, Python **105**, 19 clases de test en JVM.
+**280/280**, Python **105**, 23 clases de test en JVM.
+
+> **Actualización (§23):** el buscador de P2 está hecho (acentos, búsqueda en
+> vivo con retardo, historial y el panel derecho con su regla probada). Lo único
+> que queda de P1 es la **EPG por canal**.
 
 > **Actualización (§21):** los dos primeros puntos de P1 —subtítulos y pista de
 > audio— ya están implementados, y `loadLiveShelf` ya comparte una sola corrida
@@ -89,18 +93,37 @@ hoy no se intenta.
 
 ---
 
-## P2 — Falta en el buscador
+## ✅ (hecho) P2 — El buscador
 
-- **Sin acentos** (`Á É Í Ó Ú Ü`): el teclado sólo lleva `Ñ`. Se decidió así
-  porque las búsquedas no distinguen mayúsculas y los títulos suelen
-  encontrarse sin tilde, pero un título que *sólo* se encuentre con tilde no se
-  puede escribir.
-- **No hay búsqueda mientras se escribe**: los resultados salen al pulsar
-  `BUSCAR`; no hay sugerencias en vivo (habría que pedir al repositorio con
-  debounce y pintar resultados en el panel derecho en lugar de recomendaciones).
-- **La consulta anterior se queda**: al reabrir, el campo trae el último texto
-  en vez de vacío.
-- **Sin historial de búsquedas**.
+Las cuatro cosas que faltaban, resueltas sin tocar el presupuesto de pantalla
+(960 × 540 dp, teclas de 48 dp):
+
+- ✅ **Acentos.** La fila de símbolos tiene dos páginas —`123` ⇄ `ÁÉÍ`— que se
+  conmutan con una tecla del mismo tamaño: `Á É Í Ó Ú Ü Ñ ¿ ? ¡`. Antes no había
+  forma de escribir "¿Qué pasó ayer?" con el mando. Diez teclas a cada lado para
+  que el teclado mida lo mismo en las dos páginas (con la tecla de conmutación
+  metida en la fila de `ESPACIO`/`BUSCAR`: 210 + 6 + 108 + 6 + 150 = 480 dp).
+  `TvKeyboardAccentTest` (5 casos).
+- ✅ **Búsqueda mientras se escribe.** `HomeViewModel.preview(query)` espera
+  350 ms desde la última tecla (`searchDebounceMs`) y carga una sola vez: la
+  consulta que gana queda en la caché del repositorio, así que pulsar `BUSCAR`
+  después es instantáneo. Se mantiene en un `StateFlow` aparte (`SearchPreview`:
+  `Idle`/`Loading`/`Empty`/`Ready`) para que teclear **no** vacíe el Home ni
+  pinte una pantalla de error detrás del teclado; una búsqueda sin resultados es
+  una lista vacía, no un fallo. `HomeViewModelSearchPreviewTest` (6 casos).
+- ✅ **Historial.** `SearchHistory` (regla pura) + `SearchHistoryStore`
+  (`SharedPreferences`, JSON con `kotlinx.serialization`) + `ServiceLocator`:
+  ocho consultas, la más reciente primero, sin duplicados aunque cambien las
+  mayúsculas, y las de una sola letra no se guardan. Con el campo vacío el panel
+  derecho enseña primero el historial y después las recomendaciones de Cinemeta;
+  una consulta anterior se repite con una pulsación, y «Borrar historial» está
+  al final de la lista. `SearchHistoryTest` (8 casos).
+- ✅ **La consulta anterior ya no se queda a ciegas**: al reabrir el buscador el
+  campo trae la búsqueda activa (para poder corregirla), pero el panel derecho
+  dice exactamente qué está pasando —resultados, "buscando", "sin resultados"—
+  y borrar el campo devuelve el historial. La regla de qué se enseña vive en
+  `searchPanelItems()` (`ui/home/SearchPanel.kt`), fuera de Compose y probada:
+  `SearchPanelTest` (7 casos).
 
 ---
 

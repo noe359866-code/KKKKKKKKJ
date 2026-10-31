@@ -8,6 +8,7 @@ import com.tanasi.streamflix.data.remote.Urls
 import com.tanasi.streamflix.util.AddonSettings
 import com.tanasi.streamflix.util.AppLog
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -36,12 +37,18 @@ sealed interface CatalogResult {
 class CatalogRepository(
     private val client: ContentClient,
     private val settings: AddonSettings,
+    /**
+     * Hilo de las peticiones. Se inyecta sólo para que las pruebas puedan correr
+     * con el planificador virtual y comprobar los retardos (la búsqueda en vivo
+     * espera a que el usuario deje de teclear); en producción es [Dispatchers.IO].
+     */
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
 
     @Volatile
     private var cached: Pair<String, HomeCatalog>? = null
 
-    suspend fun load(search: String? = null, onPartial: ((HomeCatalog) -> Unit)? = null): CatalogResult = withContext(Dispatchers.IO) {
+    suspend fun load(search: String? = null, onPartial: ((HomeCatalog) -> Unit)? = null): CatalogResult = withContext(ioDispatcher) {
         val key = "${settings.autonomous}:${settings.metadataCatalogs}:${settings.baseUrl}:${search.orEmpty()}"
         cached?.takeIf { it.first == key }?.let { return@withContext CatalogResult.Ready(it.second) }
 
@@ -107,7 +114,7 @@ class CatalogRepository(
             }
             descriptors.filterNot { it == saved }
                 .map { descriptor ->
-                    async(Dispatchers.IO) {
+                    async(ioDispatcher) {
                         val row = withTimeoutOrNull(ROW_TIMEOUT_MS) { fetchRow(baseUrl, descriptor, search) }
                         if (row != null) synchronized(completed) {
                             completed[descriptor.rowId] = row
