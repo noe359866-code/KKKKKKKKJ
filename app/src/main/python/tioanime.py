@@ -164,7 +164,7 @@ def scrape(payload: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any
 
     # Resolver con _hosters.py
     streams = build_streams(
-        resolve_all(servers, deadline, PARALLEL_SERVERS),
+        resolve_all(servers, headers, deadline, final_url, PARALLEL_SERVERS),
         deadline,
         PROVIDER,
         LABEL,
