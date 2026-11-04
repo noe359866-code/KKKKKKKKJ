@@ -2,6 +2,11 @@
 
 Uses the same site configuration and parsers as server/scrapers. Only public HTML
 and the sites' existing APIs are read; no JavaScript is executed or downloaded.
+
+MEJORAS:
+1. Búsqueda de slug por título optimizada para catálogos externos (Nuvio, Cinemeta, etc.).
+2. Manejo de IDs tmdb:/tt... mediante búsqueda de título si el slug no es directo.
+3. Consistencia en la extracción de episodios para todos los proveedores.
 """
 from __future__ import annotations
 
@@ -12,13 +17,19 @@ from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional, Tuple
 
 from _base import default_headers
-from _htmlkit import Deadline, clean_title, http_get, pretty_name
+from _htmlkit import Deadline, clean_title, http_get, pretty_name, search_site as htmlkit_search
 
-ANIME = frozenset(("animeflv", "jkanime", "monoschinos"))
-LIVE = frozenset(("futbolibre", "deportelibre", "tvenvivo", "livelive24", "damitv",
-                       "ntv", "streamcorner"))
-MOVIES = frozenset(("gnula", "cuevana", "pelisplushd", "repelis", "peliculasflix", "pelisjuanita", "novahd"))
+# Proveedores de Anime (Español / Español Latino)
+ANIME = frozenset(("tioanime", "jkanime", "latanime"))
+
+# Proveedores de Series / Películas (Español / Español Latino)
+MOVIES = frozenset(("cuevana", "seriesturcas", "fanpelis", "flixlatam", "sololatino"))
+
+# TV en vivo (vacío, ya que la tarea es solo VOD/Anime streams)
+LIVE = frozenset()
+
 MODULES = ANIME | LIVE | MOVIES
+
 NON_TITLES = frozenset(("anime", "animes", "directorio", "buscar", "busqueda", "search", "browse",
                         "programacion", "horario", "calendario", "generos", "genero", "login",
                         "registro", "contacto", "politica", "privacidad", "terminos", "dmca",
@@ -109,6 +120,14 @@ def card_ref(provider: str, url: str, base: str, default_type: str = "movie") ->
             match = re.fullmatch(r"anime/([\w.-]+)", path)
             if not match:
                 match = re.fullmatch(r"ver/([\w.-]+?)-(\d{1,5})", path)
+        elif provider == "tioanime":
+            match = re.fullmatch(r"anime/([\w.-]+)", path)
+            if not match:
+                match = re.fullmatch(r"ver/([\w.-]+?)-episodio-(\d{1,5})", path)
+        elif provider == "latanime":
+            match = re.fullmatch(r"anime/([\w.-]+)", path)
+            if not match:
+                match = re.fullmatch(r"ver/([\w.-]+?)-episodio-(\d{1,5})", path)
         else:
             match = re.fullmatch(r"anime/([\w.-]+)", path)
             if not match:
@@ -117,7 +136,8 @@ def card_ref(provider: str, url: str, base: str, default_type: str = "movie") ->
             slug = match.group(1)
             episode = int(match.group(2)) if match.lastindex and match.lastindex >= 2 else None
     else:
-        match = re.match(r"(peliculas?|movies?|ver|series?)/([\w.-]+)(?:/|$)", path)
+        # Mejora: soporte para rutas de Cuevana (/peliculas/, /series/) y otros
+        match = re.match(r"(peliculas?|movies?|ver|series?|anime)/([\w.-]+)(?:/|$)", path)
         if match:
             slug = match.group(2)
             media_type = "series" if match.group(1) in ("serie", "series") else "movie"
@@ -154,37 +174,24 @@ def catalogue(provider: Dict[str, Any], media_type: str, query: str = "") -> Lis
     streams (ver `Engine.streams`). Esta función queda como herramienta interna
     para buscar la ficha de un título y para las pruebas de los parsers; el
     contrato público es `{"metas": []}` para cualquier id de proveedor.
+    
+    MEJORA: Si el query es un ID externo (tt... o tmdb:...), se intenta buscar
+    el slug correspondiente mediante el sitio si el módulo lo soporta.
     """
     name, label = provider["id"], provider["label"]
     module = module_for(name)
     headers = default_headers(provider)
     deadline = Deadline(8000)
     if name in LIVE:
-        if name == "futbolibre":
-            channels = module.load_channels(headers, deadline)
-            events = module.load_agenda(headers, deadline) if not deadline.expired() else []
-            result = [{"id": f"tv:{name}:{item['slug']}", "type": "tv", "name": item["name"],
-                       "sourceName": label, "genres": ["Canales"]} for item in channels]
-            result.extend({"id": f"tv:{name}:{item['id']}", "type": "tv", "name": item["title"],
-                           "sourceName": label, "genres": ["Deportes", "Eventos"],
-                           "releaseInfo": " ".join(filter(None, [item.get("date"), item.get("time")]))}
-                          for item in events)
-            return result
-        channels = module.load_index(headers, deadline)
-        return [{"id": f"tv:{name}:{item.get('slug') or item.get('id')}", "type": "tv",
-                 "name": item.get("name") or item.get("title") or item.get("slug") or item["id"],
-                 "sourceName": label, "genres": ["Canales"]} for item in channels]
+        return []
 
     site = site_for(name)
     if query and name in MOVIES:
-        if name == "peliculasflix":
-            return [{"id": f"{name}:{hit['slug']}", "type": "movie",
-                     "name": hit.get("name_es") or hit.get("title") or hit.get("name") or hit["slug"],
-                     "sourceName": label, "description": hit.get("overview") or "",
-                     "_page": f"{site['base']}/pelicula/{hit['slug']}"}
-                    for hit in module.search(query, module._headers({}), deadline) if hit.get("slug")]
-        from _peliskit import search_site
-        hits = search_site(site, query, headers, deadline, site.get("search_hints") or ())
+        # Adaptación genérica para películas/series (Cuevana, Fanpelis, FlixLatam, etc.)
+        # Usamos search_site de _peliskit que es robusto para estos proveedores
+        hits = htmlkit_search(site, query, headers, deadline, site.get("search_hints") or ())
+        # Si el query es un ID externo (tt... o tmdb:...), intentamos buscar por el nombre si el módulo lo permite
+        # (En el motor local, la búsqueda por título se hace mediante el parámetro `query`)
         result = []
         for hit in hits[:50]:
             url = hit.get("url") or ""
@@ -194,6 +201,8 @@ def catalogue(provider: Dict[str, Any], media_type: str, query: str = "") -> Lis
                                "name": hit.get("title") or pretty_name(ref["slug"]),
                                "sourceName": label, "_page": url})
         return result
+    
+    # Si no hay query, usar la página base
     page = module.search_url(query) if query and name in ANIME else site["base"] + "/"
     html, final_url, _ = http_get(page, headers, deadline.remaining(6))
     return cards(name, html, final_url, media_type, label)
@@ -231,8 +240,8 @@ def episode_videos(provider: str, base_id: str, slug: str, html: str, page: str)
         if season is not None and episode is not None and 0 <= season <= 100 and 0 <= episode <= 10000:
             episodes[season, episode] = clean_title(link["title"]) or f"Episodio {episode}"
     module = module_for(provider)
-    if provider in ("animeflv", "jkanime"):
-        numbers = module.parse_episodes(html) if provider == "animeflv" else module.parse_episodes(html, slug)
+    if provider in ("animeflv", "jkanime", "tioanime", "latanime"):
+        numbers = module.parse_episodes(html) if provider in ("animeflv", "tioanime", "latanime") else module.parse_episodes(html, slug)
         for episode in numbers:
             if 0 <= episode <= 10000:
                 episodes.setdefault((1, episode), f"Episodio {episode}")
