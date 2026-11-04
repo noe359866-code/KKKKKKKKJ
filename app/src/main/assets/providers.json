@@ -1,0 +1,85 @@
+{
+  "$comment": "Proveedores integrados para la app (solo Español y Español Latino). Solo resolución de streams (sin catálogo, sin embeds).",
+  "providers": [
+    {
+      "id": "tioanime",
+      "label": "TioAnime",
+      "script": "tioanime.py",
+      "priority": 10,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://tioanime.com/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "jkanime",
+      "label": "JKAnime",
+      "script": "jkanime.py",
+      "priority": 11,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://jkanime.net/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "cuevana",
+      "label": "Cuevana",
+      "script": "cuevana.py",
+      "priority": 12,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://cue.cuevana3.nu/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "seriesturcas",
+      "label": "SeriesTurcas",
+      "script": "seriesturcas.py",
+      "priority": 13,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://seriesturcas.net/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "fanpelis",
+      "label": "Fanpelis",
+      "script": "fanpelis.py",
+      "priority": 14,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://fanpelis.com/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "flixlatam",
+      "label": "FlixLatam",
+      "script": "flixlatam.py",
+      "priority": 15,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://flixlatam.com/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "latanime",
+      "label": "Latanime",
+      "script": "latanime.py",
+      "priority": 16,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://latanime.com/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    },
+    {
+      "id": "sololatino",
+      "label": "SoloLatino",
+      "script": "sololatino.py",
+      "priority": 17,
+      "kind": "vod",
+      "enabled": true,
+      "referer": "https://sololatino.com/",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    }
+  ]
+}
