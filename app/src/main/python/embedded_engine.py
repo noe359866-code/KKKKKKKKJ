@@ -175,6 +175,9 @@ def normalize_meta(raw: Dict[str, Any], media_type: str) -> Optional[Dict[str, A
                 "home", "away", "league", "startTime", "status"):
         if raw.get(key):
             result[key] = str(raw[key])
+    for key in ("onAir", "live"):
+        if key in raw:
+            result[key] = bool(raw[key])
     release = str(raw.get("releaseInfo") or raw.get("year") or "")
     if release:
         result["releaseInfo"] = release
@@ -251,8 +254,10 @@ def is_playable_stream(url: str, hints: Optional[Dict[str, Any]] = None) -> bool
     return not any(marker in path for marker in NOT_PLAYABLE_HINTS)
 
 
-# ---------------------------------------------------------------------------\n# Subtítulos
-# ---------------------------------------------------------------------------\nSUBTITLE_LIMIT = 40
+# ---------------------------------------------------------------------------
+# Subtítulos
+# ---------------------------------------------------------------------------
+SUBTITLE_LIMIT = 40
 SUBTITLE_FORMATS = {
     "vtt": "vtt", "webvtt": "vtt", "srt": "srt", "sub": "srt",
     "ass": "ass", "ssa": "ass", "ttml": "ttml", "dfxp": "ttml", "xml": "ttml",
@@ -275,14 +280,14 @@ LANGUAGE_NAMES = {
 
 
 def normalize_language(value: Any) -> str:
-    text = re.sub(r"[_\\s]+", "-", str(value or "").strip().lower())
+    text = re.sub(r"[_\s]+", "-", str(value or "").strip().lower())
     if not text:
         return ""
     base, _, region = text.partition("-")
     base = LANGUAGE_ALIASES.get(base, base)
     if not re.fullmatch(r"[a-z]{2,3}", base):
         return ""
-    return f"{base}-{region}" if re.fullmatch(r"([a-z]{2}|\\d{3})", region) else base
+    return f"{base}-{region}" if re.fullmatch(r"([a-z]{2}|\d{3})", region) else base
 
 
 def language_name(value: Any) -> str:
@@ -529,7 +534,10 @@ class Engine:
             try:
                 if catalog_id.startswith("cinemeta_"):
                     upstream_type = "series" if media_type == "anime" else media_type
-                    extras = {"search": query, "genre": genre, "skip": skip or ""}
+                    # El anime no es un tipo de Cinemeta: son series con género Animation.
+                    extras = {"search": query,
+                              "genre": genre or ("Animation" if media_type == "anime" else ""),
+                              "skip": skip or ""}
                     extra_path = "/" + "&".join(f"{k}={urllib.parse.quote(str(v), safe='')}" for k, v in extras.items() if v != "")
                     path = f"/catalog/{upstream_type}/{urllib.parse.quote(catalog_id[9:], safe='')}"
                     data = http_get_json(self.cinemeta_base + path + (extra_path if extra_path != "/" else "") + ".json",

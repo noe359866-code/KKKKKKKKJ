@@ -17,16 +17,20 @@ from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional, Tuple
 
 from _base import default_headers
-from _htmlkit import Deadline, clean_title, http_get, pretty_name, search_site as htmlkit_search
+from _htmlkit import Deadline, clean_title, http_get, pretty_name
+from _peliskit import search_site as htmlkit_search
+
+# TV en vivo: los proveedores `kind: live` de server/config/providers.json.
+LIVE = frozenset(("futbolibre", "deportelibre", "tvenvivo", "livelive24",
+                  "damitv", "ntv", "streamcorner"))
 
 # Proveedores de Anime (Español / Español Latino)
-ANIME = frozenset(("tioanime", "jkanime", "latanime"))
+ANIME = frozenset(("animeflv", "jkanime", "monoschinos", "tioanime", "latanime"))
 
 # Proveedores de Series / Películas (Español / Español Latino)
-MOVIES = frozenset(("cuevana", "seriesturcas", "fanpelis", "flixlatam", "sololatino"))
-
-# TV en vivo (vacío, ya que la tarea es solo VOD/Anime streams)
-LIVE = frozenset()
+MOVIES = frozenset(("gnula", "cuevana", "pelisplushd", "repelis", "peliculasflix",
+                    "pelisjuanita", "novahd", "seriesturcas", "fanpelis",
+                    "flixlatam", "sololatino"))
 
 MODULES = ANIME | LIVE | MOVIES
 

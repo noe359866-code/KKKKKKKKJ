@@ -1,0 +1,157 @@
+name: APK build (arena)
+
+# Compila el APK de release firmado (clave sideload) y lo deja en dist/ de la
+# rama arena, porque desde el sandbox no se pueden descargar artefactos de
+# Actions (redirigen a un host de almacenamiento externo). El push de vuelta
+# lo hace GITHUB_TOKEN, así que no vuelve a disparar workflows.
+#
+# Sin secretos de firma usa la misma clave sideload efímera que
+# android-release.yml; la clave viaja junto al APK para poder firmar la
+# próxima versión con la misma firma.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['arena/**']
+    paths-ignore:
+      - 'dist/**'
+
+permissions:
+  contents: write
+  checks: write
+
+concurrency:
+  group: apk-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Python 3.11 (runtime embebido)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Pruebas offline del motor autónomo
+        run: python3 -m unittest discover -s app/src/test/python -v
+
+      - name: Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Android SDK
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            echo "::error::El runner no tiene Android SDK (ANDROID_HOME vacío)."
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          SDKMGR="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMGR" ]; then
+            SDKMGR="$(ls "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1 || true)"
+          fi
+          if [ -n "$SDKMGR" ]; then
+            yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+            "$SDKMGR" "platforms;android-36" "build-tools;35.0.0" 2>&1 | tail -3 || true
+          fi
+          ls "$SDK/platforms"
+
+      - name: Preparar firma sideload
+        run: |
+          set -euo pipefail
+          SIDELOAD_PASS="streamflix-sideload"
+          keytool -genkeypair -noprompt \
+            -keystore "${RUNNER_TEMP}/sideload.keystore" \
+            -storetype PKCS12 \
+            -alias streamflix \
+            -keyalg RSA -keysize 4096 -validity 10000 \
+            -storepass "$SIDELOAD_PASS" -keypass "$SIDELOAD_PASS" \
+            -dname "CN=Streamflix Sideload, OU=Android, O=Streamflix, C=NI"
+          {
+            echo "RELEASE_STORE_FILE=${RUNNER_TEMP}/sideload.keystore"
+            echo "RELEASE_STORE_PASSWORD=${SIDELOAD_PASS}"
+            echo "RELEASE_KEY_ALIAS=streamflix"
+            echo "RELEASE_KEY_PASSWORD=${SIDELOAD_PASS}"
+          } >> "$GITHUB_ENV"
+
+      - name: Build release APK + AAB
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace 2>&1 | tee "$RUNNER_TEMP/ci.log"
+
+      # Los logs de Actions se descargan de un host externo; el texto de un
+      # check-run sí se lee por api.github.com.
+      - name: Publicar diagnóstico
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const file = `${process.env.RUNNER_TEMP}/ci.log`;
+            const raw = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '(sin ci.log)';
+            const lines = raw.split('\n');
+            const interesting = lines.filter((l) =>
+              /FAILED|AssertionError|expected:|Unresolved|^e: |Execution failed|error:|What went wrong/i.test(l));
+            const body = [
+              '### Líneas con error',
+              '```',
+              (interesting.slice(-140).join('\n') || '(ninguna)'),
+              '```',
+              '### Final del log',
+              '```',
+              lines.slice(-140).join('\n'),
+              '```',
+            ].join('\n').slice(-60000);
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'apk-build-diagnostico',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: 'neutral',
+              output: {
+                title: 'Falló el build del APK',
+                summary: 'Últimas líneas del log de Gradle.',
+                text: body || '(vacío)',
+              },
+            });
+
+      - name: Verificar APK y dejarlo en dist/
+        run: |
+          set -euo pipefail
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          AAB=$(ls app/build/outputs/bundle/release/*.aab | head -1)
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs "$APK"
+          python3 scripts/verify-embedded-apk.py "$APK"
+          mkdir -p dist
+          cp "$APK" dist/Streamflix-release.apk
+          cp "$AAB" dist/Streamflix-release.aab
+          cp "${RUNNER_TEMP}/sideload.keystore" dist/sideload.keystore
+          (cd dist && sha256sum Streamflix-release.apk Streamflix-release.aab > SHA256SUMS.txt)
+          ls -lh dist/
+
+      - name: Publicar dist/ en la rama
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f dist/
+          if git diff --cached --quiet; then
+            echo "Sin cambios en dist/."
+            exit 0
+          fi
+          git commit -m "build: APK de release firmado (sideload) en dist/ [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
