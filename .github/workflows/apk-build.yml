@@ -86,7 +86,46 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Build release APK + AAB
-        run: ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace 2>&1 | tee "$RUNNER_TEMP/ci.log"
+
+      # Los logs de Actions se descargan de un host externo; el texto de un
+      # check-run sí se lee por api.github.com.
+      - name: Publicar diagnóstico
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const file = `${process.env.RUNNER_TEMP}/ci.log`;
+            const raw = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '(sin ci.log)';
+            const lines = raw.split('\n');
+            const interesting = lines.filter((l) =>
+              /FAILED|AssertionError|expected:|Unresolved|^e: |Execution failed|error:|What went wrong/i.test(l));
+            const body = [
+              '### Líneas con error',
+              '```',
+              (interesting.slice(-140).join('\n') || '(ninguna)'),
+              '```',
+              '### Final del log',
+              '```',
+              lines.slice(-140).join('\n'),
+              '```',
+            ].join('\n').slice(-60000);
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'apk-build-diagnostico',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: 'neutral',
+              output: {
+                title: 'Falló el build del APK',
+                summary: 'Últimas líneas del log de Gradle.',
+                text: body || '(vacío)',
+              },
+            });
 
       - name: Verificar APK y dejarlo en dist/
         run: |
