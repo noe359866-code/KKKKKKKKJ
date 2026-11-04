@@ -27,7 +27,8 @@ on:
       - 'v*'
 
 permissions:
-  contents: read
+  # Necesario para adjuntar la APK/AAB a la publicación de la etiqueta.
+  contents: write
   # Sólo para publicar el diagnóstico del build como check-run (ver más abajo).
   checks: write
 
@@ -263,6 +264,51 @@ jobs:
           path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publicar APK en GitHub Releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "## Streamflix $VERSION"
+            echo
+            echo "APK firmada **solo para Android TV / Google TV** (Android 6.0 o posterior)."
+            echo "Descarga \`streamflix-$VERSION.apk\` e instálala en el televisor o TV box."
+            echo
+            echo "- Versión visible: $VERSION; código interno: ${VERSION_CODE:-2}."
+            echo "- **Autónoma**: scrapers Python, catálogo, fichas y reproductor integrados en la APK."
+            echo "- Leanback obligatorio, sin launcher móvil y con navegación por mando (D-Pad)."
+            echo "- Pruebas unitarias, lint, manifiesto TV, paquete embebido y firma comprobados por GitHub Actions."
+            echo "- No necesita servidor Node externo; opcionalmente se puede configurar uno en Ajustes."
+            echo "- Si Android informa de un conflicto de firma, hace falta desinstalar la versión anterior antes de instalar esta."
+            echo "- Conserva el keystore de firma para futuras actualizaciones."
+            echo
+            echo "SHA-256 de la APK y del AAB en \`digests.txt\`."
+          } > "$NOTES"
+          # Renombrar el APK con la versión del tag para que la descarga sea inequívoca.
+          VERSIONED_APK="$(dirname "$APK")/streamflix-$VERSION.apk"
+          if [ "$APK" != "$VERSIONED_APK" ]; then
+            mv "$APK" "$VERSIONED_APK"
+            APK="$VERSIONED_APK"
+            echo "APK=$APK" >> "$GITHUB_ENV"
+            # Recalcular digests con el nombre versionado.
+            sha256sum "$APK" "$AAB" | tee digests.txt
+          fi
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$APK" "$AAB" digests.txt \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$APK" "$AAB" digests.txt \
+              --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "Streamflix $VERSION" --notes-file "$NOTES"
+          fi
+          URL=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json url --jq .url)
+          echo "### Descarga directa" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Streamflix $VERSION]($URL)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload R8 mapping
         uses: actions/upload-artifact@v4
