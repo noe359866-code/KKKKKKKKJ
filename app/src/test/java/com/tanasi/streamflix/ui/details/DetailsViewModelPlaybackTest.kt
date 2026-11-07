@@ -66,67 +66,6 @@ class DetailsViewModelPlaybackTest {
         assertEquals("tt1:1:1", vm.playbackRequest().id)
     }
 
-    @Test fun `desde seguir viendo se retoma el episodio guardado y su segundo`() = runTest(dispatcher) {
-        /* La tarjeta de «Seguir viendo» guarda el id del capítulo
-         * (`tt1:1:2`) y su posición. Sin esto la ficha ponía el foco en el E1
-         * y arrancaba desde cero: el usuario veía empezar la serie otra vez. */
-        val card = MediaEntry(
-            id = "tt1:1:2",
-            type = "series",
-            title = "Serie · T1 E2",
-            resumePositionMs = 1_230_000L,
-        )
-        val vm = DetailsViewModel(
-            entry = card,
-            client = client,
-            settings = settings,
-            resumeEpisodeId = "tt1:1:2",
-        )
-        advanceUntilIdle()
-
-        val request = vm.playbackRequest()
-
-        assertEquals("tt1:1:2", request.id)
-        assertEquals("T1 E2", vm.episodeLabel())
-        assertEquals(
-            "la posición guardada es la del capítulo, no la del título",
-            1_230_000L,
-            request.startPositionMs,
-        )
-    }
-
-    @Test fun `un episodio guardado que el proveedor ya no lista no rompe la ficha`() = runTest(dispatcher) {
-        /* El catálogo cambió de numeración o el capítulo desapareció: hay que
-         * caer al primero en vez de no seleccionar nada. */
-        val vm = DetailsViewModel(
-            entry = MediaEntry(id = "tt1:1:9", type = "series", title = "Serie"),
-            client = client,
-            settings = settings,
-            resumeEpisodeId = "tt1:1:9",
-        )
-        advanceUntilIdle()
-
-        assertEquals("tt1:1:1", vm.playbackRequest().id)
-        assertEquals("empezar de cero es lo correcto si el capítulo ya no existe", 0L, vm.playbackRequest().startPositionMs)
-    }
-
-    @Test fun `elegir otro capitulo a mano sigue empezando desde el principio`() = runTest(dispatcher) {
-        /* La excepción de la reanudación es sólo para el capítulo guardado. */
-        val vm = DetailsViewModel(
-            entry = MediaEntry(id = "tt1:1:2", type = "series", title = "Serie", resumePositionMs = 1_230_000L),
-            client = client,
-            settings = settings,
-            resumeEpisodeId = "tt1:1:2",
-        )
-        advanceUntilIdle()
-        vm.selectEpisode((vm.episodes.value as EpisodesUiState.Ready).episodes[0])
-
-        val request = vm.playbackRequest()
-
-        assertEquals("tt1:1:1", request.id)
-        assertEquals(0L, request.startPositionMs)
-    }
-
     @Test fun `pelicula conserva su id aunque los metadatos incluyan videos`() = runTest(dispatcher) {
         val vm = DetailsViewModel(MediaEntry(id = "tt1", type = "movie", title = "Película"), client, settings)
         assertTrue(vm.episodes.value is EpisodesUiState.Hidden)

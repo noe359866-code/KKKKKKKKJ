@@ -73,15 +73,6 @@ class DetailsViewModel(
     val entry: MediaEntry,
     private val client: ContentClient? = null,
     private val settings: AddonSettings? = null,
-    /**
-     * Episodio que se estaba viendo (`serie:slug:1:3`), si la ficha se abrió
-     * desde una tarjeta de «Seguir viendo».
-     *
-     * Sin esto se ofrecía el **primer capítulo de la serie** aunque el usuario
-     * llevara seis visto: la tarjeta guarda el id del episodio, pero la ficha lo
-     * descartaba y ponía el foco en el E1.
-     */
-    private val resumeEpisodeId: String? = null,
 ) : ViewModel() {
 
     private val mutableMetadata = MutableStateFlow<RemoteMeta?>(null)
@@ -157,19 +148,8 @@ class DetailsViewModel(
             }
 
             val first = (seasons.firstOrNull { it.season > 0 } ?: seasons.first()).episodes.first()
-            /* Desde «Seguir viendo» se retoma el capítulo que se estaba viendo,
-             * no el primero de la serie. El id guardado ya viene completo
-             * (`serie:slug:1:3`), así que se busca por `idFor` y no por número
-             * de episodio: así vale también para los ids de anime, que no
-             * llevan temporada. */
-            val resume = resumeEpisodeId?.let { wanted ->
-                seasons.asSequence()
-                    .flatMap { it.episodes.asSequence() }
-                    .firstOrNull { it.idFor(entry.id) == wanted }
-            }
-            val selected = resume ?: first
-            mutableEpisodes.value = EpisodesUiState.Ready(seasons = seasons, selected = selected)
-            requestedId = selected.idFor(entry.id)
+            mutableEpisodes.value = EpisodesUiState.Ready(seasons = seasons, selected = first)
+            requestedId = first.idFor(entry.id)
         }
     }
 
@@ -227,15 +207,8 @@ class DetailsViewModel(
             id = requestedId,
             title = episode?.let { current -> "${displayTitle()} · ${current.label}" } ?: displayTitle(),
             /* Sólo se reanuda el título que se estaba viendo: si el usuario
-             * elige otro capítulo, empieza desde el principio. El caso del
-             * episodio guardado es la excepción: `base.startPositionMs` **es**
-             * su posición (la trae `WatchProgress.toEntry`), y compararla con
-             * `entry.id` la tiraba a cero justo cuando había que usarla. */
-            startPositionMs = when (requestedId) {
-                entry.id -> base.startPositionMs
-                resumeEpisodeId -> base.startPositionMs
-                else -> 0L
-            },
+             * elige otro capítulo, empieza desde el principio. */
+            startPositionMs = if (requestedId == entry.id) base.startPositionMs else 0L,
             /* El "siguiente" se resuelve aquí y viaja en la petición: al
              * reproductor no le queda la lista de episodios. */
             nextEpisodeId = next?.idFor(entry.id),
