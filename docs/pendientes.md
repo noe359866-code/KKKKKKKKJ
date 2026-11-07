@@ -25,6 +25,17 @@ Estado: CI verde (`testDebugUnitTest`, `lintDebug`, `lintRelease`,
 > VIVO— con sus pruebas y su documentación. **No** se tocó Android TV como
 > plataforma: leanback, foco D-Pad y `DeviceProfile` siguen igual.
 >
+> Cierre de la retirada, verificado en CI: los dos workflows (`APK build` y
+> `Autonomous app checks`) están en verde con `testDebugUnitTest`,
+> `lintDebug`, `lintRelease`, `assembleDebug`, `assembleRelease` y
+> `assembleDebugAndroidTest`, más `verify-embedded-apk.py` sobre el APK
+> debug y release. El APK publicado lleva 20 módulos Python —los diez
+> proveedores VOD y sus ayudas— y **ninguno** de directo, y ya no empaqueta
+> `live-catalog.json`. En el camino se corrigieron tres restos que sólo
+> aparecían al compilar: `canSeekPlayback` seguía recibiendo `isLive`,
+> `ChaquopyRuntime` abría el asset borrado `live-catalog.json` y
+> `CatalogFeedTest` usaba una variable `live` inexistente.
+>
 > **Actualización (§23):** el buscador de P2 está hecho (acentos, búsqueda en
 > vivo con retardo, historial y el panel derecho con su regla probada). También
 > caen `cuevana.SITE["base"]` y las pruebas de `HomeViewModel.suggestions`.
