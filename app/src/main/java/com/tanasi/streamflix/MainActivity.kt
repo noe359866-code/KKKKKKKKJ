@@ -233,7 +233,19 @@ class MainActivity : ComponentActivity() {
             DisposableEffect(detailsOwner) {
                 onDispose { detailsOwner.viewModelStore.clear() }
             }
-            val factory = remember(entry, settings.autonomous, settings.baseUrl) {
+            /* El episodio que se estaba viendo, si la ficha se abrió desde una
+             * tarjeta de «Seguir viendo». Se busca antes de crear el
+             * `ViewModel`: llega por el constructor y no puede cambiar después
+             * sin reiniciarlo, así que también entra en la clave del `remember`.
+             * `entriesFor` ya viene ordenado de más reciente a más antiguo. */
+            val savedEpisodeId = progressStore
+                .entries(profile.id)
+                .firstOrNull { item ->
+                    item.id != entry.id && WatchProgress.sameTitle(item.id, entry.id)
+                }
+                ?.id
+
+            val factory = remember(entry, savedEpisodeId, settings.autonomous, settings.baseUrl) {
                 viewModelFactory {
                     initializer {
                         DetailsViewModel(
@@ -241,10 +253,12 @@ class MainActivity : ComponentActivity() {
                             /* Episodios del proveedor local o del backend opcional. */
                             client = ServiceLocator.contentClient(applicationContext),
                             settings = ServiceLocator.settings(applicationContext),
+                            resumeEpisodeId = savedEpisodeId,
                         )
                     }
                 }
             }
+
             val detailsViewModel: DetailsViewModel = viewModel(
                 viewModelStoreOwner = detailsOwner,
                 factory = factory,
