@@ -214,6 +214,44 @@ implementado, escrito de cero:
   con puntos suspensivos como antes. Margen de 1 px para que medir y pintar no
   coincidan y el texto tiemble. `FocusMarqueeTest` (4 casos).
 
+## Hecho — saltar intro, resumen y créditos (§28)
+
+Con las dos bases públicas ya conectadas:
+
+- **TheIntroDB v4** (`api.theintrodb.org/v4/media`): primera opción. Es la más
+  completa, acepta IMDb/TMDB/TVDB y su `duration_ms` permite elegir la versión
+  del estreno (teatral, extendida) cuando el título tiene varias.
+- **IntroDB** (`api.introdb.app/segments`): segunda. Sólo entiende **IMDb**,
+  pero responde para series que la otra no tiene.
+
+Se consulta una y se para en la primera con datos. Preguntar a las dos siempre
+duplicaría el tráfico a servicios gratuitos sin ganar nada.
+
+Detalles que costaron mirar la documentación:
+
+- Son **tres dialectos**: v4 usa listas y milisegundos (`start_ms`/`end_ms`) y
+  llama `credits` al final; v2/v3 igual pero encabezado por `tmdb_id`;
+  IntroDB usa objetos sueltos, segundos (`start_sec`) y llama `outro` al final.
+  `SkipSegmentParser` acepta los tres y distingue por el nombre del campo, que
+  es inconfundible.
+- **`end_ms: null` en créditos significa "hasta el final"**, no "dato roto": se
+  cierra con la duración real del vídeo, y si todavía no se conoce el tramo se
+  descarta en vez de saltar a un sitio inventado.
+- **`preview` se ignora**: es el avance del próximo capítulo, no algo que el
+  usuario quiera saltarse.
+- Un solo botón por tipo (`distinctBy`): TheIntroDB publica a veces varios
+  tramos de créditos y el reproductor no puede ofrecer tres.
+- **El identificador se valida antes de pedir**: `tt` + 7 u 8 dígitos. Un id de
+  proveedor (`gnula:x`) gastaría una petición para recibir un 400.
+- La respuesta vacía **también se cachea**: si no, una serie sin marcas se
+  pediría en cada capítulo y en cada cambio de fuente.
+- Nada de esto puede romper la reproducción: el cliente devuelve `null` ante
+  cualquier fallo y el repo nunca lanza.
+
+Pendiente de probar en una TV real: el chip aparece en la esquina inferior
+derecha, exige tramo activo y se oculta con los paneles abiertos. Los tiempos
+son de la comunidad, así que un ripeo distinto puede desplazarlos unos segundos.
+
 Queda **sin hacer a propósito**: skip-intro por capítulos (necesita que el
 contenedor traiga capítulos y una barra de progreso por capítulo que no
 tenemos), la API de IntroDB (dependencia externa nueva) y todo lo de nube,
