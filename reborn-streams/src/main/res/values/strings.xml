@@ -1,0 +1,4 @@
+<resources>
+    <string name="bypass_action_continue">Continuar</string>
+    <string name="bypass_tv_instructions">Usa el mando para continuar cuando la página termine de cargar.</string>
+</resources>

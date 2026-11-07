@@ -177,7 +177,7 @@ jobs:
             echo ""
             echo "| | |"
             echo "| --- | --- |"
-            echo "| Motor | Python + 12 scrapers dentro del APK |"
+            echo "| Motor | Python + 17 scrapers + Reborn sólo streams dentro del APK |"
             echo "| Backend opcional | \`${{ steps.url.outputs.value }}\` |"
             echo "| Firma | \`${{ steps.signing.outputs.kind }}\` |"
             echo "| APK | \`$(basename "$APK")\` ($(du -h "$APK" | cut -f1)) |"

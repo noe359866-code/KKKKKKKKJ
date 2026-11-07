@@ -777,3 +777,4 @@ This project is licensed under the `Apache-2.0` License - see the [LICENSE](LICE
   <br />
   © 2025 Streamflix Reborn. Built with respect for the original work.
 </p>
+- Port Streamflix Reborn2: scrapers/extractores adicionales **sólo streams**, sin catálogos. Ver `docs/reborn-streams.md`.

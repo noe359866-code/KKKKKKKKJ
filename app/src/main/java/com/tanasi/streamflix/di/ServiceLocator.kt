@@ -6,6 +6,7 @@ import com.tanasi.streamflix.data.RoutingContentClient
 import com.tanasi.streamflix.data.local.ChaquopyRuntime
 import com.tanasi.streamflix.data.local.ProfileStore
 import com.tanasi.streamflix.data.local.EmbeddedContentClient
+import com.tanasi.streamflix.data.local.RebornStreamsContentClient
 import com.tanasi.streamflix.data.local.SearchHistoryStore
 import com.tanasi.streamflix.data.local.WatchProgressStore
 import com.tanasi.streamflix.data.remote.AddonClient
@@ -93,7 +94,10 @@ object ServiceLocator {
         contentInstance ?: synchronized(this) {
             contentInstance ?: RoutingContentClient(
                 settings = settings(context),
-                embedded = EmbeddedContentClient(ChaquopyRuntime(context)) { settings(context).metadataCatalogs },
+                embedded = RebornStreamsContentClient.forContext(
+                    context,
+                    EmbeddedContentClient(ChaquopyRuntime(context)) { settings(context).metadataCatalogs },
+                ),
                 remote = addonClient(),
                 addonManager = stremioAddonManager(context),
                 stremioClient = stremioAddonClient(),

@@ -1,0 +1,61 @@
+plugins {
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.parcelize)
+    alias(libs.plugins.kotlin.serialization)
+}
+
+android {
+    namespace 'com.streamflixreborn.streamflix'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 24
+        targetSdk 35
+        consumerProguardFiles 'consumer-rules.pro'
+
+        buildConfigField 'String', 'APP_LAYOUT', '"tv"'
+        buildConfigField 'String', 'TMDB_API_KEY', '"' + (System.getenv('TMDB_API_KEY') ?: project.findProperty('TMDB_API_KEY') ?: '') + '"'
+        buildConfigField 'String', 'RABBITSTREAM_SOURCE_API', '"' + (System.getenv('RABBITSTREAM_SOURCE_API') ?: project.findProperty('RABBITSTREAM_SOURCE_API') ?: '') + '"'
+    }
+
+    buildFeatures { buildConfig true }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+
+    testOptions { unitTests.returnDefaultValues = true }
+
+    lint {
+        disable 'UnsafeOptInUsageError'
+        warningsAsErrors false
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    implementation project(':retrofit-jsoup-converter')
+
+    implementation 'androidx.core:core-ktx:1.16.0'
+    implementation 'androidx.media3:media3-common:1.7.1'
+    implementation 'androidx.room:room-common:2.7.1'
+    implementation 'androidx.work:work-runtime-ktx:2.10.0'
+
+    implementation 'com.squareup.retrofit2:retrofit:3.0.0'
+    implementation 'com.squareup.retrofit2:converter-gson:3.0.0'
+    implementation 'com.squareup.retrofit2:converter-scalars:3.0.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.squareup.okhttp3:okhttp-dnsoverhttps:4.12.0'
+    implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
+    implementation 'org.jsoup:jsoup:1.21.2'
+    implementation 'org.mozilla:rhino:1.7.15'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1'
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2'
+}

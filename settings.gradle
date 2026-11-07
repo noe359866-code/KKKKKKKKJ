@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 rootProject.name = "Streamflix"
 include ':app'
 include ':retrofit-jsoup-converter'
+include ':reborn-streams'

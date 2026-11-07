@@ -256,7 +256,7 @@ python3 -m unittest discover -s app/src/test/python -v
 # Contrato Kotlin, ambos modos y cancelación:
 ./gradlew :app:testDebugUnitTest :app:lintDebug
 
-# Intérprete, 12 imports y HTTP nativo (GET, POST/formulario y timeout), sin backend:
+# Intérprete, 17 imports y HTTP nativo (GET, POST/formulario y timeout), sin backend:
 ./gradlew :app:connectedDebugAndroidTest
 
 # Regresiones del servidor opcional y sus scrapers existentes:
@@ -273,3 +273,10 @@ una fuente autorizada disponible en su red.
 `autonomous-checks.yml` añade compilación, inspección del APK y smoke test de
 Android TV en emulador. `android-release.yml` aplica también las pruebas offline
 y la inspección del contenido al generar los APK/AAB de producción.
+
+
+## Port Streamflix Reborn2 (sólo streams)
+
+El módulo `reborn-streams` añade los scrapers/extractores de Streamflix Reborn2
+únicamente como fuentes de reproducción. No publica catálogos ni filas de Home.
+Ver [reborn-streams.md](reborn-streams.md).

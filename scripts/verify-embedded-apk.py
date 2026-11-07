@@ -39,6 +39,13 @@ def verify(path: Path):
                     raise ValueError(f"Missing Python native library: {abi}/{library}")
         if "assets/catalogs.json" in names:
             raise ValueError("Server-only third-party addon configuration must not be bundled")
+        if "assets/reborn-streams.json" not in names:
+            raise ValueError("Missing stream-only Reborn module manifest")
+        reborn = json.loads(apk.read("assets/reborn-streams.json").decode("utf-8"))
+        if reborn.get("streamOnly") is not True or reborn.get("catalogsPublished") is not False:
+            raise ValueError("Reborn module must be stream-only and publish no catalogs")
+        if int(reborn.get("providerFiles", 0)) < 70 or int(reborn.get("extractorFiles", 0)) < 90:
+            raise ValueError("Reborn provider/extractor port is incomplete")
         # Un APK "completo" pero con la configuración vacía arranca y no
         # reproduce nada: eso es exactamente el fallo que se reportó. Se
         # comprueba el contenido, no sólo que el archivo exista.
@@ -56,7 +63,9 @@ def verify(path: Path):
         if not channels:
             raise ValueError("live-catalog.json is empty: the TV en vivo shelf would render with no channels")
     return {"apk": path.name, "bytes": path.stat().st_size, "MiB": round(path.stat().st_size / 1024**2, 2),
-            "embeddedProviders": sorted(PROVIDERS), "liveChannels": len(channels), "abis": sorted(ABIS)}
+            "embeddedProviders": sorted(PROVIDERS), "liveChannels": len(channels), "abis": sorted(ABIS),
+            "rebornStreamOnly": True, "rebornProviderFiles": reborn["providerFiles"],
+            "rebornExtractorFiles": reborn["extractorFiles"]}
 
 
 if __name__ == "__main__":

@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "streamOnly": true,
+  "catalogsPublished": false,
+  "upstream": "https://git.gay/streamflix-reborn2/streamflix",
+  "mirror": "https://github.com/pwpp08/Streamable",
+  "commit": "7ae9a33495c70fda56f77a7f7f3123c49c0057c2",
+  "providerFiles": 76,
+  "extractorFiles": 94,
+  "registeredProviders": 71,
+  "facade": "com.streamflixreborn.streamflix.streams.StreamOnlyResolver",
+  "streamProviderEntries": 80,
+  "catalogSourcesExcluded": [
+    "TmdbProvider",
+    "IptvProvider"
+  ]
+}
