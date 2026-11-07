@@ -77,7 +77,10 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.tanasi.streamflix.core.LocalDeviceProfile
+import com.tanasi.streamflix.di.ServiceLocator
 import com.tanasi.streamflix.data.model.PlaybackRequest
+import com.tanasi.streamflix.data.model.SkipSegment
+import com.tanasi.streamflix.data.model.SkipWindow
 import com.tanasi.streamflix.data.model.StreamSource
 import com.tanasi.streamflix.data.model.SubtitleTrack
 import com.tanasi.streamflix.player.canSeekPlayback
@@ -96,7 +99,9 @@ import com.tanasi.streamflix.player.SeekPolicy
 import com.tanasi.streamflix.player.TrackOption
 import com.tanasi.streamflix.ui.theme.StreamflixColors
 import com.tanasi.streamflix.ui.theme.tvFocusGlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlin.math.max
 
 /** Tiempo que los controles se quedan en pantalla sin que nadie toque el mando. */
@@ -284,6 +289,24 @@ private fun PlaybackSurface(
     var positionMs by remember(player) { mutableStateOf(0L) }
     var durationMs by remember(player) { mutableStateOf(0L) }
     var isSeekable by remember(player) { mutableStateOf(false) }
+
+    /* Marcas de "saltar intro": se piden una vez por título, cuando ya hay
+     * duración (los créditos llegan con final abierto y sin ella no se pueden
+     * ofrecer). El repositorio nunca lanza, así que un servicio caído deja la
+     * reproducción exactamente como estaba. */
+    val skipSegmentsRepository = remember { ServiceLocator.skipSegmentsRepository() }
+    var skipSegments by remember(request) { mutableStateOf(emptyList<SkipSegment>()) }
+    var skipRequested by remember(request) { mutableStateOf(false) }
+    LaunchedEffect(request, durationMs) {
+        if (skipRequested || durationMs <= 0L) return@LaunchedEffect
+        skipRequested = true
+        skipSegments = withContext(Dispatchers.IO) {
+            skipSegmentsRepository.segmentsFor(request, durationMs)
+        }
+    }
+    val skipWindow = remember(skipSegments, positionMs) {
+        if (skipSegments.isEmpty()) SkipWindow.Empty else SkipWindow.at(skipSegments, positionMs)
+    }
     val accessibilityManager = remember(context) {
         context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
     }
@@ -682,6 +705,32 @@ private fun PlaybackSurface(
                 onPickSource = { sourcesOpenedFromControls = false; showSources = true },
                 onBack = onBack,
             )
+        }
+
+        /* Saltar intro/resumen/créditos: sólo cuando hay un tramo activo y no
+         * hay un panel encima (el chip no debe tapar una lista ni colarse en su
+         * grafo de foco). La posición del salto la valida `seekBy`, así que un
+         * tramo mal medido no puede dejar el reproductor fuera del vídeo. */
+        val skippable = skipWindow.active
+        if (skippable != null && !showSources && !showTracks && failure == null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 48.dp, bottom = 132.dp),
+            ) {
+                SkipSegmentChip(
+                    segment = skippable,
+                    deviceProfile = deviceProfile,
+                    onSkip = {
+                        val target = skippable.endMs.coerceAtMost(
+                            durationMs.takeIf { it > 0L } ?: skippable.endMs,
+                        )
+                        player.seekTo(target)
+                        positionMs = target
+                        interactionTick++
+                    },
+                )
+            }
         }
 
         /* ATRÁS cierra la lista antes de salir del reproductor: si no, el
