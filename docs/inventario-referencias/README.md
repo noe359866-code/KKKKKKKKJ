@@ -12,6 +12,17 @@
 
 Adicionalmente, Nuvio tiene una referencia de submódulo `libmpv-android` al commit `f48aa82b2677428f756a689a44c2477c3f37be51`: el contenido de ese repositorio no forma parte de los 1.684 archivos ni se ha inventariado. Los árboles recursivos de GitHub respondieron `truncated: false`.
 
+> **Licencia (comprobada el 2026-11-07).** Nuvio TV es **GPL-3.0**; Streamflix es
+> **Apache-2.0**. Copiar código de Nuvio —aunque sea un archivo suelto— obligaría
+> a relicenciar la app entera bajo GPL-3.0. Por eso de aquí sólo se toman
+> **ideas**: la lógica y los umbrales no son copyrightables, la expresión
+> concreta sí. Todo lo implementado a partir de este inventario se escribió de
+> cero, con decisiones y pruebas propias. Mantener esa línea es una condición
+> del proyecto, no una preferencia de estilo.
+>
+> `dev` seguía en `fe5c314` al hacer esta revisión, así que el inventario ya
+> cubría la versión vigente.
+
 - [nuvio.tsv](nuvio.tsv) y [sky.tsv](sky.tsv): ruta, tipo Git, tamaño cuando lo da GitHub, SHA de objeto y estado. `fetch_completo` significa que se abrieron todos los fragmentos devueltos por fetch de ese archivo hasta ahora; `pendiente` incluye archivos no examinados y los que sólo se habían consultado parcialmente en la investigación anterior. No indica pruebas funcionales.
 - Hay código, pruebas, traducciones, configuraciones, imágenes y binarios; por ejemplo, Nuvio contiene 1.375 archivos Kotlin y SkyStream 915 Dart y 1.949 Go. También hay recursos y dependencias multiplataforma: no todos son pantallas de TV. Los archivos binarios y recursos visuales requieren inspección apropiada, no lectura como texto.
 - El archivo [referencias-nuvio-skystream.md](../referencias-nuvio-skystream.md) recoge la revisión anterior de ejemplos adicionales, principalmente mediante API y capturas; no supone lectura completa del repositorio.

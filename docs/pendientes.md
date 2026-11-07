@@ -190,6 +190,38 @@ Las cuatro cosas que faltaban, resueltas sin tocar el presupuesto de pantalla
 
 ---
 
+## Hecho — navegación de TV tomada de Nuvio TV (§27)
+
+Nuvio TV es **GPL-3.0** y este proyecto es **Apache-2.0**: de allí se toman
+ideas, nunca código (ver `docs/inventario-referencias/README.md`). Lo
+implementado, escrito de cero:
+
+- ✅ **Repeticiones del D-Pad frenadas** (`core/DpadRepeatPolicy.kt` +
+  `ui/components/DpadModifiers.kt`). Compuerta de tiempo por eje —80 ms
+  horizontal, 112 ms vertical— en vez de contar repeticiones: el ritmo del
+  sistema cambia según el fabricante y el mando, y un contador daría una
+  velocidad distinta en cada tele. La primera pulsación nunca se toca, para que
+  el mando responda al instante. `DpadRepeatPolicyTest` (5 casos) fija la regla,
+  incluido el ritmo real de un mando que repite cada 50 ms: se aceptan 10 de 21
+  eventos por segundo.
+- ✅ **Deslizamiento con ARRIBA/ABAJO sostenido** (`core/DpadFastScroll.kt`).
+  Velocidad en dp/s —la misma app corre en 1080p y en 4K, y en píxeles la de 4K
+  iría cuatro veces más rápido—, tope por fotograma para que un GC no
+  teletransporte la lista, y delta acumulado para no perder el avance al
+  redondear. `DpadFastScrollTest` (5 casos).
+- ✅ **Marquee del título enfocado** (`ui/components/FocusMarqueeText.kt`). Se
+  desplaza sólo si la tarjeta tiene el foco y el texto no cabe; si no, recorta
+  con puntos suspensivos como antes. Margen de 1 px para que medir y pintar no
+  coincidan y el texto tiemble. `FocusMarqueeTest` (4 casos).
+
+Queda **sin hacer a propósito**: skip-intro por capítulos (necesita que el
+contenedor traiga capítulos y una barra de progreso por capítulo que no
+tenemos), la API de IntroDB (dependencia externa nueva) y todo lo de nube,
+debrid, auth y libmpv (otra arquitectura de producto; libmpv además choca con
+el Media3 de esta app).
+
+---
+
 ## P2 — Falta en pruebas
 
 - ✅ **`PlayerViewModel` sin tests**: **hecho**. `PlayerViewModelTest` cubre
