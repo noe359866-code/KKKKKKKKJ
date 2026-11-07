@@ -7,7 +7,16 @@ dominios caídos) no se puede comprobar desde aquí y queda marcado como tal.
 
 Estado: CI verde (`testDebugUnitTest`, `lintDebug`, `lintRelease`,
 `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`), Node
-**281/281**, Python **108**, 27 archivos de test en JVM.
+**281/281**, Python **116**, 39 archivos de test en JVM (233 casos) y 8 casos nuevos de hosters.
+
+> **Actualización (§24):** CI en verde otra vez. El rojo de `main` no era la
+> app: `PlayerTracksOptionsTest` metía una pista en español y otra en inglés en
+> el mismo `TrackGroup`, Media3 lo reporta con `Log.e` y en la JVM de los tests
+> `android.util.Log` devuelve `null` (`returnDefaultValues`), así que el logger
+> de Media3 lanzaba `NullPointerException` antes de cualquier assert. El test ya
+> usa dos pistas del mismo idioma (se distinguen por `label`) y el diagnóstico
+> del workflow vuelca ahora los XML de JUnit al check-run. También queda hecho
+> `hls_variants` (P2 del servidor), el último punto abierto de esa lista.
 
 > **Actualización (§23):** el buscador de P2 está hecho (acentos, búsqueda en
 > vivo con retardo, historial y el panel derecho con su regla probada) y la
@@ -148,9 +157,24 @@ Las cuatro cosas que faltaban, resueltas sin tocar el presupuesto de pantalla
   se comparte entre peticiones simultáneas (`liveShelfInflight`) e
   `invalidateCatalogs()` tira también la estantería. Dos pruebas nuevas en
   `server/test/liveShelf.test.js`.
-- **`hls_variants` sólo prueba `/m3u8/<id>`** (`server/scrapers/_hosters.py:209`
-  reescribe `/play/<id>`): no prueba las variantes `/e/`, `/embed/`, `/v/` que
-  usan varios hosters.
+- ✅ **`hls_variants` sólo probaba `/m3u8/<id>`**: **hecho**. Estaba en
+  `server/scrapers/_hosters.py` reescribiendo `/play/<id>` a una sola ruta. Ahora
+  hay dos funciones, porque no todas las variantes son lo mismo:
+  - `hls_variants()` devuelve los manifiestos —`/m3u8/<id>` y `/hls/<id>`, con
+    y sin prefijo en el id (`/m3u8/e-<id>`)— como señales HLS directas.
+  - `hls_embed_pages()` devuelve las rutas que **siguen siendo una página**
+    (`/e/`, `/embed/`, `/v/`). Ésas entran en la cola de descarga del embed y
+    el video se busca en el HTML: entregarlas como HLS sería darle HTML a
+    ExoPlayer, que es peor que no ofrecer la fuente.
+  El tope `HLS_MAX_EMBED_PAGES = 2` es corto a propósito: el presupuesto de
+  documentos se **comparte** entre todos los servidores del episodio
+  (`Budget(len(servers) * 2)`), así que una variante de más dejaría sin turno a
+  un hoster sano. El embed original va primero en la cola, de modo que si el
+  presupuesto se agota se pierde una variante, nunca el documento bueno.
+  `HlsVariantsTest` y `HlsEmbedQueueTest` (8 casos) cubren el orden de las
+  rutas, los prefijos, la query string, que la URL original no se repita, que
+  ninguna ruta de embed salga como señal, y que un `/play/` caído con un `/e/`
+  vivo siga dando el `.m3u8`.
 - ✅ **TTL para URLs firmadas**: **hecho**. `server/src/lib/signedUrls.js` lee el
   vencimiento que lleva la propia URL (`?e=`, `?expires=`, `token=…~exp=…`) y
   `streamService` recorta el TTL al enlace más corto (con 15 s de margen, tanto

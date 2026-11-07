@@ -110,6 +110,13 @@ OKRU_OPTIONS_RE = re.compile(
 )
 #: `/play/<id>` de los servidores "HLS" (se sirve como `/m3u8/<id>`).
 HLS_PLAY_RE = re.compile(r"/play/([A-Za-z0-9._-]+)$")
+#: Prefijos de **ruta** donde los hosters sirven el manifiesto directamente.
+HLS_MANIFEST_PREFIXES: Tuple[str, ...] = ("/m3u8/", "/hls/")
+#: Prefijos de ruta donde el mismo id sigue siendo una **página** con el
+#: reproductor dentro (hay que descargarla y mirar el HTML).
+HLS_EMBED_PREFIXES: Tuple[str, ...] = ("/e/", "/embed/", "/v/")
+#: Algunos hosters prefijan el id en lugar de la ruta (`/e/e-<id>`).
+HLS_ID_PREFIXES: Tuple[str, ...] = ("", "e-", "embed-", "v-")
 
 #: Un `src:`/`file:` suelto con un .mp4 (Mp4upload y otros).
 MP4_FIELD_RE = re.compile(
@@ -153,6 +160,10 @@ def is_known_good(url: str) -> bool:
 #: extensión no puede costar más que esto.
 MAX_PROBES = 2
 PROBE_SIZE = 2048
+#: Rutas de embed extra que se prueban por servidor. El presupuesto de
+#: documentos se comparte entre todos los servidores del episodio, así que dos
+#: es el máximo razonable: una de más y un hoster sano se queda sin turno.
+HLS_MAX_EMBED_PAGES = 2
 
 
 def media_type_of_response(content_type: str) -> str:
@@ -206,13 +217,52 @@ def _signal(url: str, label: str, referer: str, *extra_labels: str) -> Dict[str,
     return signal
 
 
-def hls_variants(url: str) -> List[str]:
-    """`https://host/play/<id>` también se sirve como `/m3u8/<id>`."""
-    match = HLS_PLAY_RE.search(urllib.parse.urlparse(url).path or "")
+def _rewrite_paths(url: str, prefixes: Tuple[str, ...]) -> List[str]:
+    """URLs con la misma ruta sustituida por cada `prefix` + id de `/play/<id>`."""
+    parsed = urllib.parse.urlparse(url)
+    match = HLS_PLAY_RE.search(parsed.path or "")
     if not match:
         return []
-    parsed = urllib.parse.urlparse(url)
-    return [urllib.parse.urlunparse(parsed._replace(path=f"/m3u8/{match.group(1)}"))]
+    identifier = match.group(1)
+    seen = {url}
+    candidates: List[str] = []
+    # El prefijo del id es la variable rara: se agrupa primero por ruta para
+    # que `/m3u8/<id>` (el caso normal) quede en cabeza.
+    for id_prefix in HLS_ID_PREFIXES:
+        for prefix in prefixes:
+            candidate = urllib.parse.urlunparse(
+                parsed._replace(path=f"{prefix}{id_prefix}{identifier}")
+            )
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            candidates.append(candidate)
+    return candidates
+
+
+def hls_variants(url: str) -> List[str]:
+    """Manifiestos equivalentes a un `/play/<id>`.
+
+    No todos los hosters sirven el `.m3u8` bajo `/m3u8/`: algunos usan
+    `/hls/` y otros prefijan el id (`/m3u8/e-<id>`). Se devuelven todas las
+    combinaciones, en orden de preferencia y sin repetir la URL original.
+
+    Sólo salen rutas que **son** el manifiesto. Las que siguen siendo una
+    página con el reproductor dentro (`/e/`, `/embed/`, `/v/`) no caben aquí:
+    entregar HTML a ExoPlayer como si fuera HLS es peor que no ofrecer la
+    fuente, así que van por `hls_embed_pages()` y se resuelven descargándolas.
+    """
+    return _rewrite_paths(url, HLS_MANIFEST_PREFIXES)
+
+
+def hls_embed_pages(url: str) -> List[str]:
+    """Páginas equivalentes a un `/play/<id>` que aún hay que descargar.
+
+    Mismo id bajo las rutas de embed de los hosters (`/e/`, `/embed/`, `/v/`),
+    con y sin prefijo en el id. Quien llama las mete en la cola de descarga y
+    busca el video en el HTML; una que responda 404 sólo cuesta una petición.
+    """
+    return _rewrite_paths(url, HLS_EMBED_PREFIXES)
 
 
 def _streamtape(html: str) -> List[str]:
@@ -283,11 +333,17 @@ def resolve(
     budget: Optional[Budget] = None,
     referer: str = "",
     max_docs: int = 2,
+    max_embed_pages: int = HLS_MAX_EMBED_PAGES,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Convierte la URL de un servidor en señales reproducibles.
 
     Devuelve ``([{url, label, referer}], meta)``. Nunca lanza: un servidor caído
     sólo aparece en ``meta.errors``.
+
+    Después del embed original se prueban ``max_embed_pages`` rutas de embed
+    del mismo id (``/e/``, ``/embed/``, ``/v/``). El presupuesto es compartido
+    por todos los servidores del episodio, así que el tope es corto a propósito:
+    una variante de más no puede dejar sin turno a los demás hosters.
     """
     if not url:
         return [], {"errors": ["empty_url"]}
@@ -309,7 +365,7 @@ def resolve(
     if is_download_only(url):
         return [], {"errors": ["download_only"], "label": label, "skipped": url}
 
-    # 3. `/play/<id>` → `/m3u8/<id>` sin descargar nada.
+    # 3. `/play/<id>` → `/m3u8/<id>` (y `/hls/`) sin descargar nada.
     for variant in hls_variants(url):
         signal = _signal(variant, "HLS", referer or url, label)
         signal["media_type"] = "hls"
@@ -321,11 +377,18 @@ def resolve(
     request_headers = dict(headers)
     request_headers["Referer"] = referer or url
     budget = budget or Budget(max_docs)
-    pending = [url]
+    # Las rutas de embed del mismo id (`/e/`, `/embed/`, `/v/`) son otra
+    # forma de llegar al reproductor: se descargan después del embed original
+    # y antes de rendirse, recortadas al presupuesto de documentos.
+    tail = hls_embed_pages(url)[:max(0, max_embed_pages)]
+    # El embed original va primero en la cola: si el presupuesto compartido se
+    # agota a mitad, se queda sin turno una variante, nunca el documento bueno.
+    pending = [url] + tail
+    max_fetches = max_docs + len(tail)
     seen = set()
     fetched = 0
 
-    while pending and fetched < max_docs and not deadline.expired():
+    while pending and fetched < max_fetches and not deadline.expired():
         current = pending.pop(0)
         if current in seen:
             continue

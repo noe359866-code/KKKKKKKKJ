@@ -255,6 +255,113 @@ class ResolveAllTest(unittest.TestCase):
         self.assertEqual(meta["unresolved"], ["HQQ"])
 
 
+class HlsVariantsTest(unittest.TestCase):
+    """El mismo id de `/play/<id>` en las rutas que usan los hosters."""
+
+    def test_manifest_routes_are_offered_first(self):
+        # Orden: el id tal cual (caso normal) y después cada variante con
+        # prefijo; dentro de cada bloque `/m3u8/` va antes que `/hls/`.
+        variants = _hosters.hls_variants("https://h.example/play/abc123")
+        self.assertEqual(
+            variants,
+            [
+                "https://h.example/m3u8/abc123",
+                "https://h.example/hls/abc123",
+                "https://h.example/m3u8/e-abc123",
+                "https://h.example/hls/e-abc123",
+                "https://h.example/m3u8/embed-abc123",
+                "https://h.example/hls/embed-abc123",
+                "https://h.example/m3u8/v-abc123",
+                "https://h.example/hls/v-abc123",
+            ],
+        )
+        self.assertEqual(variants[0], "https://h.example/m3u8/abc123")
+
+    def test_embed_pages_are_not_pretended_to_be_manifests(self):
+        # `/e/`, `/embed/` y `/v/` devuelven HTML: nunca deben salir como HLS.
+        for variant in _hosters.hls_embed_pages("https://h.example/play/abc123"):
+            path = urllib.parse.urlparse(variant).path
+            self.assertTrue(
+                path.startswith(("/e/", "/embed/", "/v/")), f"ruta inesperada: {path}"
+            )
+        manifests = _hosters.hls_variants("https://h.example/play/abc123")
+        self.assertFalse([m for m in manifests if "/e/" in m or "/embed/" in m or "/v/" in m])
+
+    def test_page_routes_cover_the_same_id_with_and_without_prefix(self):
+        pages = _hosters.hls_embed_pages("https://h.example/play/abc123")
+        self.assertIn("https://h.example/e/abc123", pages)
+        self.assertIn("https://h.example/embed/embed-abc123", pages)
+        self.assertIn("https://h.example/v/v-abc123", pages)
+
+    def test_the_original_url_is_never_repeated(self):
+        url = "https://h.example/play/abc123"
+        self.assertNotIn(url, _hosters.hls_variants(url))
+        self.assertNotIn(url, _hosters.hls_embed_pages(url))
+
+    def test_query_string_and_scheme_survive_the_rewrite(self):
+        variants = _hosters.hls_variants("http://h.example/play/abc123?token=x&e=9")
+        self.assertIn("http://h.example/m3u8/abc123?token=x&e=9", variants)
+
+    def test_urls_that_are_not_play_pages_produce_nothing(self):
+        for url in (
+            "https://h.example/e/abc123",
+            "https://h.example/m3u8/abc123",
+            "https://h.example/watch/abc123",
+            "https://h.example/play/abc123/extra",
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(_hosters.hls_variants(url), [])
+                self.assertEqual(_hosters.hls_embed_pages(url), [])
+
+
+class HlsEmbedQueueTest(unittest.TestCase):
+    """Las rutas de embed entran en la cola de descarga, no como señales."""
+
+    def test_embed_pages_are_downloaded_and_html_never_becomes_a_stream(self):
+        url = "https://h.example/play/abc123"
+        fetched = []
+
+        def fake_get(target, headers, timeout):
+            fetched.append(target)
+            # El embed original está roto; las rutas de embed del mismo id sí
+            # sirven el reproductor.
+            if "/play/" in target:
+                raise urllib.error.HTTPError(target, 404, "Not Found", {}, io.BytesIO(b""))
+            return (
+                '<script>sources: [{file: "https://cdn.example/hls/master.m3u8"}]</script>',
+                target,
+                "text/html",
+            )
+
+        with patch.object(_hosters, "http_get", side_effect=fake_get):
+            signals, _meta = _hosters.resolve(url, {}, Deadline(5000), max_docs=6)
+
+        # La página de embed se pidió de verdad.
+        self.assertIn("https://h.example/e/abc123", fetched)
+        self.assertIn("https://h.example/embed/abc123", fetched)
+
+        urls = [signal["url"] for signal in signals]
+        self.assertIn("https://cdn.example/hls/master.m3u8", urls)
+        # Ni las rutas de embed ni sus 404 acaban ofrecidas como reproductor.
+        for signal in signals:
+            path = urllib.parse.urlparse(signal["url"]).path
+            self.assertFalse(
+                path.startswith(("/e/", "/embed/", "/v/")), f"señal HTML: {signal['url']}"
+            )
+
+    def test_a_dead_play_page_still_leaves_its_variants(self):
+        url = "https://h.example/play/abc123"
+
+        def fake_get(target, headers, timeout):
+            raise urllib.error.HTTPError(target, 404, "Not Found", {}, io.BytesIO(b""))
+
+        with patch.object(_hosters, "http_get", side_effect=fake_get):
+            signals, _meta = _hosters.resolve(url, {}, Deadline(5000), max_docs=6)
+        urls = [signal["url"] for signal in signals]
+        self.assertIn("https://h.example/m3u8/abc123", urls)
+        self.assertIn("https://h.example/hls/abc123", urls)
+
+
 class ResolveSignalsTest(unittest.TestCase):
     def test_known_hosts_beyond_the_cap_are_kept_as_extra_failover(self):
         servers = [
