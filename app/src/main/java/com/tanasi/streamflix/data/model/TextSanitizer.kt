@@ -72,8 +72,12 @@ object TextSanitizer {
      * compara por identidad.
      */
     fun repair(text: String?): String? {
-        if (text == null || !needsRepair(text)) return text
-        var result = text
+        if (text == null) return null
+        /* `text` se copia a `source`, no a `var` del propio parámetro: Kotlin
+         * no conserva el smart-cast de un `var` a través del bucle. */
+        if (!needsRepair(text)) return text
+        val source: String = text
+        var result = source
         for ((broken, fixed) in replacements) {
             if (result.contains(broken)) result = result.replace(broken, fixed)
         }

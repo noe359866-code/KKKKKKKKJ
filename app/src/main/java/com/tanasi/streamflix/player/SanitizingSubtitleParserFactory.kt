@@ -2,12 +2,12 @@ package com.tanasi.streamflix.player
 
 import androidx.media3.common.Format
 import androidx.media3.common.text.Cue
+import androidx.media3.common.util.Consumer
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.extractor.text.CuesWithTiming
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
 import com.tanasi.streamflix.data.model.TextSanitizer
-import java.util.function.Consumer
 
 /**
  * Arregla los subtítulos que llegan mal decodificados.
