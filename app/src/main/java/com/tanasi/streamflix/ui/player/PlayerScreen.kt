@@ -78,6 +78,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.tanasi.streamflix.core.LocalDeviceProfile
 import com.tanasi.streamflix.di.ServiceLocator
+import com.tanasi.streamflix.data.model.BingeGuard
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.SkipSegment
 import com.tanasi.streamflix.data.model.SkipWindow
@@ -140,6 +141,12 @@ fun PlayerScreen(
      * `Activity` no es cosa de una pantalla de Compose.
      */
     onPlayNext: (String) -> Unit = {},
+    /**
+     * Episodios que la app ha abierto sola seguidos. A partir de
+     * [BingeGuard.EPISODES_BEFORE_PROMPT] el aviso de siguiente episodio se
+     * cambia por el de «¿sigues ahí?».
+     */
+    autoPlayedCount: Int = 0,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val retryFocus = remember { FocusRequester() }
@@ -212,6 +219,7 @@ fun PlayerScreen(
                 onBack = onBack,
                 onProgress = onProgress,
                 onPlayNext = onPlayNext,
+                autoPlayedCount = autoPlayedCount,
             )
         }
     }
@@ -236,6 +244,7 @@ private fun PlaybackSurface(
      * sólo decide **cuándo**.
      */
     onPlayNext: (String) -> Unit,
+    autoPlayedCount: Int,
 ) {
     val context = LocalContext.current
     val deviceProfile = LocalDeviceProfile.current
@@ -302,6 +311,9 @@ private fun PlaybackSurface(
     /* El prompt no se pinta en cuanto termina: primero se comprueba que de
      * verdad toca (ver la condición del overlay). */
     var showNextEpisodePrompt by remember(player) { mutableStateOf(false) }
+    /* «¿Sigues ahí?» sustituye al aviso de siguiente cuando la app ya lleva
+     * varios capítulos seguidos sin que nadie toque el mando. */
+    var showStillWatching by remember(player) { mutableStateOf(false) }
     var positionMs by remember(player) { mutableStateOf(0L) }
     var durationMs by remember(player) { mutableStateOf(0L) }
     var isSeekable by remember(player) { mutableStateOf(false) }
@@ -416,14 +428,19 @@ private fun PlaybackSurface(
     /* Al terminar: sólo se ofrece el siguiente si la petición lo trae, si no
      * había un fallo y si el episodio ya se emitió (lo decidió la ficha; aquí
      * sólo se respeta el `null`). */
-    LaunchedEffect(playbackEnded, request.nextEpisodeId) {
+    LaunchedEffect(playbackEnded, request.nextEpisodeId, autoPlayedCount) {
         if (playbackEnded && request.nextEpisodeId != null) {
-            showNextEpisodePrompt = true
+            if (BingeGuard.shouldAsk(autoPlayedCount)) {
+                showStillWatching = true
+            } else {
+                showNextEpisodePrompt = true
+            }
         } else if (!playbackEnded) {
             /* Si el vídeo vuelve a avanzar (el usuario rebobina o elige otra
              * fuente desde los controles), el prompt ya no tiene sentido: se
              * quedaría tapando la reproducción que acaba de reanudar. */
             showNextEpisodePrompt = false
+            showStillWatching = false
         }
     }
 
@@ -579,8 +596,9 @@ private fun PlaybackSurface(
             /* El prompt de "siguiente" atrapa ATRÁS: con una decisión en
              * pantalla, salir del reproductor no es lo que espera nadie. Se
              * descarta y se deja el vídeo en pausa al final. */
-            showNextEpisodePrompt -> {
+            showNextEpisodePrompt || showStillWatching -> {
                 showNextEpisodePrompt = false
+                showStillWatching = false
                 player.pause()
                 controlsVisible = true
             }
@@ -785,6 +803,27 @@ private fun PlaybackSurface(
                     /* Se deja el reproductor en pausa al final: sin esto, el
                      * usuario que dice "ahora no" vuelve a un vídeo que sigue
                      * "reproduciendo" el último fotograma. */
+                    player.pause()
+                    controlsVisible = true
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        /* «¿Sigues ahí?»: mismo velo y mismos botones, pero la decisión es
+         * quedarse o salir. Sólo aparece cuando el aviso de siguiente no lo
+         * hace (son excluyentes por construcción). */
+        if (showStillWatching && failure == null && !showSources && !showTracks) {
+            StillWatchingPrompt(
+                episodes = autoPlayedCount,
+                onContinue = {
+                    /* Sigue: se abre el siguiente y, al ser decisión del
+                     * usuario, la maratón vuelve a cero. */
+                    showStillWatching = false
+                    request.nextEpisodeId?.let(onPlayNext)
+                },
+                onStop = {
+                    showStillWatching = false
                     player.pause()
                     controlsVisible = true
                 },

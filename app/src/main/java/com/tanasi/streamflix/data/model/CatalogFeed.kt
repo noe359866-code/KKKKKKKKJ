@@ -128,12 +128,15 @@ data class RemoteMeta(
         id = id,
         /* Se conserva el tipo PUBLICADO: es el que acepta `/stream/{type}/{id}`. */
         type = type,
-        title = name.ifBlank { id },
+        /* El título es lo primero que ve el usuario y el sitio donde más
+         * duele un `Ã¡` mal decodificado: `TextSanitizer` lo arregla sólo si
+         * hay señal de daño, así que un título legítimo no se toca. */
+        title = TextSanitizer.repairOrEmpty(name).ifBlank { id },
         poster = normalizeArtworkUrl(poster),
         backdrop = normalizeArtworkUrl(background),
         year = year ?: releaseInfo?.let { info -> parseYear(info) },
-        subtitle = releaseInfo,
-        synopsis = description,
+        subtitle = TextSanitizer.repair(releaseInfo),
+        synopsis = TextSanitizer.repair(description),
         genres = genres,
         rating = rating,
         runtime = runtime,
@@ -229,7 +232,7 @@ fun List<RemoteVideo>.toSeasonGroups(): List<SeasonGroup> =
             EpisodeOption(
                 season = it.season ?: 0,
                 episode = it.episode ?: 0,
-                name = it.name?.takeIf { name -> name.isNotBlank() },
+                name = TextSanitizer.repair(it.name)?.takeIf { name -> name.isNotBlank() },
                 overview = it.overview,
                 thumbnail = normalizeArtworkUrl(it.thumbnail),
             )
@@ -241,10 +244,10 @@ fun List<RemoteVideo>.toSeasonGroups(): List<SeasonGroup> =
 
 /** Enriquece la ficha sin cambiar su identificador de reproducción ni borrar datos válidos. */
 fun MediaEntry.enrichedBy(meta: RemoteMeta): MediaEntry = copy(
-    title = meta.name.takeIf { it.isNotBlank() } ?: title,
+    title = TextSanitizer.repair(meta.name)?.takeIf { it.isNotBlank() } ?: title,
     poster = normalizeArtworkUrl(meta.poster) ?: poster,
     backdrop = normalizeArtworkUrl(meta.background) ?: backdrop,
-    synopsis = meta.description?.takeIf { it.isNotBlank() } ?: synopsis,
+    synopsis = TextSanitizer.repair(meta.description)?.takeIf { it.isNotBlank() } ?: synopsis,
     year = meta.year ?: meta.toEntry().year ?: year,
     rating = meta.rating ?: rating,
     genres = meta.genres.takeIf { it.isNotEmpty() } ?: genres,

@@ -132,9 +132,12 @@ internal fun NextEpisodePrompt(
  * El mismo par visual que `SkipSegmentChip`: relleno blanco con foco, negro con
  * velo sin él. Se mantiene el anillo de foco del tema en lugar de dibujar uno
  * propio, para que el mando se sienta igual aquí que en el resto de la app.
+ *
+ * Es `internal` y no privado porque el aviso de «¿sigues ahí?» usa el mismo
+ * botón: dos copias del mismo control divergen al primer retoque de estilo.
  */
 @Composable
-private fun PromptButton(
+internal fun PromptButton(
     text: String,
     primary: Boolean,
     focusRequester: FocusRequester,

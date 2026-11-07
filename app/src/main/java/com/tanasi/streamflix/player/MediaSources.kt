@@ -96,6 +96,12 @@ object MediaSources {
 
         return DefaultMediaSourceFactory(context)
             .setDataSourceFactory(dataSourceFactory(source))
+            /* Subtítulos mal decodificados. Se sustituye el parser, no el
+             * `TextOutput`: registrar un `TextOutput` propio no reemplaza al
+             * del `PlayerView` (son observadores independientes), así que
+             * habría duplicado los subtítulos en vez de arreglarlos. El parser
+             * es donde el `String` nace de los bytes. */
+            .setSubtitleParserFactory(SanitizingSubtitleParserFactory)
             .createMediaSource(mediaItem)
     }
 
