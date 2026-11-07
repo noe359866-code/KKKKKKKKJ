@@ -69,7 +69,8 @@ object LaCartoonsProvider : Provider {
         for (container in containers) {
             val links = container.select("a[href^=/serie/], a[href*=/serie/]")
             for (a in links) {
-            val href = a.attr("href").ifBlank { continue }
+            val href = a.attr("href")
+            if (href.isBlank()) continue
             val card = a.selectFirst("div.serie") ?: continue
             val img = card.selectFirst("img")?.attr("src").orEmpty()
             val title = card.selectFirst("p.nombre-serie")?.text().orElse("")
@@ -187,7 +188,8 @@ object LaCartoonsProvider : Provider {
             doc.select("ul.listas-de-episodion li a")
         }
         for (a in episodeLinks) {
-            val href = a.attr("href").ifBlank { continue }
+            val href = a.attr("href")
+            if (href.isBlank()) continue
             val text = a.text().trim()
             val number = extractEpisodeNumber(text)
             val absoluteId = if (href.startsWith("http")) href else "$baseUrl$href"

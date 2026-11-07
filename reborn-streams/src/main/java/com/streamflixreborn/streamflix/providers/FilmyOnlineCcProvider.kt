@@ -295,7 +295,8 @@ object FilmyOnlineCcProvider : Provider {
         val videos = watchPage.optJSONArray("videos").orEmptyJsonArray()
         for (index in 0 until videos.length()) {
             val video = videos.optJSONObject(index) ?: continue
-            val source = video.optString("src").ifBlank { continue }
+            val source = video.optString("src")
+            if (source.isBlank()) continue
             val serverName = buildString {
                 append(video.optString("quality").ifBlank { "default" }.uppercase())
             val lang = video.optString("language").takeIf { it.isNotBlank() }
