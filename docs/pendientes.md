@@ -245,6 +245,14 @@ Detalles que costaron mirar la documentación:
   proveedor (`gnula:x`) gastaría una petición para recibir un 400.
 - La respuesta vacía **también se cachea**: si no, una serie sin marcas se
   pediría en cada capítulo y en cada cambio de fuente.
+- **El caché lleva la duración en la clave** (`movie:tt…@7800`). TheIntroDB v4
+  elige las marcas de la versión del estreno que coincide con `duration_ms`: un
+  montaje de 100 minutos y otro de 130 son el mismo IMDb pero los créditos
+  empiezan en sitios distintos. Cachear sólo por título hacía que la segunda
+  versión heredara los tiempos de la primera y el salto cayera a mitad de una
+  escena; lo demostró `dos versiones del mismo titulo no comparten cache`. La
+  duración va truncada a segundos para que una diferencia de milisegundos no
+  duplique peticiones.
 - Nada de esto puede romper la reproducción: el cliente devuelve `null` ante
   cualquier fallo y el repo nunca lanza.
 

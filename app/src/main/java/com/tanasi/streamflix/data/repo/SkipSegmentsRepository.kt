@@ -42,7 +42,8 @@ class SkipSegmentsRepository(
         val coordinates = Coordinates.of(imdbId, request.id)
         if (coordinates == null) return emptyList()
 
-        cache[coordinates.cacheKey]?.let { return it }
+        val cacheKey = coordinates.cacheKey(durationMs)
+        cache[cacheKey]?.let { return it }
 
         val result = fetch(coordinates.toTheIntroDbUrl(durationMs), durationMs)
             ?.takeIf { it.isNotEmpty() }
@@ -51,7 +52,7 @@ class SkipSegmentsRepository(
 
         /* Se cachea también el vacío: una serie sin marcas se pediría en cada
          * capítulo y en cada cambio de fuente. */
-        cache[coordinates.cacheKey] = result
+        cache[cacheKey] = result
         return result
     }
 
@@ -72,8 +73,24 @@ class SkipSegmentsRepository(
         val season: Int?,
         val episode: Int?,
     ) {
-        val cacheKey: String
-            get() = if (season == null) "movie:$imdbId" else "tv:$imdbId:$season:$episode"
+        /**
+         * Clave del caché, **con la duración**.
+         *
+         * TheIntroDB v4 elige la versión del estreno por `duration_ms`: un
+         * montaje de 100 minutos y otro de 130 son el mismo IMDb, pero los
+         * créditos empiezan en sitios distintos. Cachear sólo por título hacía
+         * que la segunda versión heredara los tiempos de la primera y el salto
+         * cayera a mitad de una escena.
+         *
+         * La duración va truncada a segundos para que una diferencia de unos
+         * milisegundos entre dos muestras del mismo reproductor no se convierta
+         * en dos peticiones. Con `0` (duración aún desconocida) se usa la clave
+         * sin duración: ese pedido no puede tener marcas de final abierto.
+         */
+        fun cacheKey(durationMs: Long): String {
+            val base = if (season == null) "movie:$imdbId" else "tv:$imdbId:$season:$episode"
+            return if (durationMs > 0L) "$base@${durationMs / 1000L}" else base
+        }
 
         fun toTheIntroDbUrl(durationMs: Long): String {
             val params = buildString {
@@ -122,9 +139,13 @@ class SkipSegmentsRepository(
 
     companion object {
         /**
-         * Caché por proceso. Las marcas de un capítulo no cambian durante una
-         * sesión, así que no hace falta caducarlas; el `ConcurrentHashMap`
+         * Caché por proceso, indexada por **título y versión** (ver
+         * [Coordinates.cacheKey]). Las marcas de un capítulo no cambian durante
+         * una sesión, así que no hace falta caducarlas; el `ConcurrentHashMap`
          * evita que dos reproducciones simultáneas pidan lo mismo dos veces.
+         *
+         * Crece con cada título que se reproduce, pero son listas de tres o
+         * cuatro tramos: no hay nada que purgar dentro de una sesión de TV.
          */
         private val cache = ConcurrentHashMap<String, List<SkipSegment>>()
 

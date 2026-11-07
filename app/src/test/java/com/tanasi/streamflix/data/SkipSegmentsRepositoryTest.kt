@@ -121,6 +121,31 @@ class SkipSegmentsRepositoryTest {
     }
 
     @Test
+    fun `dos versiones del mismo titulo no comparten cache`() {
+        /* TheIntroDB v4 elige las marcas de la versión del estreno que coincide
+         * con `duration_ms`. Un montaje de 100 min y otro de 130 son el mismo
+         * IMDb y el mismo origen, pero los créditos empiezan en sitios
+         * distintos: si compartieran caché, el segundo se saltaría a la mitad
+         * de una escena. */
+        val asked = mutableListOf<String>()
+        val repo = SkipSegmentsRepository { url ->
+            asked += url
+            if (url.contains("duration_ms=6000000")) {
+                """{"intro":[{"start_ms":30000,"end_ms":90000}]}"""
+            } else {
+                """{"intro":[{"start_ms":60000,"end_ms":120000}]}"""
+            }
+        }
+
+        val first = repo.segmentsFor(movie(), durationMs = 6_000_000L)
+        val second = repo.segmentsFor(movie(), durationMs = 7_800_000L)
+
+        assertEquals("cada versión se pregunta", 2, asked.size)
+        assertEquals(30_000L, first.single().startMs)
+        assertEquals("la segunda versión no hereda las marcas de la primera", 60_000L, second.single().startMs)
+    }
+
+    @Test
     fun `un episodio sin marcas no se vuelve a pedir`() {
         /* El vacío también se cachea: si no, una serie sin datos se pediría en
          * cada cambio de fuente. */
