@@ -70,14 +70,13 @@ class CatalogFeedTest {
 
     @Test
     fun `la forma de la fila la decide el servidor, no el tipo de contenido`() {
-        val vod = CatalogDescriptor(type = "series", id = "top", posterShape = "poster")
+        val series = CatalogDescriptor(type = "series", id = "top", posterShape = "poster")
         val oddMovie = CatalogDescriptor(type = "movie", id = "featured", posterShape = "landscape")
 
-
-        assertEquals(RowAspect.Poster, vod.rowAspect)
+        assertEquals(RowAspect.Poster, series.rowAspect)
         assertEquals(RowAspect.Landscape, oddMovie.rowAspect)
         /* Ids de fila distintos por tipo+id: el hero indexa por fila/título. */
-        assertEquals("remote:tv/live", live.rowId)
+        assertEquals("remote:series/top", series.rowId)
         assertEquals("remote:movie/featured", oddMovie.rowId)
     }
 
