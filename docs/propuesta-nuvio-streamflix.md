@@ -6,7 +6,7 @@ La propuesta comienza por **foco de catálogo y reproductor**, porque determina 
 
 ### Trabajo realizado
 
-- Al abrir una ficha o un directo desde una tarjeta del catálogo, se guarda la identidad de la fila, la clave de la tarjeta y su posición. Al cerrar la ficha o volver del reproductor se intenta desplazar la lista vertical, desplazar la fila y recuperar el foco. Si la tarjeta desapareció, se usa una posición válida de la misma fila; si desapareció la fila, la primera fila con contenido. Una lista vacía no recibe una petición de foco.
+- Al abrir una ficha desde una tarjeta del catálogo, se guarda la identidad de la fila, la clave de la tarjeta y su posición. Al cerrar la ficha o volver del reproductor se intenta desplazar la lista vertical, desplazar la fila y recuperar el foco. Si la tarjeta desapareció, se usa una posición válida de la misma fila; si desapareció la fila, la primera fila con contenido. Una lista vacía no recibe una petición de foco.
 - Se usa un indicador de retorno para no restaurar la tarjeta en el momento de abrir la ficha; una petición ya intentada se consume para no robar foco posteriormente. Aperturas desde hero y búsqueda no se identifican como tarjeta de fila y mantienen la navegación existente.
 - Al cerrar las opciones de fuentes o pistas, se intenta devolver el foco al botón que abrió el panel cuando sigue disponible. Desde el error de reproducción, o si las pistas desaparecen, se conserva el retorno a la superficie de vídeo. Los controles no deben ocultarse automáticamente mientras esté abierto un panel.
 - Las categorías de ajustes exponen además el rol semántico de pestaña. Ya existían la semántica de selección y los roles radio/switch para las opciones correspondientes.
