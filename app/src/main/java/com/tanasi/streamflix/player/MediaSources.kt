@@ -96,12 +96,6 @@ object MediaSources {
 
         return DefaultMediaSourceFactory(context)
             .setDataSourceFactory(dataSourceFactory(source))
-            /* Subtítulos mal decodificados. Se sustituye el parser, no el
-             * `TextOutput`: registrar un `TextOutput` propio no reemplaza al
-             * del `PlayerView` (son observadores independientes), así que
-             * habría duplicado los subtítulos en vez de arreglarlos. El parser
-             * es donde el `String` nace de los bytes. */
-            .setSubtitleParserFactory(SanitizingSubtitleParserFactory)
             .createMediaSource(mediaItem)
     }
 
@@ -150,6 +144,10 @@ object MediaSources {
      */
     fun buildPlayer(context: Context): ExoPlayer =
         ExoPlayer.Builder(context)
+            /* Subtítulos mal decodificados: la fábrica envuelve el `TextOutput`
+             * del `TextRenderer`, que es el único punto por el que pasan los
+             * cues antes de llegar al `PlayerView`. */
+            .setRenderersFactory(SanitizingRenderersFactory(context))
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             /* Foco de audio. Con `handleAudioFocus = true` Media3 pide
