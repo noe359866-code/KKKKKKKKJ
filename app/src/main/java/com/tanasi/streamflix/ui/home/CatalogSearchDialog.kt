@@ -142,6 +142,11 @@ fun CatalogSearchDialog(
     val firstKeyFocus = remember { FocusRequester() }
     val panelFocus = remember { FocusRequester() }
     val canSearch = value.isNotBlank()
+    val panelItems = remember(value, preview, suggestions, recentSearches) {
+        searchPanelItems(value, preview, suggestions, recentSearches)
+    }
+    // No dirigir el mando a un FocusRequester sin un destino enfocable.
+    val panelDestination = panelFocus.takeIf { firstFocusableIndex(panelItems) >= 0 }
 
     fun submit(text: String = value) {
         if (text.isNotBlank()) onSearch(TvKeyboardLayout.normalize(text))
@@ -205,8 +210,8 @@ fun CatalogSearchDialog(
                     .padding(
                         start = deviceProfile.horizontalPaddingDp.dp,
                         end = deviceProfile.horizontalPaddingDp.dp,
-                        top = 28.dp,
-                        bottom = 24.dp,
+                        top = deviceProfile.verticalPaddingDp.dp,
+                        bottom = deviceProfile.verticalPaddingDp.dp,
                     ),
             ) {
                 Text(
@@ -237,7 +242,7 @@ fun CatalogSearchDialog(
                                          * al panel: si todas las teclas apuntaran
                                          * allí, `▶` nunca movería dentro del teclado. */
                                         rightFocus = if (keyIndex == keys.lastIndex && rowIndex != TvKeyboardLayout.rows.lastIndex) {
-                                            panelFocus
+                                            panelDestination
                                         } else {
                                             null
                                         },
@@ -251,7 +256,7 @@ fun CatalogSearchDialog(
                                     KeyCap(
                                         label = "BORRAR",
                                         width = 150.dp,
-                                        rightFocus = panelFocus,
+                                        rightFocus = panelDestination,
                                         onClick = { value = TvKeyboardLayout.backspace(value) },
                                     )
                                 }
@@ -269,7 +274,7 @@ fun CatalogSearchDialog(
                                 KeyCap(
                                     label = key,
                                     width = KEY_SIZE,
-                                    rightFocus = if (index == symbols.lastIndex) panelFocus else null,
+                                    rightFocus = if (index == symbols.lastIndex) panelDestination else null,
                                     onClick = { value = TvKeyboardLayout.type(value, key) },
                                 )
                             }
@@ -292,7 +297,7 @@ fun CatalogSearchDialog(
                                 label = "BUSCAR",
                                 width = 150.dp,
                                 enabled = canSearch,
-                                rightFocus = panelFocus,
+                                rightFocus = panelDestination,
                                 onClick = { submit() },
                             )
                         }
@@ -317,10 +322,7 @@ fun CatalogSearchDialog(
 
                     /* --- resultados / historial / recomendaciones ---------- */
                     ResultsPanel(
-                        query = value,
-                        preview = preview,
-                        suggestions = suggestions,
-                        recentSearches = recentSearches,
+                        items = panelItems,
                         focusRequester = panelFocus,
                         onOpenDetails = onOpenDetails,
                         onUseRecent = { query -> value = query; submit(query) },
@@ -339,19 +341,13 @@ fun CatalogSearchDialog(
 
 @Composable
 private fun ResultsPanel(
-    query: String,
-    preview: SearchPreview,
-    suggestions: List<MediaEntry>,
-    recentSearches: List<String>,
+    items: List<SearchPanelItem>,
     focusRequester: FocusRequester,
     onOpenDetails: (MediaEntry) -> Unit,
     onUseRecent: (String) -> Unit,
     onForgetSearches: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val items = remember(query, preview, suggestions, recentSearches) {
-        searchPanelItems(query, preview, suggestions, recentSearches)
-    }
     /* El foco tiene que caer en la primera fila **pulsable**; los encabezados
      * no son enfocables y el `▶` desde el teclado no debe quedarse en el aire. */
     val firstFocusable = firstFocusableIndex(items)

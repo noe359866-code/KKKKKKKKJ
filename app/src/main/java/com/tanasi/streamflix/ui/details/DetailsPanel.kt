@@ -6,9 +6,13 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,6 +21,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,6 +44,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -50,6 +56,8 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,7 +71,8 @@ import com.tanasi.streamflix.core.LocalDeviceProfile
 import com.tanasi.streamflix.data.model.EpisodeOption
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.enrichedBy
-import com.tanasi.streamflix.ui.components.BackdropImage
+import com.tanasi.streamflix.data.model.normalizeArtworkUrl
+import com.tanasi.streamflix.ui.components.HeroBackdropImage
 import com.tanasi.streamflix.ui.components.GlassBadge
 import com.tanasi.streamflix.ui.components.LiveBadge
 import com.tanasi.streamflix.ui.components.RatingBadge
@@ -116,6 +125,7 @@ fun DetailsDialog(
     val episodes by viewModel.episodes.collectAsStateWithLifecycle()
     val metadata by viewModel.metadata.collectAsStateWithLifecycle()
     val displayEntry = metadata?.let { entry.enrichedBy(it) } ?: entry
+    val closeFocus = remember { FocusRequester() }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -128,39 +138,62 @@ fun DetailsDialog(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.88f))
-                .padding(if (isTv) 26.dp else 10.dp),
+                .padding(
+                    horizontal = if (isTv) deviceProfile.horizontalPaddingDp.dp else 10.dp,
+                    vertical = if (isTv) deviceProfile.verticalPaddingDp.dp else 10.dp,
+                ),
             contentAlignment = Alignment.Center,
         ) {
-            Column(
-                modifier = Modifier
-                    .widthIn(max = if (isTv) 1180.dp else 640.dp)
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(StreamflixColors.Surface)
-                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp)),
+            BoxWithConstraints(
+                modifier = Modifier.widthIn(max = if (isTv) 1180.dp else 640.dp).fillMaxWidth(),
             ) {
-                BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    val headerHeight = (maxHeight * 0.52f).coerceIn(300.dp, 460.dp)
-
+                // La ficha puede ser más alta que un panel de 720p. La altura
+                // debe obtenerse antes del scroll, que mide su contenido sin límite.
+                val availableHeight = maxHeight
+                val headerHeight = (availableHeight * 0.52f).coerceIn(300.dp, 460.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = availableHeight)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(StreamflixColors.Surface)
+                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                        .verticalScroll(rememberScrollState()),
+                ) {
                     DetailsHero(
                         entry = displayEntry,
+                        logoUrl = normalizeArtworkUrl(metadata?.logo),
                         deviceProfile = deviceProfile,
                         height = headerHeight,
                         episodeLabel = viewModel.episodeLabel(),
+                        episodesState = episodes,
+                        closeFocus = closeFocus,
                         onPlay = onPlay,
                         onDismiss = onDismiss,
                         hasProgress = hasProgress,
                         onRemoveProgress = onRemoveProgress,
                     )
-                }
 
-                EpisodesPanel(
-                    state = episodes,
-                    deviceProfile = deviceProfile,
-                    onSelectSeason = viewModel::selectSeason,
-                    onSelectEpisode = viewModel::selectEpisode,
-                    onManualEpisode = viewModel::selectManualEpisode,
-                )
+                    EpisodesPanel(
+                        state = episodes,
+                        deviceProfile = deviceProfile,
+                        onSelectSeason = viewModel::selectSeason,
+                        canRetry = viewModel.canRetry,
+                        onRetry = {
+                            // La opción de reintentar desaparece durante la carga.
+                            runCatching { closeFocus.requestFocus() }
+                            viewModel.retryEpisodes()
+                        },
+                        onSelectEpisode = { episode ->
+                            viewModel.selectEpisode(episode)
+                            onPlay()
+                        },
+                        onManualEpisode = { episode ->
+                            viewModel.selectManualEpisode(episode)
+                            onPlay()
+                        },
+                    )
+                }
             }
         }
     }
@@ -172,12 +205,16 @@ fun DetailsDialog(
  * El velo va en dos direcciones: vertical para fundir la foto con la ficha y
  * horizontal para que el texto se lea sobre cualquier póster claro.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DetailsHero(
     entry: MediaEntry,
+    logoUrl: String?,
     deviceProfile: DeviceProfile,
     height: androidx.compose.ui.unit.Dp,
     episodeLabel: String?,
+    episodesState: EpisodesUiState,
+    closeFocus: FocusRequester,
     onPlay: () -> Unit,
     onDismiss: () -> Unit,
     hasProgress: Boolean = false,
@@ -185,25 +222,25 @@ private fun DetailsHero(
 ) {
     val isTv = deviceProfile.requiresDpadFocus
     val playFocus = remember { FocusRequester() }
+    val loadingEpisodes = episodesState is EpisodesUiState.Loading
 
-    /* El foco arranca en Reproducir: abrir la ficha y poder darle a OK es todo
-     * lo que hace el 90 % de la gente. */
+    // Si aún no hay episodio elegido, Cerrar sigue accesible con el mando.
     LaunchedEffect(entry.id) {
         withFrameNanos { }
         withFrameNanos { }
-        runCatching { playFocus.requestFocus() }
+        runCatching { (if (loadingEpisodes) closeFocus else playFocus).requestFocus() }
     }
 
-    Box(Modifier.fillMaxWidth().height(height)) {
-        BackdropImage(
-            url = entry.backdrop ?: entry.poster,
+    // Altura mínima, no fija: con textos o escala de fuente grandes el
+    // contenido crece y el scroll de la ficha evita recortar las acciones.
+    Box(Modifier.fillMaxWidth().heightIn(min = height)) {
+        HeroBackdropImage(
             entry = entry,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.matchParentSize(),
         )
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .matchParentSize()
                 .background(
                     Brush.horizontalGradient(
                         0f to Color.Black.copy(alpha = 0.86f),
@@ -214,7 +251,7 @@ private fun DetailsHero(
         )
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .matchParentSize()
                 .background(
                     Brush.verticalGradient(
                         0f to Color.Transparent,
@@ -251,15 +288,7 @@ private fun DetailsHero(
             }
 
             Spacer(Modifier.height(if (isTv) 14.dp else 8.dp))
-            Text(
-                text = entry.title,
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.6).sp,
-                color = Color.White,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            DetailTitle(title = entry.title, logoUrl = logoUrl)
 
             val meta = entry.metaLine.takeIf { it.isNotBlank() }
             if (meta != null) {
@@ -286,19 +315,22 @@ private fun DetailsHero(
 
             Spacer(Modifier.height(if (isTv) 22.dp else 14.dp))
 
-            Row(
+            FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(if (isTv) 14.dp else 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 PlayCapsule(
-                    label = "Reproducir",
+                    label = when (episodesState) {
+                        EpisodesUiState.Loading -> "Cargando episodios…"
+                        is EpisodesUiState.Unavailable -> if (episodesState.selected == null) "Reproducir título" else "Reproducir"
+                        else -> if (entry.resumePositionMs > 0 && episodeLabel == null) "Continuar" else "Reproducir"
+                    },
                     suffix = episodeLabel,
                     focusRequester = playFocus,
+                    enabled = !loadingEpisodes,
                     onClick = onPlay,
                 )
-                GhostCapsule(text = "Cerrar", onClick = onDismiss)
-                /* Sólo aparece si hay algo que borrar: un botón de "quitar" en
-                 * un título que nunca se ha visto es ruido. */
+                GhostCapsule(text = "Cerrar", focusRequester = closeFocus, onClick = onDismiss)
                 if (hasProgress && onRemoveProgress != null) {
                     GhostCapsule(text = "Dejar de seguir viendo", onClick = onRemoveProgress)
                 }
@@ -306,7 +338,7 @@ private fun DetailsHero(
 
             Spacer(Modifier.height(if (isTv) 12.dp else 8.dp))
             Text(
-                text = "Buscamos la mejor fuente al arrancar y, si falla, pasamos a la siguiente sin salir del vídeo.",
+                text = "Probamos las fuentes disponibles en orden; si una falla, intentamos otra cuando es posible.",
                 style = MaterialTheme.typography.labelSmall,
                 color = StreamflixColors.OnSurfaceMuted.copy(alpha = 0.85f),
                 maxLines = 1,
@@ -314,6 +346,44 @@ private fun DetailsHero(
             )
         }
     }
+}
+
+/** Logotipo del título cuando el proveedor lo ofrece; el texto siempre es el respaldo. */
+@Composable
+private fun DetailTitle(title: String, logoUrl: String?) {
+    var logoLoaded by remember(logoUrl) { mutableStateOf(false) }
+    if (logoUrl == null) {
+        DetailTitleText(title)
+        return
+    }
+    Box(
+        modifier = Modifier.widthIn(max = 400.dp).fillMaxWidth().height(72.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        if (!logoLoaded) DetailTitleText(title)
+        AsyncImage(
+            model = logoUrl,
+            contentDescription = title,
+            contentScale = ContentScale.Fit,
+            alignment = Alignment.CenterStart,
+            onSuccess = { logoLoaded = true },
+            onError = { logoLoaded = false },
+            modifier = Modifier.fillMaxSize().alpha(if (logoLoaded) 1f else 0f),
+        )
+    }
+}
+
+@Composable
+private fun DetailTitleText(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.headlineLarge,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = (-0.6).sp,
+        color = Color.White,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 /**
@@ -327,6 +397,8 @@ private fun EpisodesPanel(
     state: EpisodesUiState,
     deviceProfile: DeviceProfile,
     onSelectSeason: (Int) -> Unit,
+    canRetry: Boolean,
+    onRetry: () -> Unit,
     onSelectEpisode: (EpisodeOption) -> Unit,
     onManualEpisode: (EpisodeOption) -> Unit,
 ) {
@@ -376,6 +448,14 @@ private fun EpisodesPanel(
         }
 
         Spacer(Modifier.height(if (isTv) 14.dp else 10.dp))
+        if (state is EpisodesUiState.Ready) {
+            Text(
+                text = "Elige un episodio para reproducirlo",
+                style = MaterialTheme.typography.bodyMedium,
+                color = StreamflixColors.OnSurfaceMuted,
+            )
+            Spacer(Modifier.height(6.dp))
+        }
 
         when (state) {
             is EpisodesUiState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
@@ -398,6 +478,10 @@ private fun EpisodesPanel(
                     style = MaterialTheme.typography.bodyMedium,
                     color = StreamflixColors.OnSurfaceMuted,
                 )
+                if (canRetry) {
+                    Spacer(Modifier.height(10.dp))
+                    GhostCapsule(text = "Reintentar", onClick = onRetry)
+                }
                 Spacer(Modifier.height(10.dp))
                 ManualEpisodePicker(selected = state.selected, onSelect = onManualEpisode)
             }
@@ -437,7 +521,7 @@ private fun EpisodesRow(
     LazyRow(
         state = listState,
         horizontalArrangement = Arrangement.spacedBy(if (isTv) 16.dp else 10.dp),
-        contentPadding = PaddingValues(end = 4.dp),
+        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
     ) {
         items(state.episodes, key = { episode -> "${episode.season}:${episode.episode}" }) { episode ->
             EpisodeCard(
@@ -482,6 +566,7 @@ private fun EpisodeCard(
     Column(
         modifier = Modifier
             .width(width)
+            .semantics { this.selected = selected }
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
             .graphicsLayer {
@@ -497,6 +582,24 @@ private fun EpisodeCard(
                 .clip(shape)
                 .background(StreamflixColors.SurfaceVariant),
         ) {
+            // El respaldo también permanece visible si la URL existe pero falla.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            listOf(StreamflixColors.SurfaceVariant, Color(0xFF0B0B0C)),
+                        ),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "E${episode.episode}",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(alpha = 0.22f),
+                )
+            }
             if (thumbnail != null) {
                 AsyncImage(
                     model = thumbnail,
@@ -504,24 +607,6 @@ private fun EpisodeCard(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                listOf(StreamflixColors.SurfaceVariant, Color(0xFF0B0B0C)),
-                            ),
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "E${episode.episode}",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White.copy(alpha = 0.22f),
-                    )
-                }
             }
 
             /* Velo inferior: el título se lee sobre cualquier miniatura. */
@@ -600,6 +685,7 @@ private fun PlayCapsule(
     label: String,
     suffix: String?,
     focusRequester: FocusRequester?,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -614,19 +700,19 @@ private fun PlayCapsule(
         modifier = Modifier
             .tvFocusGlow(progress = focusProgress, cornerRadius = 28.dp)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .background(Color.White, shape)
+            .background(if (enabled) Color.White else StreamflixColors.SurfaceVariant, shape)
             .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 28.dp, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PlayGlyph(Modifier.size(16.dp), color = Color.Black)
+        PlayGlyph(Modifier.size(16.dp), color = if (enabled) Color.Black else StreamflixColors.OnSurfaceMuted)
         Spacer(Modifier.width(12.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
-            color = Color.Black,
+            color = if (enabled) Color.Black else StreamflixColors.OnSurfaceMuted,
             maxLines = 1,
         )
         suffix?.takeIf { it.isNotBlank() }?.let { extra ->
@@ -643,7 +729,7 @@ private fun PlayCapsule(
 
 /** Botón secundario: vidrio, texto blanco, mismo anillo de foco. */
 @Composable
-private fun GhostCapsule(text: String, onClick: () -> Unit) {
+private fun GhostCapsule(text: String, onClick: () -> Unit, focusRequester: FocusRequester? = null) {
     var focused by remember { mutableStateOf(false) }
     val focusProgress by animateFloatAsState(
         targetValue = if (focused) 1f else 0f,
@@ -655,6 +741,7 @@ private fun GhostCapsule(text: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .tvFocusGlow(progress = focusProgress, cornerRadius = 28.dp)
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .background(
                 if (focused) StreamflixColors.GlassStrong else StreamflixColors.Glass,
                 shape,
@@ -688,6 +775,7 @@ private fun SeasonPill(text: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .tvFocusGlow(progress = focusProgress, cornerRadius = 18.dp)
+            .semantics { this.selected = selected }
             .onFocusChanged { focused = it.isFocused }
             .clip(shape)
             .background(

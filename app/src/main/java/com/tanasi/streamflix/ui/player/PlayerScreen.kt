@@ -1,5 +1,7 @@
 package com.tanasi.streamflix.ui.player
 
+import android.content.Context
+import android.view.accessibility.AccessibilityManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,14 +58,20 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
+import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -72,6 +81,9 @@ import com.tanasi.streamflix.data.model.PlaybackChannel
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.StreamSource
 import com.tanasi.streamflix.data.model.SubtitleTrack
+import com.tanasi.streamflix.player.canSeekPlayback
+import com.tanasi.streamflix.player.focusTrackAfterChange
+import com.tanasi.streamflix.player.sameTrack
 import com.tanasi.streamflix.player.ChannelZapping
 import com.tanasi.streamflix.player.FailoverController
 import com.tanasi.streamflix.player.FailoverPlanner
@@ -79,6 +91,9 @@ import com.tanasi.streamflix.player.MediaSources
 import com.tanasi.streamflix.player.PlayerKeyAction
 import com.tanasi.streamflix.player.PlayerKeyMap
 import com.tanasi.streamflix.player.PlayerTracks
+import com.tanasi.streamflix.player.PlaybackLifecyclePolicy
+import com.tanasi.streamflix.player.PlaybackSnapshotCache
+import com.tanasi.streamflix.player.PlaybackEvidence
 import com.tanasi.streamflix.player.SeekPolicy
 import com.tanasi.streamflix.player.TrackOption
 import com.tanasi.streamflix.ui.theme.StreamflixColors
@@ -116,9 +131,17 @@ fun PlayerScreen(
      * alimenta "Seguir viendo" **del perfil activo**: sin esto, cada perfil
      * volvía a empezar la serie desde el principio.
      */
-    onProgress: (positionMs: Long, durationMs: Long) -> Unit = { _, _ -> },
+    onProgress: (request: PlaybackRequest, positionMs: Long, durationMs: Long) -> Unit = { _, _, _ -> },
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val retryFocus = remember { FocusRequester() }
+    LaunchedEffect(state is PlayerUiState.Unavailable) {
+        if (state is PlayerUiState.Unavailable) {
+            withFrameNanos { }
+            withFrameNanos { }
+            runCatching { retryFocus.requestFocus() }
+        }
+    }
 
     /* El `Intent` sólo abre la puerta: quién se está viendo lo dice el
      * `ViewModel`, porque el zapeo cambia de canal sin volver a la `Activity`. */
@@ -167,7 +190,7 @@ fun PlayerScreen(
                     )
                     Spacer(Modifier.height(26.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        PlayerPillButton(text = "Reintentar", primary = true, onClick = { viewModel.load() })
+                        PlayerPillButton(text = "Reintentar", primary = true, focusRequester = retryFocus, onClick = { viewModel.load() })
                         /* Un canal caído no puede dejar al usuario encerrado:
                          * si venía de la parrilla, sigue por el siguiente. */
                         if (ChannelZapping.canZap(request.isLive, request.queue.size)) {
@@ -189,6 +212,7 @@ fun PlayerScreen(
                 sources = current.sources,
                 subtitles = current.subtitles,
                 tuning = current.tuning,
+                generation = current.generation,
                 request = request,
                 onBack = onBack,
                 onProgress = onProgress,
@@ -210,9 +234,10 @@ private fun PlaybackSurface(
     subtitles: List<SubtitleTrack>,
     /** Mientras se resuelve un canal nuevo, en pantalla sigue el anterior. */
     tuning: Boolean,
+    generation: Int,
     request: PlaybackRequest,
     onBack: () -> Unit,
-    onProgress: (positionMs: Long, durationMs: Long) -> Unit,
+    onProgress: (PlaybackRequest, Long, Long) -> Unit,
     /** Sintoniza otro canal de la parrilla sin salir del reproductor. */
     onTune: (PlaybackChannel) -> Unit,
     /** Deshace un zapeo volviendo al `PlaybackRequest` anterior completo. */
@@ -221,11 +246,33 @@ private fun PlaybackSurface(
     val context = LocalContext.current
     val deviceProfile = LocalDeviceProfile.current
     val scope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    /* `remember(sources)` y no `remember(Unit)`: si el ViewModel recarga y
-     * devuelve otro array, el planificador y el reproductor se recrean. */
-    val player: ExoPlayer = remember(sources) { MediaSources.buildPlayer(context, request.isLive) }
-    val planner = remember(sources) { FailoverPlanner(sources) }
+    // La generación cambia sólo cuando llega la nueva carga: durante el zapeo
+    // se conserva el reproductor anterior, incluso si cambió request.
+    val player: ExoPlayer = remember(generation, sources, subtitles) { MediaSources.buildPlayer(context, request.isLive) }
+    val activeRequest = remember(player) { request }
+    val snapshots = remember(player) { PlaybackSnapshotCache() }
+    val playbackEvidence = remember(player) { PlaybackEvidence() }
+    fun captureSnapshot() {
+        val groups = player.currentTracks.groups
+        val hasVideo = groups.any { it.type == C.TRACK_TYPE_VIDEO && it.isSelected }
+        val hasAudio = groups.any { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }
+        playbackEvidence.observeAudio(player.isPlaying, hasVideo, hasAudio)
+        if (!playbackEvidence.canRecord(hasVideo, hasAudio)) return
+        snapshots.observe(
+            isLive = activeRequest.isLive || player.isCurrentMediaItemLive,
+            isReady = player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_ENDED,
+            positionMs = player.currentPosition,
+            durationMs = player.duration,
+        )
+    }
+    fun saveSnapshot() {
+        if (activeRequest.isLive || player.isCurrentMediaItemLive) return
+        captureSnapshot()
+        snapshots.latest?.let { onProgress(activeRequest, it.positionMs, it.durationMs) }
+    }
+    val planner = remember(generation, sources, subtitles) { FailoverPlanner(sources) }
     val controller = remember(player, planner, subtitles) {
         FailoverController(
             context = context,
@@ -233,6 +280,7 @@ private fun PlaybackSurface(
             planner = planner,
             scope = scope,
             subtitles = subtitles,
+            onSourceChanging = playbackEvidence::sourceChanging,
         )
     }
 
@@ -259,14 +307,32 @@ private fun PlaybackSurface(
     /* --- estado de los controles (D-Pad y táctil) ------------------------- */
     val rootFocus = remember { FocusRequester() }
     val playPauseFocus = remember { FocusRequester() }
+    val sourcesFocus = remember { FocusRequester() }
+    val tracksFocus = remember { FocusRequester() }
+    var pendingPanelFocus by remember { mutableStateOf<FocusRequester?>(null) }
+    var sourcesOpenedFromControls by remember { mutableStateOf(false) }
+    var sourcesWereOpen by remember { mutableStateOf(false) }
+    var tracksWereOpen by remember { mutableStateOf(false) }
     var controlsVisible by remember { mutableStateOf(true) }
     var rootSelfFocused by remember { mutableStateOf(false) }
     var interactionTick by remember { mutableStateOf(0) }
     var pendingFocus by remember { mutableStateOf(false) }
 
-    var isPlaying by remember { mutableStateOf(false) }
-    var positionMs by remember { mutableStateOf(0L) }
-    var durationMs by remember { mutableStateOf(0L) }
+    var isPlaying by remember(player) { mutableStateOf(false) }
+    var playRequested by remember(player) { mutableStateOf(false) }
+    var positionMs by remember(player) { mutableStateOf(0L) }
+    var durationMs by remember(player) { mutableStateOf(0L) }
+    var isSeekable by remember(player) { mutableStateOf(false) }
+    var detectedLive by remember(player) { mutableStateOf(false) }
+    val accessibilityManager = remember(context) {
+        context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+    }
+    var accessibilityEnabled by remember(accessibilityManager) { mutableStateOf(accessibilityManager?.isEnabled == true) }
+    DisposableEffect(accessibilityManager) {
+        val listener = AccessibilityManager.AccessibilityStateChangeListener { accessibilityEnabled = it }
+        accessibilityManager?.addAccessibilityStateChangeListener(listener)
+        onDispose { accessibilityManager?.removeAccessibilityStateChangeListener(listener) }
+    }
 
     /* Subtítulos: en VOD arrancan encendidos cuando hay pista en español
      * (la app es para contenido doblado/subtitulado); en directo, apagados,
@@ -274,16 +340,21 @@ private fun PlaybackSurface(
     var subtitlesOn by remember(subtitles) {
         mutableStateOf(SubtitleTrack.preferredIndex(subtitles, request.isLive) != null)
     }
-    var textTracks by remember { mutableStateOf(emptyList<TrackOption>()) }
-    var audioTracks by remember { mutableStateOf(emptyList<TrackOption>()) }
+    var textTracks by remember(player) { mutableStateOf(emptyList<TrackOption>()) }
+    var audioTracks by remember(player) { mutableStateOf(emptyList<TrackOption>()) }
 
     DisposableEffect(controller) {
+        // Se instala antes del primer prepare y se retira antes de soltar el player.
+        val evidenceListener = object : Player.Listener {
+            override fun onRenderedFirstFrame() { playbackEvidence.firstVideoFrame() }
+        }
+        player.addListener(evidenceListener)
         /* `startPositionMs` > 0 cuando la tarjeta viene de "Seguir viendo":
          * el título retoma donde el perfil lo dejó. El failover conserva esa
          * posición al saltar de fuente. */
         controller.start(
-            startPositionMs = request.startPositionMs,
-            startIndex = request.startIndex,
+            startPositionMs = activeRequest.startPositionMs,
+            startIndex = activeRequest.startIndex,
         )
         /* La preferencia manda sobre el `DEFAULT` del manifiesto: si el usuario
          * dejó los subtítulos apagados, no se encienden solos. */
@@ -298,10 +369,31 @@ private fun PlaybackSurface(
         onDispose {
             /* Antes de soltar el decodificador: después, `currentPosition` ya
              * es 0 y el progreso se perdería. */
-            runCatching { onProgress(player.currentPosition.coerceAtLeast(0L), player.duration) }
+            runCatching { saveSnapshot() }
             controller.release()
+            player.removeListener(evidenceListener)
             player.release()
         }
+    }
+
+    // Pausar fuera de pantalla y reanudar sólo si el usuario no había pausado.
+    DisposableEffect(lifecycleOwner, player) {
+        val policy = PlaybackLifecyclePolicy()
+        fun stopPlayback() {
+            policy.onStop(player.playWhenReady)
+            saveSnapshot()
+            player.pause()
+        }
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> stopPlayback()
+                Lifecycle.Event.ON_START -> if (policy.onStart()) player.play()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) stopPlayback()
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     /* El foco del D-Pad empieza en la superficie de vídeo: si no, el mando no
@@ -328,8 +420,12 @@ private fun PlaybackSurface(
     LaunchedEffect(player, controlsVisible) {
         while (true) {
             isPlaying = player.isPlaying
+            playRequested = player.playWhenReady && player.playbackState != androidx.media3.common.Player.STATE_ENDED
             positionMs = player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0L } ?: 0L
+            isSeekable = player.isCurrentMediaItemSeekable && player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+            detectedLive = player.isCurrentMediaItemLive
+            captureSnapshot()
             val tracks = player.currentTracks
             /* `TrackSelectionParameters.overrides` está indexado por
              * `TrackGroup`: si alguno de los grupos de ese tipo tiene entrada,
@@ -340,6 +436,9 @@ private fun PlaybackSurface(
                 tracks.groups.any { group -> group.type == type && overrides.containsKey(group.mediaTrackGroup) }
 
             textTracks = PlayerTracks.options(tracks, C.TRACK_TYPE_TEXT, hasOverride(C.TRACK_TYPE_TEXT))
+            // Una lista vacía durante un cambio de fuente no implica que el
+            // usuario haya apagado los subtítulos.
+            if (textTracks.isNotEmpty()) subtitlesOn = textTracks.any { !it.isAutomatic && it.selected }
             audioTracks = PlayerTracks.options(tracks, C.TRACK_TYPE_AUDIO, hasOverride(C.TRACK_TYPE_AUDIO))
             delay(if (controlsVisible) 250L else 1_000L)
         }
@@ -352,41 +451,73 @@ private fun PlaybackSurface(
     LaunchedEffect(player) {
         while (true) {
             delay(PROGRESS_REPORT_MS)
-            val duration = player.duration
-            if (player.isPlaying && duration > 0L) {
-                onProgress(player.currentPosition.coerceAtLeast(0L), duration)
+            if (player.isPlaying && !activeRequest.isLive && !player.isCurrentMediaItemLive) {
+                captureSnapshot()
+                snapshots.latest?.let { onProgress(activeRequest, it.positionMs, it.durationMs) }
             }
         }
     }
 
     /* Auto-ocultado: sólo si se está reproduciendo y el foco sigue en la
      * superficie. Si el usuario está navegando los botones, se quedan. */
-    LaunchedEffect(controlsVisible, isPlaying, rootSelfFocused, interactionTick) {
-        if (!controlsVisible || !isPlaying || !rootSelfFocused) return@LaunchedEffect
+    LaunchedEffect(controlsVisible, isPlaying, rootSelfFocused, interactionTick, showSources, showTracks, showGuide, accessibilityEnabled) {
+        if (!controlsVisible || !isPlaying || !rootSelfFocused || showSources || showTracks || showGuide || accessibilityEnabled) return@LaunchedEffect
         delay(CONTROLS_AUTO_HIDE_MS)
         runCatching { rootFocus.requestFocus() }
         controlsVisible = false
     }
 
-    /* Al cerrar el diálogo de fuentes el foco se queda huérfano: vuelve al vídeo. */
+    /* Los controles se desmontan mientras el panel está abierto. Al volver,
+     * esperar a que se monten y recuperar el botón que lo abrió. Desde el
+     * aviso de error no existe ese botón: se vuelve a la superficie de vídeo. */
     LaunchedEffect(showSources) {
-        if (!showSources) runCatching { rootFocus.requestFocus() }
+        if (showSources) sourcesWereOpen = true
+        else if (sourcesWereOpen) {
+            sourcesWereOpen = false
+            if (sourcesOpenedFromControls && controlsVisible) pendingPanelFocus = sourcesFocus
+            else runCatching { rootFocus.requestFocus() }
+            sourcesOpenedFromControls = false
+        }
     }
-
     LaunchedEffect(showTracks) {
-        if (!showTracks) runCatching { rootFocus.requestFocus() }
+        if (showTracks) tracksWereOpen = true
+        else if (tracksWereOpen) {
+            tracksWereOpen = false
+            if (controlsVisible && PlayerTracks.hasPanel(textTracks, audioTracks)) pendingPanelFocus = tracksFocus
+            else runCatching { rootFocus.requestFocus() }
+        }
+    }
+    LaunchedEffect(pendingPanelFocus, showSources, showTracks, showGuide, controlsVisible) {
+        val requester = pendingPanelFocus ?: return@LaunchedEffect
+        if (showSources || showTracks || showGuide || !controlsVisible) return@LaunchedEffect
+        repeat(3) {
+            withFrameNanos { }
+            runCatching { requester.requestFocus() }
+        }
+        pendingPanelFocus = null
     }
 
-    fun togglePlayPause() {
-        /* `playWhenReady` y no `play()/pause()`: durante un buffer el usuario
-         * también quiere poder cancelar la espera. */
-        player.playWhenReady = !player.playWhenReady
-        isPlaying = player.playWhenReady
+    fun setPlayback(playing: Boolean) {
+        // playWhenReady también representa la intención durante el buffering.
+        if (playing && player.playbackState == androidx.media3.common.Player.STATE_ENDED && !activeRequest.isLive) {
+            player.seekTo(0L)
+        }
+        player.playWhenReady = playing
+        playRequested = playing
         interactionTick++
     }
 
+    fun togglePlayPause() = setPlayback(
+        player.playbackState == androidx.media3.common.Player.STATE_ENDED || !player.playWhenReady,
+    )
+
     fun seekBy(deltaMs: Long) {
-        if (request.isLive) return
+        if (!canSeekPlayback(
+                activeRequest.isLive || player.isCurrentMediaItemLive,
+                player.isCurrentMediaItemSeekable && player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM),
+                player.duration,
+                tuning,
+            )) return
         val target = SeekPolicy.target(player.currentPosition, deltaMs, player.duration)
         player.seekTo(target)
         positionMs = target
@@ -401,11 +532,12 @@ private fun PlaybackSurface(
      * manifiesto (que es la que el ripeo marca como principal).
      */
     fun applyTrack(option: TrackOption) {
+        if (!option.isAutomatic && PlayerTracks.groupFor(player.currentTracks, option) == null) return
         runCatching {
             val builder = player.trackSelectionParameters.buildUpon()
             if (option.isAutomatic) {
                 builder.setTrackTypeDisabled(option.type, option.isText)
-                if (option.isAudio) builder.clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                builder.clearOverridesOfType(option.type)
             } else {
                 val group = PlayerTracks.groupFor(player.currentTracks, option) ?: return@runCatching
                 builder.setTrackTypeDisabled(option.type, false)
@@ -505,8 +637,16 @@ private fun PlaybackSurface(
                  * un botón o en la lista de fuentes. Muchos mandos de TV y
                  * barras de sonido sólo emiten estas, y antes se perdían. */
                 when (event.key) {
-                    Key.MediaPlayPause, Key.MediaPlay, Key.MediaPause -> {
+                    Key.MediaPlayPause -> {
                         togglePlayPause()
+                        return@onPreviewKeyEvent true
+                    }
+                    Key.MediaPlay -> {
+                        setPlayback(true)
+                        return@onPreviewKeyEvent true
+                    }
+                    Key.MediaPause -> {
+                        setPlayback(false)
                         return@onPreviewKeyEvent true
                     }
 
@@ -597,6 +737,8 @@ private fun PlaybackSurface(
                     /* Ya se atendieron arriba, antes del filtro de foco. */
                     PlayerKeyAction.CHANNEL_UP,
                     PlayerKeyAction.CHANNEL_DOWN,
+                    PlayerKeyAction.PLAY,
+                    PlayerKeyAction.PAUSE,
                     -> true
 
                     null -> false
@@ -606,7 +748,7 @@ private fun PlaybackSurface(
              * `▶` en la última tarjeta sacaría el foco de la guía y el mando
              * dejaría de recorrer canales. Los atajos (`CH+`, `CH−`) siguen
              * llegando porque el evento sube por los ancestros. */
-            .focusable(enabled = !showGuide),
+            .focusable(enabled = !showGuide && !showTracks && !showSources),
     ) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -632,26 +774,29 @@ private fun PlaybackSurface(
          * al abrir la información). */
         if (!showSources && !showGuide && !showTracks) PlayerControls(
             title = request.title,
-            isLive = request.isLive,
+            isLive = activeRequest.isLive || detectedLive,
             failover = failoverState,
             sourcesCount = sources.size,
             channelPosition = ChannelZapping.positionLabel(queue, channelIndex),
             channelCount = if (canZap) queue.size else 0,
             visible = controlsVisible,
-            isPlaying = isPlaying,
+            isPlaying = playRequested,
             positionMs = positionMs,
             durationMs = durationMs,
+            canSeek = canSeekPlayback(activeRequest.isLive || detectedLive, isSeekable, durationMs, tuning),
             deviceProfile = deviceProfile,
             playPauseFocusRequester = playPauseFocus,
             onPlayPause = { togglePlayPause() },
             onRewind = { seekBy(-SeekPolicy.STEP_MS) },
             onForward = { seekBy(SeekPolicy.STEP_MS) },
-            onShowSources = { showSources = true },
+            onShowSources = { sourcesOpenedFromControls = true; showSources = true },
             onShowChannels = { openGuide() },
             onInteraction = { interactionTick++ },
             hasTracks = PlayerTracks.hasPanel(textTracks, audioTracks),
             subtitlesOn = subtitlesOn,
             onShowTracks = { showTracks = true },
+            sourcesFocusRequester = sourcesFocus,
+            tracksFocusRequester = tracksFocus,
         )
 
         if (failoverState.switching || tuning) {
@@ -682,8 +827,8 @@ private fun PlaybackSurface(
             PlaybackFailureOverlay(
                 title = request.title,
                 message = failure,
-                onRetry = { controller.selectSource(0) },
-                onPickSource = { showSources = true },
+                onRetry = { controller.selectSource(0, playWhenReady = true) },
+                onPickSource = { sourcesOpenedFromControls = false; showSources = true },
                 onBack = onBack,
             )
         }
@@ -731,7 +876,7 @@ private fun PlaybackSurface(
                 title = request.title,
                 textTracks = textTracks,
                 audioTracks = audioTracks,
-                onDismiss = { showTracks = false },
+                onEmpty = { showTracks = false },
                 onSelect = { option -> applyTrack(option) },
             )
         }
@@ -741,7 +886,7 @@ private fun PlaybackSurface(
                 title = request.title,
                 sources = sources,
                 current = failoverState.current,
-                onDismiss = { showSources = false },
+                onEmpty = { showSources = false },
                 onSelect = { index ->
                     showSources = false
                     controller.selectSource(index)
@@ -936,18 +1081,28 @@ private fun SourcePickerOverlay(
     title: String,
     sources: List<StreamSource>,
     current: StreamSource?,
-    onDismiss: () -> Unit,
+    onEmpty: () -> Unit,
     onSelect: (Int) -> Unit,
 ) {
+    val deviceProfile = LocalDeviceProfile.current
     val currentIndex = remember(sources, current) {
         sources.indexOfFirst { it.url == current?.url }.takeIf { it >= 0 } ?: 0
     }
     val focusTarget = remember { FocusRequester() }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = currentIndex)
+    var focusedKey by remember { mutableStateOf<String?>(null) }
+    val focusIndex = sources.indices.firstOrNull { index ->
+        focusedKey == "$index:${sources[index].url}"
+    } ?: currentIndex
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(sources) {
+        if (sources.isEmpty()) { onEmpty(); return@LaunchedEffect }
+        val oldKey = focusedKey
+        if (oldKey != null && sources.withIndex().any { (index, source) -> "$index:${source.url}" == oldKey }) return@LaunchedEffect
+        listState.scrollToItem(currentIndex.coerceIn(0, sources.lastIndex))
         withFrameNanos { }
         withFrameNanos { }
-        runCatching { focusTarget.requestFocus() }
+        if (focusedKey == oldKey) runCatching { focusTarget.requestFocus() }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -962,8 +1117,7 @@ private fun SourcePickerOverlay(
                         0.60f to Color.Black.copy(alpha = 0.45f),
                         1f to Color.Black.copy(alpha = 0.88f),
                     ),
-                )
-                .clickable(onClick = onDismiss),
+                ),
         )
 
         Column(
@@ -980,7 +1134,12 @@ private fun SourcePickerOverlay(
                         ),
                     ),
                 )
-                .padding(start = 34.dp, end = 34.dp, top = 40.dp, bottom = 28.dp),
+                .padding(
+                    start = 34.dp,
+                    end = maxOf(34, deviceProfile.horizontalPaddingDp).dp,
+                    top = maxOf(40, deviceProfile.verticalPaddingDp).dp,
+                    bottom = maxOf(28, deviceProfile.verticalPaddingDp).dp,
+                ),
         ) {
             Text(
                 text = "FUENTES",
@@ -999,13 +1158,14 @@ private fun SourcePickerOverlay(
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "${sources.size} disponibles · si una falla, se pasa a la siguiente",
+                text = "${sources.size} disponibles · la calidad depende de cada transmisión",
                 style = MaterialTheme.typography.labelMedium,
                 color = StreamflixColors.OnSurfaceMuted,
             )
             Spacer(Modifier.height(22.dp))
 
             LazyColumn(
+                state = listState,
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -1015,7 +1175,8 @@ private fun SourcePickerOverlay(
                         source = source,
                         selected = source.url == current?.url,
                         onClick = { onSelect(index) },
-                        focusRequester = if (index == currentIndex) focusTarget else null,
+                        onFocused = { focusedKey = "$index:${source.url}" },
+                        focusRequester = if (index == focusIndex) focusTarget else null,
                     )
                 }
             }
@@ -1043,6 +1204,7 @@ private fun SourceRow(
     source: StreamSource,
     selected: Boolean,
     onClick: () -> Unit,
+    onFocused: () -> Unit,
     focusRequester: FocusRequester?,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -1062,6 +1224,7 @@ private fun SourceRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .semantics { this.selected = selected }
             .graphicsLayer {
                 scaleX = pop
                 scaleY = pop
@@ -1081,7 +1244,7 @@ private fun SourceRow(
                 color = if (selected) Color.White.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.07f),
                 shape = RoundedCornerShape(10.dp),
             )
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused() }
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1205,21 +1368,35 @@ private fun TracksOverlay(
     title: String,
     textTracks: List<TrackOption>,
     audioTracks: List<TrackOption>,
-    onDismiss: () -> Unit,
+    onEmpty: () -> Unit,
     onSelect: (TrackOption) -> Unit,
 ) {
+    val deviceProfile = LocalDeviceProfile.current
     val focusTarget = remember { FocusRequester() }
 
-    LaunchedEffect(Unit) {
-        withFrameNanos { }
-        withFrameNanos { }
-        runCatching { focusTarget.requestFocus() }
+    val options = textTracks + audioTracks
+    var focusedTrack by remember { mutableStateOf<TrackOption?>(null) }
+    val focusAnchor = focusTrackAfterChange(focusedTrack, options)
+
+    fun listIndex(option: TrackOption?): Int {
+        if (option == null) return 0
+        val textIndex = textTracks.indexOfFirst { sameTrack(it, option) }
+        if (textIndex >= 0) return textIndex + 1
+        val audioIndex = audioTracks.indexOfFirst { sameTrack(it, option) }
+        return if (audioIndex >= 0) (if (textTracks.isNotEmpty()) textTracks.size + 1 else 0) + 1 + audioIndex else 0
     }
 
-    /* El foco arranca en la fila activa; si no hay ninguna, en la primera. */
-    val firstSelected = remember(textTracks, audioTracks) {
-        (textTracks + audioTracks).firstOrNull { it.selected }?.id
-            ?: (textTracks + audioTracks).firstOrNull()?.id
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = listIndex(focusAnchor))
+    LaunchedEffect(textTracks, audioTracks) {
+        if (options.isEmpty()) { onEmpty(); return@LaunchedEffect }
+        val previous = focusedTrack
+        val retained = previous?.let { old -> options.firstOrNull { sameTrack(old, it) } }
+        if (retained != null && retained.id == previous?.id) return@LaunchedEffect
+        val target = focusTrackAfterChange(previous, options) ?: return@LaunchedEffect
+        listState.scrollToItem(listIndex(target))
+        withFrameNanos { }
+        withFrameNanos { }
+        if (focusedTrack == previous) runCatching { focusTarget.requestFocus() }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -1232,8 +1409,7 @@ private fun TracksOverlay(
                         0.60f to Color.Black.copy(alpha = 0.45f),
                         1f to Color.Black.copy(alpha = 0.88f),
                     ),
-                )
-                .clickable(onClick = onDismiss),
+                ),
         )
 
         Column(
@@ -1250,7 +1426,12 @@ private fun TracksOverlay(
                         ),
                     ),
                 )
-                .padding(start = 34.dp, end = 34.dp, top = 40.dp, bottom = 28.dp),
+                .padding(
+                    start = 34.dp,
+                    end = maxOf(34, deviceProfile.horizontalPaddingDp).dp,
+                    top = maxOf(40, deviceProfile.verticalPaddingDp).dp,
+                    bottom = maxOf(28, deviceProfile.verticalPaddingDp).dp,
+                ),
         ) {
             Text(
                 text = "AUDIO Y SUBTÍTULOS",
@@ -1270,6 +1451,7 @@ private fun TracksOverlay(
             Spacer(Modifier.height(20.dp))
 
             LazyColumn(
+                state = listState,
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -1279,7 +1461,8 @@ private fun TracksOverlay(
                         TrackRow(
                             option = option,
                             onClick = { onSelect(option) },
-                            focusRequester = if (option.id == firstSelected) focusTarget else null,
+                            onFocused = { focusedTrack = option },
+                            focusRequester = if (focusAnchor != null && sameTrack(option, focusAnchor)) focusTarget else null,
                         )
                     }
                 }
@@ -1289,7 +1472,8 @@ private fun TracksOverlay(
                         TrackRow(
                             option = option,
                             onClick = { onSelect(option) },
-                            focusRequester = if (option.id == firstSelected) focusTarget else null,
+                            onFocused = { focusedTrack = option },
+                            focusRequester = if (focusAnchor != null && sameTrack(option, focusAnchor)) focusTarget else null,
                         )
                     }
                 }
@@ -1328,6 +1512,7 @@ private fun TrackSectionHeader(text: String) {
 private fun TrackRow(
     option: TrackOption,
     onClick: () -> Unit,
+    onFocused: () -> Unit,
     focusRequester: FocusRequester?,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -1345,6 +1530,7 @@ private fun TrackRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .semantics { this.selected = option.selected }
             .graphicsLayer {
                 scaleX = pop
                 scaleY = pop
@@ -1364,7 +1550,7 @@ private fun TrackRow(
                 color = if (option.selected) Color.White.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.07f),
                 shape = RoundedCornerShape(10.dp),
             )
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onFocused() }
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,

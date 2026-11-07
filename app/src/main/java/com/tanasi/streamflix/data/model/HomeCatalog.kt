@@ -36,18 +36,18 @@ data class Spotlight(
 class HomeCatalog(val rows: List<CatalogRow>) {
 
     /**
-     * Índice por **(fila, título)**.
+     * Índice por **(fila, id, tipo)**.
      *
      * Un mismo título puede estar en "Continuar viendo" y en "Películas
      * populares": si la clave fuese sólo el id, enfocar la tarjeta de películas
      * mostraría en el hero la etiqueta de "Continuar viendo" y una posición que
      * no corresponde a la fila que el usuario está mirando.
      */
-    private val byKey: Map<String, Spotlight> = buildMap {
+    private val byKey: Map<Triple<String, String, String>, Spotlight> = buildMap {
         rows.forEach { row ->
             row.items.forEachIndexed { index, entry ->
                 put(
-                    key(row.id, entry.id),
+                    key(row.id, entry.id, entry.type),
                     Spotlight(
                         entry = entry,
                         rowId = row.id,
@@ -61,15 +61,15 @@ class HomeCatalog(val rows: List<CatalogRow>) {
         }
     }
 
-    private fun key(rowId: String, entryId: String) = "$rowId/$entryId"
+    private fun key(rowId: String, entryId: String, type: String) = Triple(rowId, entryId, type)
 
     val isEmpty: Boolean get() = rows.isEmpty() || rows.all { it.items.isEmpty() }
 
     /** Qué se ve en el hero antes de que el usuario enfoque nada. */
     val featured: Spotlight?
         get() = rows.firstOrNull { it.items.isNotEmpty() }?.let { row ->
-            byKey[key(row.id, row.items.first().id)]
+            byKey[key(row.id, row.items.first().id, row.items.first().type)]
         }
 
-    fun spotlightFor(rowId: String, entryId: String): Spotlight? = byKey[key(rowId, entryId)]
+    fun spotlightFor(rowId: String, entryId: String, type: String): Spotlight? = byKey[key(rowId, entryId, type)]
 }

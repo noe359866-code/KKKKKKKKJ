@@ -247,7 +247,7 @@ private fun ContentCard(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .padding(top = 8.dp, start = 2.dp, end = 2.dp)
-                .graphicsLayer { alpha = if (isTv) 0.62f + 0.38f * focusProgress else 1f },
+                .graphicsLayer { alpha = if (isTv) 0.80f + 0.20f * focusProgress else 1f },
         )
         Text(
             text = entry.subtitle?.takeIf { it.isNotBlank() }
@@ -259,7 +259,7 @@ private fun ContentCard(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .padding(start = 2.dp, end = 2.dp)
-                .graphicsLayer { alpha = if (isTv) 0.45f + 0.25f * focusProgress else 1f },
+                .graphicsLayer { alpha = if (isTv) 0.85f + 0.15f * focusProgress else 1f },
         )
     }
 }

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -30,8 +31,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -43,6 +46,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
@@ -53,11 +63,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.core.LocalDeviceProfile
 import com.tanasi.streamflix.di.ServiceLocator
+import com.tanasi.streamflix.data.model.HomeCatalog
 import com.tanasi.streamflix.data.model.CatalogRow
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.toChannelQueue
 import com.tanasi.streamflix.data.model.Profile
-import com.tanasi.streamflix.data.model.hasEpisodeNumber
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.ui.components.MediaRow
@@ -108,6 +118,8 @@ fun HomeScreen(
     /** Filas propias del perfil activo ("Seguir viendo"), ya resueltas. */
     continueWatching: List<MediaEntry> = emptyList(),
     onSwitchProfile: () -> Unit = {},
+    returnSignal: Int = 0,
+    canRestoreCatalogFocus: Boolean = true,
 ) {
     val deviceProfile = LocalDeviceProfile.current
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -116,6 +128,9 @@ fun HomeScreen(
     val suggestions by viewModel.suggestions.collectAsStateWithLifecycle()
     val searchPreview by viewModel.preview.collectAsStateWithLifecycle()
     var showSearch by remember { mutableStateOf(false) }
+    var category by remember { mutableStateOf(HomeCategory.Home) }
+    var initialFocusRequested by remember { mutableStateOf(false) }
+    var returnAnchor by remember(profile?.id, category, query) { mutableStateOf<CatalogFocusAnchor?>(null) }
     val context = LocalContext.current
 
     /* El historial vive en el dispositivo, no en el ViewModel: se lee al abrir
@@ -140,11 +155,13 @@ fun HomeScreen(
             onSearch = {
                 recentSearches = ServiceLocator.searchHistory(context).remember(it)
                 showSearch = false
+                category = HomeCategory.Home
                 viewModel.search(it)
             },
             /* Una recomendación lleva a su ficha: es lo que el usuario quiere
              * hacer con lo que le sugieren, sin pasar por la búsqueda. */
             onOpenDetails = { entry ->
+                returnAnchor = null
                 showSearch = false
                 onOpenDetails(entry, emptyList())
             },
@@ -155,6 +172,16 @@ fun HomeScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onPreviewKeyEvent { event ->
+                // Una acción nueva del mando prevalece sobre una restauración
+                // pendiente, incluso si la fila aún se está componiendo.
+                if (event.type == KeyEventType.KeyDown &&
+                    mayRestoreCatalogFocus(returnAnchor, returnAnchor, returnSignal, canRestoreCatalogFocus, showSearch) &&
+                    event.key in setOf(Key.DirectionUp, Key.DirectionDown, Key.DirectionLeft, Key.DirectionRight,
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.ButtonA)
+                ) returnAnchor = null
+                false
+            }
             .background(StreamflixColors.Background),
     ) {
         when (val current = state) {
@@ -207,13 +234,12 @@ fun HomeScreen(
             }
 
             is HomeUiState.Ready -> {
-                val spotlight = hero ?: current.catalog.featured
 
                 /* "Seguir viendo" va primero y sale del perfil activo: es la
                  * fila que Apple TV pone arriba y la que hace que cambiar de
                  * perfil cambie de verdad el Home. */
-                val rows = remember(current.catalog.rows, continueWatching, profile?.id) {
-                    if (continueWatching.isEmpty()) {
+                val allRows = remember(current.catalog.rows, continueWatching, profile?.id, query) {
+                    if (continueWatching.isEmpty() || query.isNotBlank()) {
                         current.catalog.rows
                     } else {
                         listOf(
@@ -226,6 +252,12 @@ fun HomeScreen(
                         ) + current.catalog.rows
                     }
                 }
+
+                val rows = remember(allRows, category) { filterHomeRows(allRows, category) }
+                val visibleCatalog = remember(rows) { HomeCatalog(rows) }
+                // No mostrar un destacado de otra sección al cambiar de pestaña.
+                val spotlight = hero?.let { visibleCatalog.spotlightFor(it.rowId, it.entry.id, it.entry.type)?.copy(entry = it.entry) }
+                    ?: visibleCatalog.featured
 
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val isTv = deviceProfile.isTelevision
@@ -253,14 +285,15 @@ fun HomeScreen(
                             playFocusRequester = heroPlayFocus,
                             detailsFocusRequester = heroDetailsFocus,
                             upFocus = serverFocus,
-                            ctaDownFocus = firstCardFocus,
+                            ctaDownFocus = if (rows.isNotEmpty()) firstCardFocus else null,
                             contentBottomPadding = contentBottomPadding,
                             onPlay = {
                                 /* Series sin capítulo: abre la ficha para elegir
                                  * episodio. Todo lo demás reproduce directo. */
+                                returnAnchor = null
                                 spotlight?.let { focused ->
                                     val entry = focused.entry
-                                    if (!entry.isLive && !hasEpisodeNumber(entry.type, entry.id)) {
+                                    if (heroAction(entry) == HeroAction.ChooseEpisode) {
                                         onOpenDetails(entry, focused.siblings)
                                     } else {
                                         onPlay(
@@ -272,6 +305,7 @@ fun HomeScreen(
                                 }
                             },
                             onDetails = {
+                                returnAnchor = null
                                 spotlight?.let { onOpenDetails(it.entry, it.siblings) }
                             },
                             modifier = modifier,
@@ -289,16 +323,32 @@ fun HomeScreen(
                                 deviceProfile = deviceProfile,
                             )
                         }
+                    } else if (category != HomeCategory.Home) {
+                        {
+                            Text(
+                                text = "${category.label} · catálogo cargado",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = StreamflixColors.OnSurfaceMuted,
+                                modifier = Modifier.padding(
+                                    start = deviceProfile.horizontalPaddingDp.dp,
+                                    end = deviceProfile.horizontalPaddingDp.dp,
+                                ),
+                            )
+                        }
                     } else {
                         null
                     }
 
                     val rowsContent: @Composable (Modifier) -> Unit = { modifier ->
+                        val anchorToRestore = returnAnchor?.takeIf {
+                            mayRestoreCatalogFocus(it, returnAnchor, returnSignal, canRestoreCatalogFocus, showSearch)
+                        }
                         CatalogList(
                             rows = rows,
                             deviceProfile = deviceProfile,
                             header = resultHeader,
-                            onEntryClick = { entry, siblings ->
+                            onEntryClick = { row, entry, siblings, itemKey, itemIndex ->
+                                returnAnchor = CatalogFocusAnchor(row.id, itemKey, itemIndex, returnSignal)
                                 /* Un canal en directo va derecho al reproductor:
                                  * la ficha de un canal no tiene nada que elegir
                                  * (ni episodios ni servidores) y era un peaje de
@@ -309,10 +359,13 @@ fun HomeScreen(
                                     onOpenDetails(entry, siblings)
                                 }
                             },
-                            onEntryFocused = viewModel::onCardFocused,
+                            onEntryFocused = { row, entry -> viewModel.onCardFocused(row, entry) },
                             rowsTopPadding = contentBaseline,
                             firstCardFocus = firstCardFocus,
                             firstRowFocusUp = heroPlayFocus,
+                            restoreTarget = anchorToRestore?.let { resolveCatalogFocus(rows, it) },
+                            isRestorePending = { mayRestoreCatalogFocus(anchorToRestore, returnAnchor, returnSignal, canRestoreCatalogFocus, showSearch) },
+                            onFocusRestored = { if (returnAnchor == anchorToRestore) returnAnchor = null },
                             modifier = modifier,
                         )
                     }
@@ -324,13 +377,35 @@ fun HomeScreen(
                                 .fillMaxWidth()
                                 .height(heroHeight),
                         )
-                        rowsContent(Modifier.fillMaxSize())
+                        if (rows.isNotEmpty()) {
+                            key(category) { rowsContent(Modifier.fillMaxSize()) }
+                        } else {
+                            Column(
+                                modifier = Modifier.align(Alignment.Center).padding(48.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(
+                                    if (query.isNotBlank()) "Sin resultados en esta sección" else "No hay títulos en esta sección",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    textAlign = TextAlign.Center,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    if (query.isNotBlank()) "Prueba otra sección o cambia la búsqueda."
+                                    else "Este filtro utiliza el catálogo cargado. Prueba otra sección o busca un título.",
+                                    color = StreamflixColors.OnSurfaceMuted,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
                     }
 
                     HomeTopBar(
                         deviceProfile = deviceProfile,
                         settingsFocus = if (deviceProfile.isTelevision) serverFocus else null,
-                        settingsDownFocus = if (deviceProfile.isTelevision) heroPlayFocus else null,
+                        settingsDownFocus = if (spotlight != null) heroPlayFocus else null,
+                        category = category,
+                        onCategorySelected = { category = it; initialFocusRequested = true },
                         onOpenSettings = onOpenSettings,
                         onOpenSearch = { showSearch = true },
                         onClearSearch = { viewModel.search("") },
@@ -343,8 +418,7 @@ fun HomeScreen(
                     /* Foco inicial en TV: la primera tarjeta. Así el hero arranca
                      * mostrando el primer título de "Continuar viendo" y el
                      * usuario ya puede moverse sin adivinar nada. */
-                    if (deviceProfile.requiresDpadFocus) {
-                        var initialFocusRequested by remember { mutableStateOf(false) }
+                    if (deviceProfile.requiresDpadFocus && rows.isNotEmpty()) {
                         LaunchedEffect(rows.firstOrNull()?.id) {
                             if (initialFocusRequested) return@LaunchedEffect
                             /* `LaunchedEffect` corre antes del layout: sin
@@ -364,6 +438,8 @@ fun HomeScreen(
                 deviceProfile = deviceProfile,
                 settingsFocus = null,
                 settingsDownFocus = null,
+                category = category,
+                onCategorySelected = { category = it; initialFocusRequested = true },
                 onOpenSettings = onOpenSettings,
                 onOpenSearch = { showSearch = true },
                 onClearSearch = { viewModel.search("") },
@@ -417,7 +493,7 @@ private fun SearchResultHeader(
             )
             Spacer(Modifier.width(14.dp))
             Text(
-                text = if (count == 1) "1 título" else "$count títulos",
+                text = if (count == 1) "1 resultado" else "$count resultados",
                 style = MaterialTheme.typography.labelMedium,
                 color = StreamflixColors.OnSurfaceMuted,
             )
@@ -438,16 +514,31 @@ private fun CatalogList(
     rows: List<CatalogRow>,
     deviceProfile: DeviceProfile,
     rowsTopPadding: Dp,
-    onEntryClick: (MediaEntry, List<MediaEntry>) -> Unit,
-    onEntryFocused: (rowId: String, entry: MediaEntry) -> Unit,
+    onEntryClick: (CatalogRow, MediaEntry, List<MediaEntry>, String, Int) -> Unit,
+    onEntryFocused: (row: CatalogRow, entry: MediaEntry) -> Unit,
     firstCardFocus: FocusRequester,
     firstRowFocusUp: FocusRequester,
+    restoreTarget: CatalogFocusTarget?,
+    isRestorePending: () -> Boolean,
+    onFocusRestored: () -> Unit,
     modifier: Modifier = Modifier,
     /** Cabecera opcional («Resultados para …»); va dentro de la lista para que
      *  se desplace con las filas y no tape el hero. */
     header: (@Composable () -> Unit)? = null,
 ) {
+    val listState = rememberLazyListState()
+    val latestRestorePending by rememberUpdatedState(isRestorePending)
+    var readyTarget by remember { mutableStateOf<CatalogFocusTarget?>(null) }
+    LaunchedEffect(restoreTarget, header != null) {
+        readyTarget = null
+        if (restoreTarget != null) {
+            listState.scrollToItem(restoreTarget.rowIndex + if (header != null) 1 else 0)
+            withFrameNanos { }
+            if (latestRestorePending()) readyTarget = restoreTarget
+        }
+    }
     LazyColumn(
+        state = listState,
         modifier = modifier,
         contentPadding = PaddingValues(
             top = rowsTopPadding,
@@ -462,15 +553,18 @@ private fun CatalogList(
         }
         itemsIndexed(
             items = rows,
-            key = { _, row -> row.id },
+            key = { _, row -> "catalog:${row.id}" },
         ) { index, row ->
             MediaRow(
                 row = row,
                 deviceProfile = deviceProfile,
-                onEntryClick = onEntryClick,
-                onEntryFocused = onEntryFocused,
+                onEntryClick = { entry, siblings, itemKey, itemIndex -> onEntryClick(row, entry, siblings, itemKey, itemIndex) },
+                onEntryFocused = { _, entry -> onEntryFocused(row, entry) },
                 firstCardFocusRequester = if (index == 0) firstCardFocus else null,
                 focusUp = if (index == 0) firstRowFocusUp else null,
+                restoreIndex = readyTarget?.takeIf { it.rowIndex == index }?.itemIndex,
+                isRestorePending = isRestorePending,
+                onFocusRestored = onFocusRestored,
             )
         }
     }
@@ -487,6 +581,8 @@ private fun HomeTopBar(
     deviceProfile: DeviceProfile,
     settingsFocus: FocusRequester?,
     settingsDownFocus: FocusRequester?,
+    category: HomeCategory,
+    onCategorySelected: (HomeCategory) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSearch: () -> Unit,
     onClearSearch: () -> Unit,
@@ -507,43 +603,47 @@ private fun HomeTopBar(
             .padding(
                 start = deviceProfile.horizontalPaddingDp.dp,
                 end = deviceProfile.horizontalPaddingDp.dp,
-                top = if (deviceProfile.requiresDpadFocus) 18.dp else 10.dp,
+                top = deviceProfile.verticalPaddingDp.dp,
                 bottom = 18.dp,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        /* Marca sobria: en tvOS el logotipo no compite con el hero, y el
-         * acento blanco ya está reservado para los botones. */
-        Text(
-            text = "Streamflix",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = StreamflixColors.OnSurface,
-        )
-        Spacer(Modifier.width(12.dp))
-        Text(
-            text = "TV",
-            style = MaterialTheme.typography.labelSmall,
-            color = StreamflixColors.OnSurfaceMuted,
-            maxLines = 1,
-        )
-        Spacer(Modifier.weight(1f))
-        if (searching) {
+        // En paneles que reportan pocos dp se priorizan las acciones del mando.
+        val compact = deviceProfile.screenWidthDp < 850
+        if (!compact) {
+            Text(
+                text = "Streamflix",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = StreamflixColors.OnSurface,
+            )
+            Spacer(Modifier.width(24.dp))
+        }
+        HomeCategory.entries.forEach { item ->
             TopBarChip(
-                text = "Inicio",
+                text = item.label,
+                selected = item == category && !(searching && item == HomeCategory.Home),
+                isCategory = true,
+                compact = compact,
                 focusDown = settingsDownFocus,
-                onClick = onClearSearch,
-                modifier = Modifier.padding(end = 8.dp),
+                onClick = {
+                    onCategorySelected(item)
+                    if (item == HomeCategory.Home && searching) onClearSearch()
+                },
+                modifier = Modifier.padding(end = 4.dp),
             )
         }
+        Spacer(Modifier.weight(1f))
         TopBarChip(
             text = "Buscar",
+            compact = compact,
             focusDown = settingsDownFocus,
             onClick = onOpenSearch,
             modifier = Modifier.padding(end = 8.dp),
         )
         TopBarChip(
             text = "Ajustes",
+            compact = compact,
             onClick = onOpenSettings,
             focusDown = settingsDownFocus,
             focusRequester = settingsFocus,
@@ -573,6 +673,9 @@ private fun TopBarChip(
     modifier: Modifier = Modifier,
     focusDown: FocusRequester? = null,
     focusRequester: FocusRequester? = null,
+    selected: Boolean = false,
+    isCategory: Boolean = false,
+    compact: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
     val glow by androidx.compose.animation.core.animateFloatAsState(
@@ -583,23 +686,29 @@ private fun TopBarChip(
 
     Box(
         modifier = modifier
+            .then(if (isCategory) Modifier.semantics { this.selected = selected } else Modifier)
             .then(if (focusDown != null) Modifier.focusProperties { down = focusDown } else Modifier)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             /* Cápsula translúcida: mismo lenguaje que los botones del hero y
              * que el avatar del perfil. */
             .tvFocusGlow(progress = glow, cornerRadius = 20.dp)
             .background(
-                if (focused) StreamflixColors.GlassStrong else StreamflixColors.Glass,
+                when {
+                    focused -> Color.White
+                    selected -> StreamflixColors.GlassStrong
+                    else -> Color.Transparent
+                },
                 RoundedCornerShape(percent = 50),
             )
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = if (compact) 8.dp else 14.dp, vertical = 8.dp),
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge,
-            color = StreamflixColors.OnSurface,
+            color = if (focused) Color.Black else if (selected) Color.White else StreamflixColors.OnSurfaceMuted,
+            fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 1,
         )
     }

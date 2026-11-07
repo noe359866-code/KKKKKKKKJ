@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -25,6 +26,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tanasi.streamflix.data.model.EpisodeOption
@@ -45,18 +48,19 @@ fun ManualEpisodePicker(selected: EpisodeOption?, onSelect: (EpisodeOption) -> U
     var episode by remember { mutableStateOf(selected?.episode ?: 1) }
     val valid = season in 0..100 && episode in 1..10000
 
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         NumberStepper(
             label = "Temporada",
             value = season,
+            min = 0,
+            max = 100,
             onChange = { season = (season + it).coerceIn(0, 100) },
         )
         NumberStepper(
             label = "Episodio",
             value = episode,
+            min = 1,
+            max = 10000,
             onChange = { episode = (episode + it).coerceIn(1, 10000) },
         )
         PrimaryPill(
@@ -69,7 +73,7 @@ fun ManualEpisodePicker(selected: EpisodeOption?, onSelect: (EpisodeOption) -> U
 
 /** Etiqueta + valor entre dos botones redondos. */
 @Composable
-private fun NumberStepper(label: String, value: Int, onChange: (Int) -> Unit) {
+private fun NumberStepper(label: String, value: Int, min: Int, max: Int, onChange: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = label,
@@ -77,7 +81,7 @@ private fun NumberStepper(label: String, value: Int, onChange: (Int) -> Unit) {
             color = StreamflixColors.OnSurfaceMuted,
         )
         Spacer(Modifier.width(10.dp))
-        RoundStepButton(symbol = "−", onClick = { onChange(-1) })
+        RoundStepButton(symbol = "−", description = "Reducir $label", enabled = value > min, onClick = { onChange(-1) })
         Box(
             modifier = Modifier.width(46.dp),
             contentAlignment = Alignment.Center,
@@ -89,13 +93,13 @@ private fun NumberStepper(label: String, value: Int, onChange: (Int) -> Unit) {
                 color = StreamflixColors.OnSurface,
             )
         }
-        RoundStepButton(symbol = "+", onClick = { onChange(+1) })
+        RoundStepButton(symbol = "+", description = "Aumentar $label", enabled = value < max, onClick = { onChange(+1) })
     }
 }
 
 /** Botón redondo de paso: vidrio, anillo blanco al enfocar. */
 @Composable
-private fun RoundStepButton(symbol: String, onClick: () -> Unit) {
+private fun RoundStepButton(symbol: String, description: String, enabled: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val focusProgress by animateFloatAsState(
         targetValue = if (focused) 1f else 0f,
@@ -105,22 +109,23 @@ private fun RoundStepButton(symbol: String, onClick: () -> Unit) {
 
     Box(
         modifier = Modifier
-            .size(34.dp)
-            .tvFocusGlow(progress = focusProgress, cornerRadius = 17.dp)
+            .size(44.dp)
+            .semantics { contentDescription = description }
+            .tvFocusGlow(progress = focusProgress, cornerRadius = 22.dp)
             .background(
                 if (focused) StreamflixColors.GlassStrong else Color.White.copy(alpha = 0.07f),
                 CircleShape,
             )
             .border(1.dp, Color.White.copy(alpha = if (focused) 0.4f else 0.12f), CircleShape)
             .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = symbol,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = Color.White,
+            color = if (enabled) Color.White else StreamflixColors.OnSurfaceMuted,
         )
     }
 }

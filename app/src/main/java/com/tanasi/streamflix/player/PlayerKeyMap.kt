@@ -7,6 +7,10 @@ enum class PlayerKeyAction {
     /** `DPAD_CENTER` / `ENTER` / botón A del gamepad. */
     TOGGLE_PLAY_PAUSE,
 
+    /** Botones multimedia independientes: son idempotentes, no alternan. */
+    PLAY,
+    PAUSE,
+
     /** `DPAD_LEFT`: retroceder un paso. */
     SEEK_BACK,
 
@@ -32,7 +36,7 @@ enum class PlayerKeyAction {
  * `ExoPlayer`.
  *
  * Teclas multimedia (`KEYCODE_MEDIA_PLAY_PAUSE`, que emiten muchos mandos y
- * televisores) se tratan igual que el botón central; `MEDIA_NEXT`/`MEDIA_PREVIOUS`
+ * televisores) incluyen alternar, reproducir y pausar; `MEDIA_NEXT`/`MEDIA_PREVIOUS`
  * hacen de `CH+`/`CH−` porque es donde acaban esos botones en la mitad de los
  * mandos baratos.
  *
@@ -48,9 +52,10 @@ object PlayerKeyMap {
         Key.Spacebar,
         Key.ButtonA,
         Key.MediaPlayPause,
-        Key.MediaPlay,
-        Key.MediaPause,
         -> PlayerKeyAction.TOGGLE_PLAY_PAUSE
+
+        Key.MediaPlay -> PlayerKeyAction.PLAY
+        Key.MediaPause -> PlayerKeyAction.PAUSE
 
         Key.DirectionLeft,
         Key.MediaRewind,

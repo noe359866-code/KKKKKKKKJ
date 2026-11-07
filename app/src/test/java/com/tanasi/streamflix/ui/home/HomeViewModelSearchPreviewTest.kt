@@ -1,6 +1,8 @@
 package com.tanasi.streamflix.ui.home
 
 import com.tanasi.streamflix.data.ContentClient
+import com.tanasi.streamflix.data.model.CatalogRow
+import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.CatalogDescriptor
 import com.tanasi.streamflix.data.model.RemoteCatalogResponse
 import com.tanasi.streamflix.data.model.RemoteMeta
@@ -96,6 +98,21 @@ class HomeViewModelSearchPreviewTest {
     /* ---------------------------------------------------------------------- */
     /* Pruebas                                                                */
     /* ---------------------------------------------------------------------- */
+
+    @Test
+    fun `seguir viendo actualiza el destacado y conserva la posicion`() = runTest(dispatcher) {
+        val (vm, _) = viewModel(mapOf("" to listOf("tt0")))
+        advanceUntilIdle()
+        val entry = MediaEntry(id = "tt0", type = "movie", title = "Título tt0", resumePositionMs = 12345L)
+        val row = CatalogRow(id = "continue:me", title = "Seguir viendo", items = listOf(entry))
+
+        vm.onCardFocused(row, entry)
+        advanceUntilIdle()
+
+        assertEquals("Seguir viendo", vm.hero.value?.rowTitle)
+        assertEquals(12345L, vm.hero.value?.entry?.resumePositionMs)
+        assertEquals(listOf(entry), vm.hero.value?.siblings)
+    }
 
     @Test
     fun `una rafaga de teclas hace una sola peticion`() = runTest(dispatcher) {

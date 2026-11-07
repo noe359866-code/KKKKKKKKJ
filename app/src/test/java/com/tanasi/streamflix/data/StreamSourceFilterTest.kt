@@ -128,6 +128,7 @@ class StreamSourceFilterTest {
         assertEquals("DASH", dash.formatLine)
         /* Una calidad en blanco no deja un " · " colgando. */
         assertEquals("MP4", mp4.formatLine)
+        assertEquals("Formato sin confirmar", StreamSource(url = "https://cdn.example.com/video", name = "n", title = "t").formatLine)
         assertEquals("PelisPlus · 1080p", hls.label)
     }
 }

@@ -8,9 +8,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -51,12 +57,32 @@ import com.tanasi.streamflix.ui.theme.StreamflixColors
 fun MediaRow(
     row: CatalogRow,
     deviceProfile: DeviceProfile,
-    onEntryClick: (MediaEntry, List<MediaEntry>) -> Unit,
+    onEntryClick: (MediaEntry, List<MediaEntry>, String, Int) -> Unit,
     onEntryFocused: (rowId: String, entry: MediaEntry) -> Unit,
     modifier: Modifier = Modifier,
     firstCardFocusRequester: FocusRequester? = null,
     focusUp: FocusRequester? = null,
+    restoreIndex: Int? = null,
+    isRestorePending: () -> Boolean = { true },
+    onFocusRestored: () -> Unit = {},
 ) {
+    val itemKeys = remember(row.items) { stableMediaKeys(row.items) }
+    val listState = rememberLazyListState()
+    val restoreFocus = remember { FocusRequester() }
+    val latestRestorePending by rememberUpdatedState(isRestorePending)
+    LaunchedEffect(restoreIndex, itemKeys) {
+        val target = restoreIndex?.takeIf { it in row.items.indices } ?: return@LaunchedEffect
+        listState.scrollToItem(target)
+        repeat(4) {
+            withFrameNanos { }
+            if (!latestRestorePending()) return@LaunchedEffect
+            val requester = if (target == 0 && firstCardFocusRequester != null) firstCardFocusRequester else restoreFocus
+            runCatching { requester.requestFocus() }
+        }
+        // También se consume si el nodo ya tenía foco o si no pudo recuperarlo:
+        // no debe robar foco en una reanudación posterior.
+        if (latestRestorePending()) onFocusRestored()
+    }
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -82,6 +108,7 @@ fun MediaRow(
         }
 
         LazyRow(
+            state = listState,
             horizontalArrangement = Arrangement.spacedBy(deviceProfile.cardSpacingDp.dp),
             contentPadding = PaddingValues(
                 start = deviceProfile.horizontalPaddingDp.dp,
@@ -91,9 +118,17 @@ fun MediaRow(
             ),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            itemsIndexed(row.items, key = { index, entry -> "${row.id}:${entry.id}:$index" }) { index, entry ->
-                val focusRequester = if (index == 0) firstCardFocusRequester else null
-                val up = if (index == 0) focusUp else null
+            itemsIndexed(row.items, key = { index, _ -> itemKeys[index] }) { index, entry ->
+                val focusRequester = when {
+                    index == 0 && firstCardFocusRequester != null -> firstCardFocusRequester
+                    index == restoreIndex -> restoreFocus
+                    else -> null
+                }
+                val up = focusUp
+                val onFocus: (MediaEntry) -> Unit = { focused ->
+                    onEntryFocused(row.id, focused)
+                    if (index == restoreIndex && latestRestorePending()) onFocusRestored()
+                }
 
                 /* Deportes: marcador con liga, equipos y hora. La fuente de datos
                  * lo pide con `layout: "sports"`; el resto de filas no cambia. */
@@ -101,8 +136,8 @@ fun MediaRow(
                     SportsCard(
                         entry = entry,
                         deviceProfile = deviceProfile,
-                        onClick = { onEntryClick(entry, row.items) },
-                        onFocused = { entry -> onEntryFocused(row.id, entry) },
+                        onClick = { onEntryClick(entry, row.items, itemKeys[index], index) },
+                        onFocused = onFocus,
                         focusUp = up,
                         focusRequester = focusRequester,
                     )
@@ -110,8 +145,8 @@ fun MediaRow(
                     PosterCard(
                         entry = entry,
                         deviceProfile = deviceProfile,
-                        onClick = { onEntryClick(entry, row.items) },
-                        onFocused = { entry -> onEntryFocused(row.id, entry) },
+                        onClick = { onEntryClick(entry, row.items, itemKeys[index], index) },
+                        onFocused = onFocus,
                         focusUp = up,
                         focusRequester = focusRequester,
                     )
@@ -119,8 +154,8 @@ fun MediaRow(
                     LandscapeCard(
                         entry = entry,
                         deviceProfile = deviceProfile,
-                        onClick = { onEntryClick(entry, row.items) },
-                        onFocused = { entry -> onEntryFocused(row.id, entry) },
+                        onClick = { onEntryClick(entry, row.items, itemKeys[index], index) },
+                        onFocused = onFocus,
                         focusUp = up,
                         focusRequester = focusRequester,
                     )

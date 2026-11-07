@@ -61,6 +61,8 @@ class FailoverController(
      * que un failover conserva las pistas sin reconstruir el reproductor.
      */
     private val subtitles: List<SubtitleTrack> = emptyList(),
+    /** El dueño invalida las muestras transitorias antes de cargar otra fuente. */
+    private val onSourceChanging: () -> Unit = {},
 ) : Player.Listener {
 
     private val mutableState = MutableStateFlow(FailoverState(total = planner.total))
@@ -132,6 +134,11 @@ class FailoverController(
         }
     }
 
+    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+        if (!playWhenReady) cancelWatchdog()
+        else if (player.playbackState == Player.STATE_BUFFERING) armWatchdog()
+    }
+
     /* ---------------------------------------------------------------------- */
     /* API para la UI                                                         */
     /* ---------------------------------------------------------------------- */
@@ -165,13 +172,13 @@ class FailoverController(
     }
 
     /** Elección manual desde la lista de fuentes. */
-    fun selectSource(index: Int) {
+    fun selectSource(index: Int, playWhenReady: Boolean = player.playWhenReady) {
         if (released) return
         val resumePosition = player.currentPosition.coerceAtLeast(0L)
         val source = planner.select(index) ?: return
         cancelWatchdog()
         mutableState.update { it.copy(switching = true, exhausted = false) }
-        play(source, resumePosition, wasPlaying = true)
+        play(source, resumePosition, wasPlaying = playWhenReady)
     }
 
     /** Libera listener y watchdog; el `ExoPlayer` lo libera su dueño. */
@@ -191,6 +198,7 @@ class FailoverController(
             return
         }
 
+        onSourceChanging()
         player.setMediaSource(MediaSources.mediaSource(context, source, subtitles))
         player.prepare()
         if (positionMs > 0L) player.seekTo(positionMs)
@@ -220,7 +228,7 @@ class FailoverController(
         watchdog = scope.launch {
             delay(stallTimeoutMs)
             if (released) return@launch
-            if (player.playbackState != Player.STATE_READY) {
+            if (shouldAdvanceStalled(player.playWhenReady, player.playbackState == Player.STATE_BUFFERING)) {
                 AppLog.w("stall de %d ms, saltando de fuente", stallTimeoutMs)
                 mutableState.update { it.copy(lastError = "sin datos en ${stallTimeoutMs}ms") }
                 advance(FailoverReason.STALL, "sin datos en ${stallTimeoutMs}ms")

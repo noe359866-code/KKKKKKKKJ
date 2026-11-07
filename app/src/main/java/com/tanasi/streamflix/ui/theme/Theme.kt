@@ -44,7 +44,7 @@ object StreamflixColors {
     val OnPrimary = Color(0xFF000000)
 
     val OnSurface = Color(0xFFFFFFFF)
-    val OnSurfaceMuted = Color(0xFF8E8E93)
+    val OnSurfaceMuted = Color(0xFFAAAAAF)
 
     /** Foco del D-Pad: anillo blanco fino, como el de tvOS. */
     val FocusRing = Color(0xFFFFFFFF)

@@ -1,7 +1,7 @@
 package com.tanasi.streamflix.ui.theme
 
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -37,7 +37,8 @@ fun Modifier.tvFocusGlow(
     if (progress <= 0.01f) return this
     val alpha = progress.coerceIn(0f, 1f)
 
-    return drawBehind {
+    return drawWithContent {
+        drawContent()
         val radius = cornerRadius.toPx()
         val stroke = ringWidth.toPx()
 
