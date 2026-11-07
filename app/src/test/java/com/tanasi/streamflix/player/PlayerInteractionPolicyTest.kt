@@ -21,11 +21,13 @@ class PlayerInteractionPolicyTest {
         val snapshots = PlaybackSnapshotCache()
         snapshots.observe(false, 0L, 0L)
         assertNull(snapshots.latest)
-        snapshots.observe(false, 45_000L, 100_000L)
+        snapshots.observe(true, 45_000L, 100_000L)
+        /* Cambio de fuente: deja de haber reproducción confirmada y llegan
+         * posiciones transitorias; la última muestra buena se conserva. */
         snapshots.observe(false, 0L, 100_000L)
-        snapshots.observe(true, 10L, 100_000L)
+        snapshots.observe(false, 10L, 100_000L)
         assertEquals(PlaybackSnapshot(45_000L, 100_000L), snapshots.latest)
-        snapshots.observe(false, 110_000L, 100_000L)
+        snapshots.observe(true, 110_000L, 100_000L)
         assertEquals(PlaybackSnapshot(100_000L, 100_000L), snapshots.latest)
     }
 
