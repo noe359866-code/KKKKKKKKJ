@@ -88,7 +88,7 @@ class RebornStreamsContentClient(
     private suspend fun requestFor(baseUrl: String, type: String, id: String): StreamRequest? {
         val episode = StreamRequest.parseEpisode(id)
         if (!type.equals("movie", true) && episode == null) return null
-        val baseId = if (episode != null) id.split(':').dropLast(2).joinToString(':') else id
+        val baseId = if (episode != null) id.split(':').dropLast(2).joinToString(":") else id
         val meta = try {
             base.meta(baseUrl, type, baseId)
         } catch (cancelled: CancellationException) {
