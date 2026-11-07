@@ -70,6 +70,8 @@ import com.tanasi.streamflix.data.model.Profile
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.ui.components.MediaRow
+import com.tanasi.streamflix.ui.components.dpadFastVerticalScroll
+import com.tanasi.streamflix.ui.components.dpadRepeatThrottle
 import com.tanasi.streamflix.ui.profile.ProfileBadge
 import com.tanasi.streamflix.ui.theme.Dimens
 import com.tanasi.streamflix.ui.theme.StreamflixColors
@@ -522,7 +524,15 @@ private fun CatalogList(
     }
     LazyColumn(
         state = listState,
-        modifier = modifier,
+        /* Pantalla con D-Pad: las repeticiones del mando se frenan a un ritmo
+         * conocido y ARRIBA/ABAJO sostenido desliza la lista. En táctil no se
+         * instala nada. */
+        modifier = modifier
+            .dpadRepeatThrottle()
+            .dpadFastVerticalScroll(
+                scrollableState = listState,
+                enabled = deviceProfile.requiresDpadFocus,
+            ),
         contentPadding = PaddingValues(
             top = rowsTopPadding,
             bottom = 48.dp,

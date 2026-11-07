@@ -32,10 +32,10 @@ import com.tanasi.streamflix.ui.theme.StreamflixColors
 /**
  * Un carrusel del Home (inspiración Netflix).
  *
- * Misma pieza para las cuatro filas: sólo cambia la proporción de las tarjetas,
+ * Misma pieza para todas las filas: sólo cambia la proporción de las tarjetas,
  * que la decide la fila (`aspect` en el catálogo), no la pantalla. Así
- * "Continuar viendo" y "Deportes en directo" se pintan en 16:9 y el resto en
- * 2:3, sin código condicional repartido.
+ * "Continuar viendo" se pinta en 16:9 y el resto en 2:3, sin código condicional
+ * repartido.
  *
  * Detalles de D-Pad:
  *  - el foco se desplaza lateralmente con `◀ ▶` de forma nativa en un `LazyRow`;
