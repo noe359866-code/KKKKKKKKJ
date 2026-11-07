@@ -6,6 +6,8 @@ import com.tanasi.streamflix.data.ContentClient
 import com.tanasi.streamflix.data.model.EpisodeOption
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.MediaType
+import com.tanasi.streamflix.data.model.nextEpisodeAfter
+import com.tanasi.streamflix.data.model.isEpisodeNotAiredYet
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.RemoteMeta
 import com.tanasi.streamflix.data.model.SeasonGroup
@@ -15,6 +17,9 @@ import com.tanasi.streamflix.data.model.toSeasonGroups
 import com.tanasi.streamflix.util.AddonSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -196,14 +201,46 @@ class DetailsViewModel(
      */
     fun playbackRequest(): PlaybackRequest {
         val base = entry.playbackRequest(0)
+        val episode = selectedEpisode()
+        val next = nextEpisodeFor(episode)
         return base.copy(
             id = requestedId,
-            title = selectedEpisode()?.let { episode -> "${displayTitle()} · ${episode.label}" } ?: displayTitle(),
+            title = episode?.let { current -> "${displayTitle()} · ${current.label}" } ?: displayTitle(),
             /* Sólo se reanuda el título que se estaba viendo: si el usuario
              * elige otro capítulo, empieza desde el principio. */
             startPositionMs = if (requestedId == entry.id) base.startPositionMs else 0L,
+            /* El "siguiente" se resuelve aquí y viaja en la petición: al
+             * reproductor no le queda la lista de episodios. */
+            nextEpisodeId = next?.idFor(entry.id),
+            nextEpisodeLabel = next?.label,
+            nextEpisodeAirDate = nextEpisodeAirDate(next),
         )
     }
+
+    /**
+     * El episodio que va después del actual, si se puede ofrecer.
+     *
+     * Se descarta cuando aún no se ha emitido: ofrecer "siguiente" para un
+     * capítulo futuro lleva a un fallo de fuentes garantizado.
+     */
+    private fun nextEpisodeFor(current: EpisodeOption?): EpisodeOption? {
+        if (current == null) return null
+        val ready = mutableEpisodes.value as? EpisodesUiState.Ready ?: return null
+        val next = nextEpisodeAfter(ready.seasons, current) ?: return null
+        return next.takeUnless { isEpisodeNotAiredYet(nextEpisodeAirDate(it), todayIsoDate()) }
+    }
+
+    /**
+     * Fecha de emisión del episodio.
+     *
+     * `RemoteVideo` no la trae todavía, así que hoy siempre es `null` y el
+     * filtro de "no emitido" no descarta nada. Se deja el punto de enganche
+     * hecho para cuando el catálogo la publique: entonces basta rellenarlo aquí.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    private fun nextEpisodeAirDate(episode: EpisodeOption?): String? = null
+
+    private fun todayIsoDate(): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
 
     private fun displayTitle(): String = mutableMetadata.value?.name?.takeIf { it.isNotBlank() } ?: entry.title
 

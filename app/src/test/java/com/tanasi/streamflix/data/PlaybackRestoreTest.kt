@@ -16,6 +16,43 @@ import org.junit.Test
  */
 class PlaybackRestoreTest {
 
+    @Test
+    fun `el episodio siguiente sobrevive a la restauracion`() {
+        /* Al volver de la muerte del proceso, el prompt de "siguiente" tiene
+         * que seguir disponible: si el campo se perdiera, el usuario vería el
+         * final del capítulo sin poder avanzar. */
+        val episode = PlaybackRequest(
+            id = "tt0903747:1:4",
+            type = "series",
+            title = "Breaking Bad · T1 E4",
+            nextEpisodeId = "tt0903747:1:5",
+            nextEpisodeLabel = "T1 · E5",
+            nextEpisodeAirDate = "2008-03-02",
+        )
+
+        val raw = PlaybackRestore.encode(episode, positionMs = 2_700_000L)
+        val restored = PlaybackRestore.decode(raw)
+
+        assertNotNull(restored)
+        assertEquals("tt0903747:1:5", restored!!.request.nextEpisodeId)
+        assertEquals("T1 · E5", restored.request.nextEpisodeLabel)
+    }
+
+    @Test
+    fun `una sesion guardada sin los campos nuevos sigue leyendose`() {
+        /* El JSON de una versión anterior no tiene los campos de "siguiente".
+         * Tienen valor por defecto, así que el `Bundle` viejo no puede
+         * invalidar la restauración: se recupera la posición y el episodio. */
+        val legacy = """{"request":{"id":"tt0903747:1:4","type":"series","title":"Breaking Bad · T1 E4"},"positionMs":1234}"""
+
+        val restored = PlaybackRestore.decode(legacy)
+
+        assertNotNull(restored)
+        assertEquals("tt0903747:1:4", restored!!.request.id)
+        assertEquals(1234L, restored.positionMs)
+        assertNull("una sesión vieja no inventa un siguiente", restored.request.nextEpisodeId)
+    }
+
     private val movie = PlaybackRequest(
         id = "tt0133093",
         type = "movie",

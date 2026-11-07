@@ -100,6 +100,7 @@ class PlayerActivity : ComponentActivity() {
                 PlayerScreen(
                     viewModel = playerViewModel,
                     onBack = { finish() },
+                    onPlayNext = { nextId -> openNextEpisode(nextId, profileId) },
                     onProgress = { current, positionMs, durationMs ->
                         if (latestRequest?.id == current.id && latestRequest?.type == current.type) {
                             latestPositionMs = positionMs
@@ -128,6 +129,49 @@ class PlayerActivity : ComponentActivity() {
     }
 
     /**
+     * Abre el episodio siguiente en un reproductor nuevo.
+     *
+     * Se cierra la actual después de lanzar la nueva: mantener dos
+     * `PlayerActivity` vivas dejaría dos `ExoPlayer` con audio, y al volver con
+     * ATRÁS el usuario aterrizaría en el episodio que acababa de terminar.
+     *
+     * El perfil viaja en el `Intent` para que el avance del capítulo nuevo se
+     * guarde en el sitio correcto.
+     */
+    private fun openNextEpisode(nextId: String, profileId: String?) {
+        val next = intentForEpisode(nextId, profileId)
+        startActivity(next)
+        finish()
+    }
+
+    private fun intentForEpisode(nextId: String, profileId: String?): Intent {
+        /* El título de la serie no se puede reconstruir de un id como
+         * `tt0903747:1:5`: el `Intent` actual lo lleva con la etiqueta del
+         * capítulo, así que se reutiliza el nombre de la serie quitándole el
+         * sufijo " · T1 E4" antes de añadir el nuevo. */
+        val seriesTitle = (intent.getStringExtra(EXTRA_TITLE) ?: nextId).substringBefore(" · ")
+        val request = PlaybackRequest(
+            id = nextId,
+            type = intent.getStringExtra(EXTRA_TYPE) ?: "series",
+            title = seriesTitle,
+            poster = intent.getStringExtra(EXTRA_POSTER),
+            backdrop = intent.getStringExtra(EXTRA_BACKDROP),
+        )
+        return Intent(this, PlayerActivity::class.java).apply {
+            putExtra(EXTRA_ID, request.id)
+            putExtra(EXTRA_TYPE, request.type)
+            putExtra(EXTRA_TITLE, request.title)
+            putExtra(EXTRA_POSTER, request.poster)
+            putExtra(EXTRA_BACKDROP, request.backdrop)
+            /* El episodio nuevo empieza por el principio y con la fuente de
+             * mayor prioridad: el failover del anterior no aplica. */
+            putExtra(EXTRA_START_INDEX, 0)
+            putExtra(EXTRA_START_POSITION, 0L)
+            profileId?.let { putExtra(EXTRA_PROFILE_ID, it) }
+        }
+    }
+
+    /**
      * Guarda la sesión para poder volver a ella.
      *
      * Se llama también al pasar a segundo plano (no sólo al morir el proceso):
@@ -150,6 +194,9 @@ class PlayerActivity : ComponentActivity() {
             startPositionMs = getLongExtra(EXTRA_START_POSITION, 0L).coerceAtLeast(0L),
             poster = getStringExtra(EXTRA_POSTER),
             backdrop = getStringExtra(EXTRA_BACKDROP),
+            nextEpisodeId = getStringExtra(EXTRA_NEXT_EPISODE_ID),
+            nextEpisodeLabel = getStringExtra(EXTRA_NEXT_EPISODE_LABEL),
+            nextEpisodeAirDate = getStringExtra(EXTRA_NEXT_EPISODE_AIR_DATE),
         )
     }
 
@@ -162,6 +209,9 @@ class PlayerActivity : ComponentActivity() {
         const val EXTRA_PROFILE_ID = "extra.profileId"
         const val EXTRA_POSTER = "extra.poster"
         const val EXTRA_BACKDROP = "extra.backdrop"
+        const val EXTRA_NEXT_EPISODE_ID = "extra.nextEpisodeId"
+        const val EXTRA_NEXT_EPISODE_LABEL = "extra.nextEpisodeLabel"
+        const val EXTRA_NEXT_EPISODE_AIR_DATE = "extra.nextEpisodeAirDate"
 
         /** Estado de sesión (no es un extra del `Intent`). */
         private const val STATE_PLAYBACK = "state.playback"

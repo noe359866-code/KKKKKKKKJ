@@ -156,6 +156,22 @@ data class PlaybackRequest(
     val backdrop: String? = null,
     /** Posición de arranque: 0 salvo que venga de "Seguir viendo". */
     val startPositionMs: Long = 0L,
+    /**
+     * Id del episodio siguiente, ya formado (`{baseId}:{temporada}:{episodio}`),
+     * o `null` en películas y en el último capítulo de la temporada.
+     *
+     * Viaja en la petición porque el reproductor no tiene la lista de
+     * episodios: la ficha sí, y así al terminar el capítulo no hay que pedir la
+     * temporada entera justo cuando el usuario ya está mirando la pantalla.
+     *
+     * Tiene valor por defecto para que `PlaybackRestore` siga leyendo los
+     * `Bundle` guardados por versiones anteriores.
+     */
+    val nextEpisodeId: String? = null,
+    /** Etiqueta del siguiente ("T1 E5"), para el botón. */
+    val nextEpisodeLabel: String? = null,
+    /** Fecha de emisión del siguiente; si es futura, no se ofrece. */
+    val nextEpisodeAirDate: String? = null,
 )
 
 /** Tanto :temporada:episodio como los ids de anime proveedor:slug:episodio. */

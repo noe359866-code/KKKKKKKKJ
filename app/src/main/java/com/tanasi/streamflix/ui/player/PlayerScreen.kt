@@ -135,6 +135,11 @@ fun PlayerScreen(
      * volvía a empezar la serie desde el principio.
      */
     onProgress: (request: PlaybackRequest, positionMs: Long, durationMs: Long) -> Unit = { _, _, _ -> },
+    /**
+     * Abre el episodio siguiente. Lo implementa `PlayerActivity`: abrir otra
+     * `Activity` no es cosa de una pantalla de Compose.
+     */
+    onPlayNext: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val retryFocus = remember { FocusRequester() }
@@ -206,6 +211,7 @@ fun PlayerScreen(
                 request = request,
                 onBack = onBack,
                 onProgress = onProgress,
+                onPlayNext = onPlayNext,
             )
         }
     }
@@ -224,6 +230,12 @@ private fun PlaybackSurface(
     request: PlaybackRequest,
     onBack: () -> Unit,
     onProgress: (PlaybackRequest, Long, Long) -> Unit,
+    /**
+     * Abre el episodio siguiente en un reproductor nuevo. Llega desde
+     * `PlayerActivity`, que es quien puede lanzar otra `Activity`; la pantalla
+     * sólo decide **cuándo**.
+     */
+    onPlayNext: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val deviceProfile = LocalDeviceProfile.current
@@ -286,6 +298,10 @@ private fun PlaybackSurface(
 
     var isPlaying by remember(player) { mutableStateOf(false) }
     var playRequested by remember(player) { mutableStateOf(false) }
+    var playbackEnded by remember(player) { mutableStateOf(false) }
+    /* El prompt no se pinta en cuanto termina: primero se comprueba que de
+     * verdad toca (ver la condición del overlay). */
+    var showNextEpisodePrompt by remember(player) { mutableStateOf(false) }
     var positionMs by remember(player) { mutableStateOf(0L) }
     var durationMs by remember(player) { mutableStateOf(0L) }
     var isSeekable by remember(player) { mutableStateOf(false) }
@@ -397,11 +413,26 @@ private fun PlaybackSurface(
         }
     }
 
+    /* Al terminar: sólo se ofrece el siguiente si la petición lo trae, si no
+     * había un fallo y si el episodio ya se emitió (lo decidió la ficha; aquí
+     * sólo se respeta el `null`). */
+    LaunchedEffect(playbackEnded, request.nextEpisodeId) {
+        if (playbackEnded && request.nextEpisodeId != null) {
+            showNextEpisodePrompt = true
+        } else if (!playbackEnded) {
+            /* Si el vídeo vuelve a avanzar (el usuario rebobina o elige otra
+             * fuente desde los controles), el prompt ya no tiene sentido: se
+             * quedaría tapando la reproducción que acaba de reanudar. */
+            showNextEpisodePrompt = false
+        }
+    }
+
     /* Sondeo del estado del reproductor: más fino con los controles a la vista
      * (la barra avanza suave), más barato cuando están ocultos. */
     LaunchedEffect(player, controlsVisible) {
         while (true) {
             isPlaying = player.isPlaying
+            playbackEnded = player.playbackState == androidx.media3.common.Player.STATE_ENDED
             playRequested = player.playWhenReady && player.playbackState != androidx.media3.common.Player.STATE_ENDED
             positionMs = player.currentPosition.coerceAtLeast(0L)
             durationMs = player.duration.takeIf { it > 0L } ?: 0L
@@ -545,6 +576,14 @@ private fun PlaybackSurface(
     val playbackFailed = failoverState.fatalMessage != null || failoverState.exhausted
     BackHandler {
         when {
+            /* El prompt de "siguiente" atrapa ATRÁS: con una decisión en
+             * pantalla, salir del reproductor no es lo que espera nadie. Se
+             * descarta y se deja el vídeo en pausa al final. */
+            showNextEpisodePrompt -> {
+                showNextEpisodePrompt = false
+                player.pause()
+                controlsVisible = true
+            }
             playbackFailed -> onBack()
             controlsVisible -> hideControls()
             else -> onBack()
@@ -731,6 +770,26 @@ private fun PlaybackSurface(
                     },
                 )
             }
+        }
+
+        /* ¿Y ahora qué? Sólo al terminar de verdad, y sólo si la ficha dijo que
+         * hay un episodio siguiente. No se ofrece si hubo fallo (ahí lo que se
+         * quiere es reintentar) ni encima de un panel abierto. */
+        if (showNextEpisodePrompt && request.nextEpisodeId != null && failure == null && !showSources && !showTracks) {
+            NextEpisodePrompt(
+                label = request.nextEpisodeLabel,
+                deviceProfile = deviceProfile,
+                onPlayNext = { onPlayNext(request.nextEpisodeId) },
+                onStay = {
+                    showNextEpisodePrompt = false
+                    /* Se deja el reproductor en pausa al final: sin esto, el
+                     * usuario que dice "ahora no" vuelve a un vídeo que sigue
+                     * "reproduciendo" el último fotograma. */
+                    player.pause()
+                    controlsVisible = true
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
         }
 
         /* ATRÁS cierra la lista antes de salir del reproductor: si no, el
