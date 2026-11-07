@@ -53,16 +53,31 @@ class SkipSegmentParserTest {
 
     @Test
     fun `v4 con credits sin final se cierra con la duracion real`() {
-        /* `end_ms: null` en créditos quiere decir "hasta el final del vídeo".
-         * Sin duración no hay adónde saltar, así que ese tramo se cae y el
-         * otro (que sí tiene final) se conserva. */
+        /* `end_ms: null` en créditos quiere decir "hasta el final del vídeo", y
+         * sin duración no hay adónde saltar. TheIntroDB publica a veces varios
+         * tramos de créditos (los de después de la escena post-créditos); el
+         * reproductor sólo ofrece uno por tipo, así que se queda el primero y
+         * se descarta el resto. Lo que se comprueba aquí es que el que sobrevive
+         * tiene un final de verdad. */
         val conDuracion = SkipSegmentParser.parse(theIntroDbV4, durationMs = 6_500_000L)
-        val credits = conDuracion.filter { it.type == SkipSegmentType.Credits }
-        assertEquals(2, credits.size)
-        assertEquals(6_500_000L, credits.last().endMs)
+        val credits = conDuracion.single { it.type == SkipSegmentType.Credits }
+        assertEquals(5_801_777L, credits.startMs)
+        assertTrue("el tramo debe tener un final real", credits.endMs > credits.startMs)
 
+        /* Sin duración, el tramo abierto no se puede cerrar y se cae; el que ya
+         * traía final sigue estando. */
         val sinDuracion = SkipSegmentParser.parse(theIntroDbV4, durationMs = 0L)
         assertEquals(1, sinDuracion.count { it.type == SkipSegmentType.Credits })
+    }
+
+    @Test
+    fun `un tramo abierto se cierra con la duracion cuando es el unico`() {
+        /* El caso de una película cuyos créditos llegan sólo con `end_ms: null`. */
+        val body = """{"credits":[{"start_ms":5800000,"end_ms":null}]}"""
+        val credits = SkipSegmentParser.parse(body, durationMs = 6_500_000L).single()
+
+        assertEquals(SkipSegmentType.Credits, credits.type)
+        assertEquals(6_500_000L, credits.endMs)
     }
 
     @Test
