@@ -244,7 +244,6 @@ private fun PlaybackSurface(
         )
     }
     fun saveSnapshot() {
-        if (player.isCurrentMediaItemLive) return
         captureSnapshot()
         snapshots.latest?.let { onProgress(activeRequest, it.positionMs, it.durationMs) }
     }
@@ -410,7 +409,7 @@ private fun PlaybackSurface(
     LaunchedEffect(player) {
         while (true) {
             delay(PROGRESS_REPORT_MS)
-            if (player.isPlaying && !player.isCurrentMediaItemLive) {
+            if (player.isPlaying) {
                 captureSnapshot()
                 snapshots.latest?.let { onProgress(activeRequest, it.positionMs, it.durationMs) }
             }
@@ -472,7 +471,6 @@ private fun PlaybackSurface(
 
     fun seekBy(deltaMs: Long) {
         if (!canSeekPlayback(
-                player.isCurrentMediaItemLive,
                 player.isCurrentMediaItemSeekable && player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM),
                 player.duration,
             )) return
