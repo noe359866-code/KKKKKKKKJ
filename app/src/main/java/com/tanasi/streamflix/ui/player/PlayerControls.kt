@@ -83,16 +83,8 @@ import com.tanasi.streamflix.util.Durations
 @Composable
 fun PlayerControls(
     title: String,
-    isLive: Boolean,
     failover: FailoverState,
     sourcesCount: Int,
-    /**
-     * `"3 de 12"` cuando el título está dentro de una parrilla zapeable, o
-     * `null` si es un canal suelto. Se pinta junto al chip EN VIVO.
-     */
-    channelPosition: String? = null,
-    /** Canales de la parrilla. `0` = no hay guía que abrir. */
-    channelCount: Int = 0,
     visible: Boolean,
     isPlaying: Boolean,
     positionMs: Long,
@@ -105,7 +97,6 @@ fun PlayerControls(
     onForward: () -> Unit,
     onShowSources: () -> Unit,
     onInteraction: () -> Unit,
-    onShowChannels: () -> Unit = {},
     /** Hay audio o subtítulos que elegir: se dibuja el botón "Pistas". */
     hasTracks: Boolean = false,
     /** `true` cuando hay subtítulos activos (el botón se pinta encendido). */
@@ -148,10 +139,8 @@ fun PlayerControls(
             ) {
                 TitleBlock(
                     title = title,
-                    isLive = isLive,
                     failover = failover,
                     sourcesCount = sourcesCount,
-                    channelPosition = channelPosition,
                 )
 
                 Spacer(Modifier.weight(1f))
@@ -162,20 +151,16 @@ fun PlayerControls(
                     horizontalArrangement = Arrangement.spacedBy(if (compact) 14.dp else 26.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    /* En directo no se puede retroceder: el manifiesto HLS ya
-                     * no tiene el segmento y el salto sólo provoca un rebuffer. */
-                    if (!isLive) {
-                        RoundControl(
-                            label = "−10",
-                            accessibilityLabel = "Retroceder diez segundos",
-                            size = controlSize,
-                            enabled = canSeek,
-                            onClick = {
-                                onInteraction()
-                                onRewind()
-                            },
-                        )
-                    }
+                    RoundControl(
+                        label = "−10",
+                        accessibilityLabel = "Retroceder diez segundos",
+                        size = controlSize,
+                        enabled = canSeek,
+                        onClick = {
+                            onInteraction()
+                            onRewind()
+                        },
+                    )
 
                     RoundControl(
                         label = null,
@@ -191,32 +176,16 @@ fun PlayerControls(
                         PlayPauseGlyph(playing = isPlaying, tint = Color.Black)
                     }
 
-                    if (!isLive) {
-                        RoundControl(
-                            label = "+10",
-                            accessibilityLabel = "Avanzar diez segundos",
-                            size = controlSize,
-                            enabled = canSeek,
-                            onClick = {
-                                onInteraction()
-                                onForward()
-                            },
-                        )
-                    }
-
-                    /* La guía es la otra forma de cambiar de canal (la
-                     * primera son `CH+`/`CH−`), y aquí es donde se descubre:
-                     * un botón con nombre, no un gesto escondido. */
-                    if (channelCount > 1) {
-                        RoundControl(
-                            label = "Canales",
-                            size = controlSize,
-                            onClick = {
-                                onInteraction()
-                                onShowChannels()
-                            },
-                        )
-                    }
+                    RoundControl(
+                        label = "+10",
+                        accessibilityLabel = "Avanzar diez segundos",
+                        size = controlSize,
+                        enabled = canSeek,
+                        onClick = {
+                            onInteraction()
+                            onForward()
+                        },
+                    )
 
                     RoundControl(
                         label = "Fuentes",
@@ -248,22 +217,12 @@ fun PlayerControls(
 
                 Spacer(Modifier.height(34.dp))
 
-                if (isLive) {
-                    LiveRow()
-                } else {
-                    ProgressRow(positionMs = positionMs, durationMs = durationMs)
-                }
+                ProgressRow(positionMs = positionMs, durationMs = durationMs)
 
                 Spacer(Modifier.height(22.dp))
 
                 Text(
-                    text = if (isLive) {
-                        if (channelCount > 1) {
-                            "◀ ▶ canal · ▲ guía · ▼ controles · ATRÁS salir"
-                        } else {
-                            "OK pausa · ATRÁS salir"
-                        }
-                    } else if (canSeek) {
+                    text = if (canSeek) {
                         "◀ ▶ 10 s · OK pausa · Pistas audio/CC · ATRÁS salir"
                     } else {
                         "OK pausa · Pistas audio/CC · ATRÁS salir"
@@ -287,10 +246,8 @@ fun PlayerControls(
 @Composable
 private fun TitleBlock(
     title: String,
-    isLive: Boolean,
     failover: FailoverState,
     sourcesCount: Int,
-    channelPosition: String? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -307,20 +264,6 @@ private fun TitleBlock(
             )
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (isLive) {
-                    LiveChip()
-                    Spacer(Modifier.width(12.dp))
-                }
-                if (channelPosition != null) {
-                    Text(
-                        text = "CANAL $channelPosition",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White.copy(alpha = 0.86f),
-                        maxLines = 1,
-                    )
-                    Spacer(Modifier.width(12.dp))
-                }
                 Text(
                     text = failover.current?.let { source ->
                         "Fuente ${failover.position} de $sourcesCount · ${source.label}"
@@ -332,29 +275,6 @@ private fun TitleBlock(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun LiveChip() {
-    Row(
-        modifier = Modifier
-            .background(StreamflixColors.Live, RoundedCornerShape(percent = 50))
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .size(7.dp)
-                .background(Color.White, CircleShape),
-        )
-        Spacer(Modifier.width(7.dp))
-        Text(
-            text = "EN VIVO",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-        )
     }
 }
 
@@ -555,23 +475,3 @@ private fun ProgressRow(positionMs: Long, durationMs: Long) {
     }
 }
 
-/**
- * En directo no hay barra: el manifiesto HLS sólo contiene la ventana actual y
- * la posición respecto al inicio de la conexión no le dice nada al usuario.
- */
-@Composable
-private fun LiveRow() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(9.dp)
-                .background(StreamflixColors.Live, CircleShape),
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = "Señal en directo · sin barra de progreso",
-            style = MaterialTheme.typography.labelMedium,
-            color = StreamflixColors.OnSurfaceMuted,
-        )
-    }
-}

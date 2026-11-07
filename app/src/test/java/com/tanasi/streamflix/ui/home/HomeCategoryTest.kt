@@ -10,9 +10,8 @@ class HomeCategoryTest {
     private val movie = MediaEntry(id = "m", type = "movie", title = "Película")
     private val series = MediaEntry(id = "s", type = "series", title = "Serie")
     private val anime = MediaEntry(id = "a", type = "anime", title = "Anime")
-    private val scheduled = MediaEntry(id = "t", type = "tv", title = "Partido", onAir = false)
     private val rows = listOf(
-        CatalogRow(id = "mixed", title = "Destacados", items = listOf(movie, series, anime, scheduled)),
+        CatalogRow(id = "mixed", title = "Destacados", items = listOf(movie, series, anime)),
         CatalogRow(id = "empty", title = "Vacía"),
     )
 
@@ -24,21 +23,10 @@ class HomeCategoryTest {
         assertEquals(listOf(movie), filterHomeRows(rows, HomeCategory.Movies).single().items)
     }
 
-    @Test fun scheduledSportsAreStillInLiveCategory() {
-        assertEquals(listOf(scheduled), filterHomeRows(rows, HomeCategory.Live).single().items)
-    }
-
     @Test fun emptyCategoriesHaveNoEmptyRows() {
         assertTrue(filterHomeRows(listOf(rows.last()), HomeCategory.Home).isEmpty())
     }
-    @Test fun directStreamsDoNotAppearInMovieOrSeriesFilters() {
-        val mixed = listOf(CatalogRow(id = "mixed", title = "Mixta", items = listOf(
-            movie.copy(onAir = true), series.copy(live = true), movie, series,
-        )))
-        assertEquals(listOf(movie), filterHomeRows(mixed, HomeCategory.Movies).single().items)
-        assertEquals(listOf(series), filterHomeRows(mixed, HomeCategory.Series).single().items)
-        assertEquals(listOf(movie.copy(onAir = true), series.copy(live = true)),
-            filterHomeRows(mixed, HomeCategory.Live).single().items)
+    @Test fun animeCountsAsSeries() {
+        assertEquals(listOf(series, anime), filterHomeRows(rows, HomeCategory.Series).single().items)
     }
-
 }

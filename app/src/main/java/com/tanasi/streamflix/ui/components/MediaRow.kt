@@ -32,10 +32,10 @@ import com.tanasi.streamflix.ui.theme.StreamflixColors
 /**
  * Un carrusel del Home (inspiración Netflix).
  *
- * Misma pieza para las cuatro filas: sólo cambia la proporción de las tarjetas,
+ * Misma pieza para todas las filas: sólo cambia la proporción de las tarjetas,
  * que la decide la fila (`aspect` en el catálogo), no la pantalla. Así
- * "Continuar viendo" y "Deportes en directo" se pintan en 16:9 y el resto en
- * 2:3, sin código condicional repartido.
+ * "Continuar viendo" se pinta en 16:9 y el resto en 2:3, sin código condicional
+ * repartido.
  *
  * Detalles de D-Pad:
  *  - el foco se desplaza lateralmente con `◀ ▶` de forma nativa en un `LazyRow`;
@@ -46,8 +46,8 @@ import com.tanasi.streamflix.ui.theme.StreamflixColors
  *    `LazyRow` no recorta a sus hijos: crecen por encima y por debajo sin
  *    empujar al vecino, y ese margen es el que deja ver el halo entero.
  *
- * @param onEntryClick recibe también los títulos de la fila: son la parrilla
- *   con la que el reproductor cambia de canal (`CH+`/`CH−`) sin volver al Home.
+ * @param onEntryClick recibe también los títulos de la fila, por si el
+ *   consumidor necesita el contexto de la fila.
  * @param onEntryFocused se llama con la fila y el título al entrar en foco,
  *   para que el hero sepa de qué carrusel viene la tarjeta.
  * @param firstCardFocusRequester foco inicial del Home en TV.
@@ -130,18 +130,7 @@ fun MediaRow(
                     if (index == restoreIndex && latestRestorePending()) onFocusRestored()
                 }
 
-                /* Deportes: marcador con liga, equipos y hora. La fuente de datos
-                 * lo pide con `layout: "sports"`; el resto de filas no cambia. */
-                if (row.isSports) {
-                    SportsCard(
-                        entry = entry,
-                        deviceProfile = deviceProfile,
-                        onClick = { onEntryClick(entry, row.items, itemKeys[index], index) },
-                        onFocused = onFocus,
-                        focusUp = up,
-                        focusRequester = focusRequester,
-                    )
-                } else if (row.rowAspect == RowAspect.Poster) {
+                if (row.rowAspect == RowAspect.Poster) {
                     PosterCard(
                         entry = entry,
                         deviceProfile = deviceProfile,

@@ -20,11 +20,9 @@ class HomePresentationTest {
         assertEquals(HeroAction.ChooseEpisode, heroAction(series.copy(resumePositionMs = 5000)))
     }
 
-    @Test fun `anime de proveedor y directo usan la accion reproducir`() {
+    @Test fun `anime de proveedor usa la accion reproducir`() {
+        /* El id ya trae el episodio: no hay nada que elegir. */
         val anime = MediaEntry(id = "animeflv:serie:3", type = "ANIME", title = "Anime")
         assertEquals(HeroAction.Play, heroAction(anime))
-        val live = MediaEntry(id = "canal", type = "tv", title = "Canal", resumePositionMs = 5000)
-        assertEquals(HeroAction.Play, heroAction(live))
-        assertEquals(HeroAction.Play, heroAction(live.copy(onAir = false)))
     }
 }

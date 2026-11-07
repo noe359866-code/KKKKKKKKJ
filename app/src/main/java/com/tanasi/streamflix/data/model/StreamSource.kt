@@ -23,7 +23,6 @@ data class StreamSource(
     val referer: String? = null,
     val userAgent: String? = null,
     val notWebReady: Boolean = false,
-    val isLive: Boolean = false,
     val provider: String? = null,
     /** Posición original en la respuesta (0 = máxima prioridad). */
     val index: Int = 0,
@@ -136,7 +135,6 @@ data class StreamDto(
     @SerialName("url") val url: String = "",
     @SerialName("quality") val quality: String? = null,
     @SerialName("provider") val provider: String? = null,
-    @SerialName("isLive") val isLive: Boolean = false,
     @SerialName("behaviorHints") val behaviorHints: BehaviorHints? = null,
 ) {
     fun toSource(index: Int): StreamSource? {
@@ -150,7 +148,6 @@ data class StreamDto(
             referer = headers.header("Referer"),
             userAgent = headers.header("User-Agent"),
             notWebReady = behaviorHints?.notWebReady == true,
-            isLive = isLive || behaviorHints?.isLive == true,
             provider = provider,
             index = index,
             requestHeaders = headers,
@@ -163,7 +160,6 @@ data class StreamDto(
 data class BehaviorHints(
     @SerialName("requestHeaders") val requestHeaders: Map<String, String>? = null,
     @SerialName("notWebReady") val notWebReady: Boolean = false,
-    @SerialName("isLive") val isLive: Boolean = false,
     /** `hls` / `dash` / `mp4`: lo manda el scraper cuando la URL no lo dice. */
     @SerialName("mediaType") val mediaType: String? = null,
 )

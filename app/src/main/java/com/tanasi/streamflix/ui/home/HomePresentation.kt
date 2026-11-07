@@ -13,11 +13,11 @@ internal enum class HeroAction(val label: String) {
 
 internal fun heroAction(entry: MediaEntry): HeroAction {
     val type = MediaType.fromWire(entry.type)
-    val needsEpisode = !entry.isLive && (type == MediaType.Series || type == MediaType.Anime) &&
+    val needsEpisode = (type == MediaType.Series || type == MediaType.Anime) &&
         !hasEpisodeNumber(entry.type.lowercase(), entry.id)
     return when {
         needsEpisode -> HeroAction.ChooseEpisode
-        entry.resumePositionMs > 0L && !entry.isLive && !entry.live && type != MediaType.Live -> HeroAction.Resume
+        entry.resumePositionMs > 0L -> HeroAction.Resume
         else -> HeroAction.Play
     }
 }

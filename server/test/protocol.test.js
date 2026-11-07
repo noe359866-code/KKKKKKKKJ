@@ -15,7 +15,7 @@ import { isPrivateHost, parseProxyUrl } from '../src/routes/proxy.js';
 
 test('manifest declares the required content types', () => {
   const manifest = buildManifest('http://localhost:7000');
-  assert.deepEqual([...manifest.types].sort(), ['anime', 'movie', 'series', 'tv']);
+  assert.deepEqual([...manifest.types].sort(), ['anime', 'movie', 'series']);
   assert.equal(manifest.resources[0].name, 'stream');
   assert.ok(manifest.id && manifest.version && manifest.name);
 });
@@ -24,18 +24,17 @@ test('buildStream produces the required stream shape', () => {
   const stream = buildStream({
     name: 'Provider 1 · 1080p',
     title: 'Provider 1 · 1080p',
-    url: 'https://cdn.example/live/index.m3u8',
+    url: 'https://cdn.example/vod/master.m3u8',
     referer: 'https://provider.example/',
     userAgent: 'CustomUA/1.0',
-    isLive: true,
   });
 
-  assert.equal(stream.url, 'https://cdn.example/live/index.m3u8');
+  assert.equal(stream.url, 'https://cdn.example/vod/master.m3u8');
   assert.equal(stream.name, 'Provider 1 · 1080p');
   assert.equal(stream.title, 'Provider 1 · 1080p');
   assert.equal(stream.behaviorHints.requestHeaders.Referer, 'https://provider.example/');
   assert.equal(stream.behaviorHints.requestHeaders['User-Agent'], 'CustomUA/1.0');
-  assert.equal(stream.behaviorHints.isLive, true);
+  assert.equal(stream.behaviorHints.isLive, undefined, 'el addon ya no marca directo');
 });
 
 test('buildStream rejects missing urls', () => {
@@ -48,11 +47,10 @@ test('header names are normalised to the casing ExoPlayer expects', () => {
   assert.deepEqual(headers, { Referer: 'a', 'User-Agent': 'b', 'x-extra': 'c' });
 });
 
-test('parseMediaId handles movies, episodes and live ids', () => {
+test('parseMediaId handles movies and episodes', () => {
   const movie = parseMediaId('tt1254207');
   assert.equal(movie.imdbId, 'tt1254207');
   assert.equal(movie.isSeries, false);
-  assert.equal(movie.isLive, false);
 
   const episode = parseMediaId('tt0944947:2:5');
   assert.equal(episode.base, 'tt0944947');
@@ -60,12 +58,9 @@ test('parseMediaId handles movies, episodes and live ids', () => {
   assert.equal(episode.episode, 5);
   assert.equal(episode.isSeries, true);
 
-  const channel = parseMediaId('tv:canal-13');
-  assert.equal(channel.isLive, true);
-
-  const sports = parseMediaId('sports:espn:1:2026-10-28');
-  assert.equal(sports.isSports, true);
-  assert.equal(sports.isLive, true);
+  /* Ya no hay concepto de "directo": ni ids de canal ni de deportes. */
+  assert.equal(parseMediaId('tv:canal-13').isLive, undefined);
+  assert.equal(parseMediaId('sports:espn:1:2026-10-28').isSports, undefined);
 });
 
 test('quality normalisation and ranking', () => {

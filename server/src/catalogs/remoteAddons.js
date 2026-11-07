@@ -44,10 +44,6 @@ const TYPE_MAP = Object.freeze({
   movie: 'movie',
   series: 'series',
   anime: 'anime',
-  tv: 'tv',
-  channel: 'tv',
-  events: 'tv',
-  sport: 'tv',
 });
 
 const ADDON_ID_RE = /^[a-z0-9_-]{1,24}$/;

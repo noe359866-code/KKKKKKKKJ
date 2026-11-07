@@ -3,8 +3,8 @@
 ## Qué cambia
 
 El APK incluye el intérprete **Python 3.11** (Chaquopy 17.1.0), todos los
-scrapers reales de `server/scrapers/`, sus helpers, el registro de proveedores
-y los identificadores de canales guardados. No basta con copiar los `.py` como
+scrapers reales de `server/scrapers/`, sus helpers y el registro de proveedores.
+No basta con copiar los `.py` como
 assets: `ChaquopyRuntime` inicia el intérprete y el motor importa cada módulo
 y llama a su función `scrape(payload)` dentro del proceso Android.
 Las sinopsis, fondos y datos extraídos al abrir una ficha actualizan la interfaz
@@ -39,12 +39,10 @@ para evitar mantener dos copias diferentes.
    API 24 o posterior**. La app es sólo de televisión: declara
    `android.software.leanback` como requisito y no instala en teléfonos.
 2. Abre la app: entra en modo autónomo sin pedir IP o dominio.
-3. La primera fila es **Canales abiertos** (iptv-org, HLS libre): se reproduce
-   con el mando sin claves, sin addon y sin proveedor. Debajo aparece la fila de
-   canales guardados. Los scrapers de películas/series/anime **no añaden filas**:
-   sólo resuelven el video cuando abres un título.
-4. Usa **Buscar** para filtrar las filas de Cinemeta y los canales en vivo, e
-   **Inicio** para volver a la portada. El buscador es a pantalla completa:
+3. La Home es **sólo VOD**: películas, series y anime. Los scrapers
+   **no añaden filas**; sólo resuelven el video cuando abres un título.
+4. Usa **Buscar** para filtrar las filas del Home e **Inicio** para volver a la
+   portada. El buscador es a pantalla completa:
    teclado QWERTY propio a la izquierda (cada tecla es un nodo del D-Pad, sin
    IME) y las recomendaciones de Cinemeta a la derecha; `OK` en una
    recomendación abre su ficha directamente.
@@ -83,16 +81,6 @@ enfocable con su número de failover, el proveedor, `HLS · 1080p` y una marca �
 en la que está en uso. El foco arranca en esa misma, así que ATRÁS sale sin
 mover nada; OK cambia de fuente sin salir del vídeo.
 
-**Cambiar de canal** es lo propio de la TV en vivo y no pasa por el Home:
-`CH+`/`CH−` (o `MEDIA_NEXT`/`MEDIA_PREVIOUS` en mandos sin esas teclas) saltan
-al canal siguiente/anterior de la misma fila, con vuelta en los extremos. Cada
-salto pinta un rótulo arriba con el nombre y `3 de 12` que desaparece solo, y la
-imagen del canal anterior se mantiene hasta que resuelve la señal nueva. `▲`
-abre la guía (franja inferior, vídeo visible) donde `◀ ▶` sintonizan al instante,
-`OK` cierra y `ATRÁS` vuelve al canal desde el que se abrió. La tarjeta de un
-canal del Home entra al reproductor en una sola pulsación: la ficha no tiene
-nada que elegir.
-
 ### Perfiles
 
 Al arrancar, la app pregunta **¿Quién está viendo?** con avatares redondos (hasta
@@ -102,33 +90,13 @@ persona. El avatar de la barra superior cambia de perfil sin cerrar la app y el
 último usado se recuerda para el siguiente encendido.
 
 En **Ajustes** se puede activar **Añadir catálogos de Cinemeta**. Es opcional:
-las filas de TV en vivo no dependen de ese servicio.
+la app resuelve streams aunque no haya filas de metadatos.
 Los títulos IMDb de Cinemeta se traducen a nombres antes de invocar los
 scrapers, sin necesitar una clave privada de TMDB.
 
-### Deportes (área propia)
-
-La última fila del Home es **Agenda deportiva**, con el dibujo del Sports de
-Apple TV: no son pósters 2:3 sino marcadores. Justo encima, **TV en vivo ·
-Canales** recoge los canales de todos los proveedores de directo.
-
-- **Datos reales, no inventados**: se leen de la agenda del día que publican los
-  scrapers en vivo (`futbolibre` y `damitv`, vía `_liveshelf.py`), con título,
-  competición, hora y estado. `"Liga 1: Cienciano vs Atlético Grau"` se parte en
-  liga y equipos, y un registro sin equipos ni hora se trata como canal.
-- Cada tarjeta enseña la competición en mayúsculas, los dos equipos con sus
-  iniciales, la hora y, si el partido ya empezó, el chip **EN VIVO**.
-- Los partidos programados **no** se marcan como directos: la meta viaja con
-  `onAir: false` y la app no los pinta como emisión en curso.
-- También entran los canales deportivos de la lista pública (ESPN, TUDN, MLB,
-  DAZN…) cuando aparecen. El partido se reproduce con su id de siempre
-  (`tv:futbolibre:evento:<slug>`), así que el failover no cambia.
-- Sin agenda no hay fila: se prefiere un Home sin deportes a enseñar el partido
-  de ayer. La caché es de 10 minutos y no tiene respaldo rancio.
-
 ### Scrapers: sólo resuelven streams
 
-Los scrapers de `server/scrapers/` (películas, series, anime y directo) no publican
+Los scrapers de `server/scrapers/` (películas, series y anime) no publican
 filas de catálogo. Sus listados son de mejor esfuerzo —sin póster 2:3, sin
 sinopsis, con títulos repetidos— y ensuciaban la portada. Ahora sólo se usan
 para **resolver el stream**:
@@ -137,9 +105,9 @@ para **resolver el stream**:
   cada scraper busca esa ficha en su propio buscador.
 - `GET /catalog/:type/<id-de-scraper>.json` devuelve `{"metas": []}`: no es un
   error, es el contrato. Si un cliente viejo pide esa fila, se le responde vacío.
-- La portada queda con Cinemeta (si está activo), la TV en vivo y el área de
-  deportes; el catálogo del servidor (`server/config/catalogs.json`) sigue
-  igual: sin filas de proveedores.
+- La portada queda con Cinemeta (si está activo) y los addons de terceros; el
+  catálogo del servidor (`server/config/catalogs.json`) sigue igual: sin filas
+  de proveedores.
 
 ### Addons de Stremio (v3)
 
@@ -214,8 +182,8 @@ al servidor ni envía consultas a un backend configurado anteriormente.
   resultados. Una llamada Python en curso finaliza según sus límites de red;
   no se intenta matar el intérprete compartido ni interrumpir JNI a la fuerza.
 - La caché JSON es atómica, acotada y vive en `cacheDir/embedded-engine`.
-  Guarda catálogos una hora (directo: diez minutos), detalles seis horas y
-  enlaces un máximo de cinco minutos (directo: un minuto), reducido por la
+  Guarda catálogos una hora, detalles seis horas y enlaces un máximo de cinco
+  minutos, reducido por la
   caducidad declarada (`e`, `exp`, `expires`, `expire`, `expiry` o `exp` en `hdnea`).
 - Sólo los metadatos pueden usar un respaldo caducado de hasta siete días.
   Los enlaces de reproducción no usan ese respaldo. Los resultados vacíos no
@@ -235,8 +203,8 @@ python3 scripts/verify-embedded-apk.py app/build/outputs/apk/debug/app-debug.apk
 ./scripts/release-android.sh
 ```
 
-Sólo se empaquetan `providers.json` y `live-catalog.json` de `server/config/`,
-generados con lista blanca durante el build; no se incluyen sus addons externos.
+Sólo se empaqueta `providers.json` de `server/config/`, generado con lista blanca
+durante el build; no se incluyen sus addons externos.
 No se necesita `ADDON_BASE_URL`, `allowEmptyAddonBaseUrl` ni iniciar Node.
 La URL de backend, si se especifica al compilar, sólo sirve de valor por defecto
 al elegir manualmente el modo servidor. Sin keystore, el release queda sin

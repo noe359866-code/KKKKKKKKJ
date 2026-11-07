@@ -33,7 +33,7 @@ data class DeviceProfile(
      */
     val posterWidthDp: Int get() = if (screenWidthDp >= 1280) 200 else 168
 
-    /** Ancho de una tarjeta 16:9 (directos, deportes, continuar viendo). */
+    /** Ancho de una tarjeta 16:9 (continuar viendo y filas de arte ancho). */
     val landscapeWidthDp: Int get() = if (screenWidthDp >= 1280) 360 else 300
 
     /** Separación entre tarjetas: en el salón se agradece más aire. */

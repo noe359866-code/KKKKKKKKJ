@@ -69,8 +69,8 @@ For a production build, configure your own release signing as described below.
 ### Features
 
 - **Autonomous by default:** Python 3.11 and every real provider scraper run inside the APK; no Node.js server, IP address or backend deployment required
-- Cinemeta catalogues **on by default** (real 2:3 posters and 16:9 backdrops), followed by the open
-  live channels, local episode discovery and on-device cache
+- Cinemeta catalogues **on by default** (real 2:3 posters and 16:9 backdrops), plus local episode
+  discovery and on-device cache
 - The scrapers are **stream resolvers only**: they publish no catalogue rows, they just
   resolve the video when a title or episode is opened
 - *Streaming Catalogs* (Netflix, Disney+, HBO Max, Prime Video…) installed automatically on first launch
@@ -82,9 +82,7 @@ For a production build, configure your own release signing as described below.
 - **Android TV only**: D-Pad-first UI, no phone layout, no touch gestures
 - **Perfiles** al estilo Apple TV: avatares, hasta 6, y un "Seguir viendo" distinto por perfil
 - Multiple providers, with automatic silent failover between their streams
-- Home with horizontal carousels, starting with open live channels that play with no setup (iptv-org)
-- **Área de deportes** al estilo Apple TV: partidos de hoy con liga, equipos, hora y EN VIVO
-  (agenda de los scrapers en vivo + canales deportivos), pintados como marcador, no como póster
+- Home con carruseles horizontales de **películas, series y anime** (VOD: nada de directo)
 
 ### Built with
 
@@ -103,44 +101,31 @@ For a production build, configure your own release signing as described below.
 catalogue to any Stremio-compatible client (including the Android TV app)
 through the official Addon protocol:
 
-- `GET /manifest.json` — declares `movie`, `series`, `anime`, `tv` and the
+- `GET /manifest.json` — declares `movie`, `series`, `anime` and the
   published catalogs (`catalog` + `meta` resources).
 - `GET /catalog/:type/:id.json` — Stremio catalog protocol, backed by
   **[Cinemeta](https://github.com/Stremio/stremio-addon-sdk)** (the official
-  metadata addon), merged with the local live TV/sports rows and with the
-  catalogs of a third-party Stremio addon:
+  metadata addon), merged with the catalogs of a third-party Stremio addon:
   `top`, `year`, `imdbRating` for movies and series, `anime/top`
-  (Cinemeta `series` + `genre=Animation`), `tv/live` from
-  `server/config/live-catalog.json`, and **`streaming_<service>`** rows
+  (Cinemeta `series` + `genre=Animation`) and **`streaming_<service>`** rows
   (Netflix, Disney+, Prime Video, HBO Max, Apple TV+…) republished from
   *Streaming Catalogs* — any other Stremio addon can be added the same way
   through the `addons` block (no code, no copying their data).
   Accepts the standard extras as path segments — `/catalog/movie/top/search=matrix.json`,
-  `/catalog/tv/live/genre=Deportes/skip=20.json`.
+  `/catalog/anime/top/skip=20.json`.
 - `GET /meta/:type/:id.json` — rich metadata (synopsis, poster, year, rating)
   and, for series, the episode list (`tt0944947:1:2`), so a Cinemeta poster
   becomes a playable request.
 - `GET /stream/:type/:id.json` — returns `streams` ordered by provider
   priority so ExoPlayer can fail over (source 1 → 2 → 3).
-- In-memory TTL cache (2 h live / 6 h VOD) with single-flight and
-  stale-while-revalidate: a cached live `.m3u8` is served in a few milliseconds.
+- In-memory TTL cache (`CACHE_TTL_VOD_HOURS`, 2–6 h) with single-flight and
+  stale-while-revalidate: a cached row is served in a few milliseconds.
 - Python scraper bridge (`child_process.spawn`) invoked only on cache misses.
-- Twelve real providers ship in `server/scrapers/`, ordered by priority.
+- Ten real providers ship in `server/scrapers/`, ordered by priority.
 - The shared kits (`_htmlkit`, `_hosters`, `_peliskit`, `_animekit`) carry the resilience:
   a bounded retry on 429/5xx, charset recovery, stream quality inferred from the site's own
   labels and title matching by tokens instead of characters — one fix there improves every
   provider at once.
-
-  **Live** (`kind: "live"`, requested as `tv:<id>`):
-
-  - `futbolibre.py` — [futbolibre.live](https://futbolibre.live/) (priority 3):
-    Mexican sports channels (`tv:futbolibre:espn-1`) plus the daily match agenda
-    where every match yields several signals
-    (`tv:futbolibre:evento:<slug>`);
-  - `deportelibre.py` — [deportelibre.top](https://deportelibre.top/) (4):
-    24/7 channel catalogue (`tv:deportelibre:stream-01`);
-  - `tvenvivo.py` — [tvenvivo.org](https://www.tvenvivo.org/) (5): live
-    TV/sports (`tv:tvenvivo:espn-2`).
 
   **Anime** (`kind: "vod"`, requested as `anime:<id>`):
 
@@ -187,15 +172,10 @@ cd server
 npm install
 npm start
 # manifest → http://localhost:7000/manifest.json
-# catalog rows → http://localhost:7000/catalog/tv/live.json
-#               http://localhost:7000/catalog/movie/top.json
+# catalog rows → http://localhost:7000/catalog/movie/top.json
 # search →      http://localhost:7000/catalog/movie/top/search=matrix.json
 # metadata →    http://localhost:7000/meta/series/tt0944947.json
-# live channel → http://localhost:7000/stream/tv/tv:futbolibre:espn-1.json
 # anime episode → http://localhost:7000/stream/anime/animeflv:one-piece:1180.json
-npm run channels:futbolibre   # list channels + matches with ready-to-use ids
-npm run channels:deportelibre
-npm run channels:tvenvivo
 npm run anime:animeflv        # list episodes + ids (also jkanime, monoschinos)
 npm run movies:gnula -- "street fighter"   # search + ids (also cuevana, pelisplushd…)
 ```
@@ -254,7 +234,7 @@ Cuatro reglas que se ven en todas las pantallas:
 | --- | --- |
 | **Negro puro** | `#000000` de fondo (no un gris azulado): la foto es lo único que brilla |
 | **El acento es el blanco** | botones primarios en cápsula blanca con texto negro; el resto, vidrio translúcido al 12 % |
-| **Un solo rojo** | sólo para "EN VIVO"; ni el foco ni los títulos usan rojo |
+| **Un solo rojo** | reservado a borrar/error; ni el foco ni los títulos lo usan |
 | **Foco fino** | anillo blanco de 2 dp + halo mínimo + escala 1,05 (tvOS no usa neón) |
 
 Geometría y jerarquía:
@@ -272,7 +252,7 @@ Geometría y jerarquía:
   de acento, el contador de títulos y la etiqueta "16:9" que sólo añadían ruido.
 - **Tarjetas** de 10 dp de radio; el título debajo siempre se lee (atenuado al
   62 % y blanco pleno al enfocar), en vez de aparecer de la nada.
-- **Canales en vivo**: el logotipo se pinta con `ContentScale.Fit` para no
+- **Arte ancho**: el backdrop se pinta a sangre con `ContentScale.Crop` para no
   recortar la marca; el cine se recorta a sangre.
 
 ### Ficha del título: página de película de Apple TV
@@ -351,56 +331,6 @@ ni `pointerInput`, ni rotaciones especiales.
   con `WindowInsetsController` y rama legacy) y el reproductor no tiene gestos
   táctiles: play/pausa, avance, retroceso, fuentes y subtítulos por D-Pad.
 
-### Canales abiertos sin configurar nada (iptv-org)
-
-Para que la app reproduzca algo **el primer día, sin claves ni addons**, se
-sincroniza la lista pública [iptv-org/iptv](https://github.com/iptv-org/iptv)
-(emisión libre, HLS) desde el motor Python:
-
-- Filas: `iptvorg` (abiertos del mundo + México/España/Argentina/Colombia/Chile/
-  Perú), `bundled_live` con los canales fijados a mano y `canales` con **todos**
-  los que publican los proveedores de directo (ver abajo).
-- Ids `iptvorg:<base64url de la URL>`: `streams()` los decodifica y devuelve la
-  URL tal cual, con `isLive` y el `User-Agent` del reproductor. **No pasan por
-  ningún proveedor ni scraper**, así que no dependen de una web caída.
-- Sólo se aceptan `.m3u8`/`.mpd`, se descartan los marcados `[Geo-blocked]` y se
-  deduplica por URL (tope 120 por lista). Caché de 6 h y respaldo de 7 días.
-- Si la red del televisor no alcanza `api.github.com`, quedan siete canales
-  empaquetados (ADN 40, Azteca Internacional, Imagen TV, Las Estrellas,
-  TeleFormula, Teleritmo, Popcorn Central) con su URL de HLS verificada.
-
-### TV y agenda deportiva con canales (sin tocar JSON)
-
-La TV no se llena a mano: `server/scrapers/_liveshelf.py` pregunta a cada
-proveedor de directo por su índice (`load_index` / `load_channels` / `load_agenda`),
-normaliza lo que devuelve y deduplica. El mismo constructor lo usan el motor del
-APK (fila `canales` y `deportes`) y el servidor (`/catalog/tv/canales.json` y
-`/catalog/tv/agenda.json`), así que las dos mitades del proyecto enseñan la misma
-lista.
-
-```
-proveedor            qué aporta
-──────────────────   ─────────────────────────────────────────────
-futbolibre           canales del sitio + agenda del día (liga, hora, estado)
-damitv               índice de eventos: partidos con equipos y liga
-ntv · streamcorner   canales/eventos del índice (`/watch/…`, `/stream/…`)
-tvenvivo · deportelibre · livelive24   canales
-```
-
-- **Canales**: se publican todos, con su proveedor en la tarjeta y sin repetir
-  el mismo nombre dos veces (`ESPN 1` de Fútbol Libre y de DAMITV es una sola
-  tarjeta). Los canales de `live-catalog.json` van **primero** y bloquean
-  duplicados: son el subconjunto que debe salir siempre, aunque un sitio caiga.
-- **Agenda deportiva**: partidos de todos los proveedores con programación, en
-  directo primero y luego por hora. Cada tarjeta lleva liga, equipos, hora,
-  estado y el proveedor que la sirve. **No** se siembra con partidos del JSON:
-  un partido caducado sería un Play muerto.
-- Si el scrape no trae nada, la fila de canales cae a la lista curada (servidor)
-  o a la última copia buena de canales (app) y la de agenda se queda vacía:
-  mejor vacía que con el partido de ayer.
-- Caché: 20 min en el motor del APK y 15 min en el servidor (`CATALOG_LIVE_TTL_MINUTES`),
-  con 2,5 s de presupuesto por proveedor (`CATALOG_LIVE_TIMEOUT_MS`).
-
 ### Player and automatic failover
 
 `player/` holds the whole policy, and it is plain Kotlin (no Android imports)
@@ -429,7 +359,7 @@ Tres zonas sobre el vídeo, con velos en degradado (no cajas):
 
 | Zona | Contenido |
 | --- | --- |
-| Arriba | título en 26 sp, chip **EN VIVO** y `Fuente 2 de 5 · Gnula` |
+| Arriba | título en 26 sp y `Fuente 2 de 5 · Gnula` |
 | Centro | botones redondos: **−10**, **▶/⏸** (blanco, 108 dp), **+10**, **Fuentes** y **CC** |
 | Abajo | barra de progreso con tiempos `0:42 / 1:58:30` y la chuleta de teclas |
 
@@ -445,8 +375,6 @@ Decisiones de salón:
   el usuario está recorriendo los botones, se quedan.
 - **Subtítulos**: el botón `CC` sólo aparece si el manifiesto trae pistas de
   texto; activa/desactiva `TRACK_TYPE_TEXT` en el propio `ExoPlayer`.
-- **Directo**: se ocultan −10/+10 y la barra de progreso (una ventana HLS no
-  tiene duración que enseñar); queda el chip EN VIVO y "Señal en directo".
 - **Reanuda donde se quedó**: la tarjeta de "Seguir viendo" viaja con
   `PlaybackRequest.startPositionMs` y el `FailoverController` arranca ahí; si
   el usuario cambia de capítulo en la ficha, empieza desde el principio.
@@ -458,39 +386,20 @@ Decisiones de salón:
   de 40 dp y las listas que no se desplazan no se pueden usar.
 - **Cuando todo falla**, panel de vidrio con *Reintentar* (foco inicial) ·
   *Elegir fuente* · *Volver*. ATRÁS sale del reproductor, no del aviso.
-- **Cambiar de canal sin salir** (TV en vivo): la tarjeta de un canal abre el
-  reproductor directamente —la ficha de un canal no tiene nada que elegir— y
-  desde ahí `CH+`/`CH−` recorren la fila entera, con vuelta al llegar al final.
-  Cada zapeo deja un **rótulo** arriba (canal y `3 de 12`) que se va solo a los
-  2,6 s, y el vídeo anterior sigue en pantalla hasta que engancha la señal nueva:
-  no hay fundido a negro entre canales.
-- **Guía de canales**: `▲` (o el botón *Canales*) abre la parrilla sobre la
-  franja inferior, con el vídeo visible arriba. Recorrerla con `◀ ▶` **cambia de
-  canal al instante**, sin confirmar; `OK` la cierra en el canal elegido y
-  `ATRÁS` la cierra **devolviendo el canal desde el que se abrió**.
-- **La parrilla es la fila que estabas viendo**, no todo el catálogo: el
-  `PlaybackRequest` viaja con `queue` (ids, títulos y carátulas) y el canal en
-  uso se localiza por `id`, no por posición. Si el catálogo se reordena entre
-  abrir y zapear, sigues apuntando al mismo canal.
 
 Teclas:
 
 | Tecla | Acción |
 | --- | --- |
 | `OK` / `ENTER` / `SPACE` / gamepad `A` | play / pausa |
-| `◀` / `▶` | −10 s / +10 s en VOD; en directo con parrilla, canal anterior/siguiente (con el foco en un botón mueven el foco) |
-| `▼` | sacar los controles y llevar el foco a ellos |
-| `▲` | en directo con parrilla abre la **guía de canales**; si no, saca los controles |
-| `CH+` / `CH−` | canal siguiente / anterior en directo, con vuelta (sin salir del vídeo) |
-| `MEDIA_NEXT` / `MEDIA_PREVIOUS` | lo mismo, para mandos sin `CH+`/`CH−` |
-| `MEDIA_PLAY_PAUSE` / `MEDIA_FAST_FORWARD` / `MEDIA_REWIND` | **siempre** funcionan, aunque el foco esté en un botón, en la guía o en la lista de fuentes |
-| `BACK` | cierra la guía (devolviendo el canal), cierra la lista de fuentes, luego oculta los controles, luego sale |
+| `◀` / `▶` | −10 s / +10 s (con el foco en un botón mueven el foco) |
+| `▼` / `▲` | sacar los controles y llevar el foco a ellos |
+| `MEDIA_PLAY_PAUSE` / `MEDIA_FAST_FORWARD` / `MEDIA_REWIND` | **siempre** funcionan, aunque el foco esté en un botón o en la lista de fuentes |
+| `BACK` | cierra la lista de fuentes, luego oculta los controles, luego sale |
 
-La aritmética del zapeo vive en `player/ChannelZapping.kt` (vuelta en los
-extremos y canal fuera de la parrilla) y la del salto en
-`player/SeekPolicy.kt` (acotada a
-`0..duration`, duración desconocida = sin tope) y la tabla de teclas en
-`player/PlayerKeyMap.kt`; ambas se prueban en JVM, sin emulador.
+El salto vive en `player/SeekPolicy.kt` (acotado a `0..duration`, duración
+desconocida = sin tope) y la tabla de teclas en `player/PlayerKeyMap.kt`; ambas
+se prueban en JVM, sin emulador.
 
 ### Per-source HTTP headers
 
@@ -518,9 +427,9 @@ good HLS link was discarded before it reached ExoPlayer.
 
 **Ajustes → Autónomo · En este dispositivo** is the default, including after an
 upgrade from the old server-only build. First launch does not ask for a URL.
-Catalogue rows come from Cinemeta (explicit opt-in) and the open live channels;
-the bundled scrapers only resolve streams. Cinemeta is optional, not a
-requirement for watching anything.
+Catalogue rows come from Cinemeta and from third-party catalogue addons; the
+bundled scrapers only resolve streams. Cinemeta is optional, not a requirement
+for watching anything.
 
 An external server can still be selected in **Ajustes → Servidor externo**.
 Only that mode uses `DEFAULT_ADDON_BASE_URL` / the saved URL. Returning to local
@@ -532,28 +441,24 @@ A changed domain, anti-bot challenge or dead video host can still break a source
 
 ### Home catalogue
 
-- **Canales abiertos primero.** La fila `iptvorg` (iptv-org, HLS libre) es la
-  primera del Inicio y se reproduce sin cuenta, sin addon y sin proveedor; ver
-  *Canales abiertos sin configurar nada*.
-- The provider definitions and curated live-channel IDs are packaged
-  from `server/config/`; the demo Python providers and server-only third-party
-  addon configuration are excluded.
+- **Sólo VOD.** El catálogo publica películas, series y anime: no hay filas de
+  canales en directo, deportes ni guía de programación.
+- The provider definitions are packaged from `server/config/`; the demo Python
+  providers and server-only third-party addon configuration are excluded.
 - **Los scrapers no publican filas.** Su portada no tiene orden, arte ni
   sinopsis, así que sólo resuelven streams: al abrir un título o episodio, el
   motor busca esa ficha por nombre en cada scraper y devuelve los enlaces. Un
   pedido de catálogo con su id responde `{"metas": []}` (contrato, no error).
-- Native Python calls scrape the provider search pages for movies, series,
-  anime, live channels and sports. Posters and episode lists come from those
-  same pages where available. No private TMDB key is required.
-- The saved live-channel shelf is available immediately without a metadata
-  service.
+- Native Python calls scrape the provider search pages for movies, series and
+  anime. Posters and episode lists come from those same pages where available.
+  No private TMDB key is required.
 - **Buscar** abre un buscador a pantalla completa con **teclado propio**
   (nada de `TextField`: el IME de Android no se maneja con un mando) y, al lado,
   las **recomendaciones de Cinemeta** ya cargadas en el Home, para entrar a una
-  ficha sin escribir nada. `BUSCAR` filtra las filas de Cinemeta y los canales en
-  vivo; **Inicio** limpia la búsqueda.
-- Catalogue metadata is cached on disk for one hour (live: ten minutes), with
-  a bounded stale fallback for titles/artwork. Signed stream URLs have a short
+  ficha sin escribir nada. `BUSCAR` filtra las filas del Home; **Inicio** limpia
+  la búsqueda.
+- Catalogue metadata is cached on disk for one hour, with a bounded stale
+  fallback for titles/artwork. Signed stream URLs have a short
   cache only and are never served stale after its expiry.
 - The details sheet discovers numbered episodes and shows them as 16:9 cards
   with thumbnails, season pills and a white **Reproducir** capsule (no server

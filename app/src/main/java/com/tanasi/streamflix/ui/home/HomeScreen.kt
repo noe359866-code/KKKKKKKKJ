@@ -66,11 +66,12 @@ import com.tanasi.streamflix.di.ServiceLocator
 import com.tanasi.streamflix.data.model.HomeCatalog
 import com.tanasi.streamflix.data.model.CatalogRow
 import com.tanasi.streamflix.data.model.MediaEntry
-import com.tanasi.streamflix.data.model.toChannelQueue
 import com.tanasi.streamflix.data.model.Profile
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.playbackRequest
 import com.tanasi.streamflix.ui.components.MediaRow
+import com.tanasi.streamflix.ui.components.dpadFastVerticalScroll
+import com.tanasi.streamflix.ui.components.dpadRepeatThrottle
 import com.tanasi.streamflix.ui.profile.ProfileBadge
 import com.tanasi.streamflix.ui.theme.Dimens
 import com.tanasi.streamflix.ui.theme.StreamflixColors
@@ -107,12 +108,8 @@ private const val TV_CONTENT_BASELINE = 0.62f
 fun HomeScreen(
     viewModel: HomeViewModel,
     onPlay: (PlaybackRequest) -> Unit,
-    /**
-     * Abre la ficha. Recibe también los títulos de la misma fila porque son la
-     * parrilla con la que el reproductor zapea: sin ellos, cambiar de canal
-     * obligaría a volver al Home.
-     */
-    onOpenDetails: (MediaEntry, List<MediaEntry>) -> Unit,
+    /** Abre la ficha del título. */
+    onOpenDetails: (MediaEntry) -> Unit,
     onOpenSettings: () -> Unit,
     profile: Profile? = null,
     /** Filas propias del perfil activo ("Seguir viendo"), ya resueltas. */
@@ -163,7 +160,7 @@ fun HomeScreen(
             onOpenDetails = { entry ->
                 returnAnchor = null
                 showSearch = false
-                onOpenDetails(entry, emptyList())
+                onOpenDetails(entry)
             },
             onDismiss = { showSearch = false },
         )
@@ -294,19 +291,15 @@ fun HomeScreen(
                                 spotlight?.let { focused ->
                                     val entry = focused.entry
                                     if (heroAction(entry) == HeroAction.ChooseEpisode) {
-                                        onOpenDetails(entry, focused.siblings)
+                                        onOpenDetails(entry)
                                     } else {
-                                        onPlay(
-                                            entry.playbackRequest(
-                                                queue = focused.siblings.toChannelQueue(),
-                                            ),
-                                        )
+                                        onPlay(entry.playbackRequest())
                                     }
                                 }
                             },
                             onDetails = {
                                 returnAnchor = null
-                                spotlight?.let { onOpenDetails(it.entry, it.siblings) }
+                                spotlight?.let { onOpenDetails(it.entry) }
                             },
                             modifier = modifier,
                         )
@@ -349,15 +342,7 @@ fun HomeScreen(
                             header = resultHeader,
                             onEntryClick = { row, entry, siblings, itemKey, itemIndex ->
                                 returnAnchor = CatalogFocusAnchor(row.id, itemKey, itemIndex, returnSignal)
-                                /* Un canal en directo va derecho al reproductor:
-                                 * la ficha de un canal no tiene nada que elegir
-                                 * (ni episodios ni servidores) y era un peaje de
-                                 * dos pulsaciones antes de ver algo. */
-                                if (entry.isLive) {
-                                    onPlay(entry.playbackRequest(queue = siblings.toChannelQueue()))
-                                } else {
-                                    onOpenDetails(entry, siblings)
-                                }
+                                onOpenDetails(entry)
                             },
                             onEntryFocused = { row, entry -> viewModel.onCardFocused(row, entry) },
                             rowsTopPadding = contentBaseline,
@@ -539,7 +524,15 @@ private fun CatalogList(
     }
     LazyColumn(
         state = listState,
-        modifier = modifier,
+        /* Pantalla con D-Pad: las repeticiones del mando se frenan a un ritmo
+         * conocido y ARRIBA/ABAJO sostenido desliza la lista. En táctil no se
+         * instala nada. */
+        modifier = modifier
+            .dpadRepeatThrottle()
+            .dpadFastVerticalScroll(
+                scrollableState = listState,
+                enabled = deviceProfile.requiresDpadFocus,
+            ),
         contentPadding = PaddingValues(
             top = rowsTopPadding,
             bottom = 48.dp,

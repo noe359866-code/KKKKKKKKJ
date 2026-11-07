@@ -28,18 +28,10 @@ await writeFile(
   JSON.stringify({
     catalogs: [
       {
-        type: 'tv',
-        id: 'live',
-        name: 'TV en Vivo',
-        posterShape: 'landscape',
-        order: 1,
-        source: { kind: 'local' },
-      },
-      {
         type: 'movie',
         id: 'top',
         name: 'Películas populares',
-        order: 2,
+        order: 1,
         source: { kind: 'cinemeta', type: 'movie', id: 'top' },
       },
     ],
@@ -72,14 +64,17 @@ before(async () => {
   assert.ok(elapsed < 8_000, `el arranque no debe esperar al addon caído (tardó ${elapsed} ms)`);
   assert.deepEqual(
     getCatalogs().map((catalog) => `${catalog.type}/${catalog.id}`),
-    ['tv/live', 'movie/top'],
+    ['movie/top'],
     'sin manifest no se publican filas remotas',
   );
   assert.equal(findCatalog('movie', 'streaming_nfx'), null);
 });
 
 test('un addon caído sin caché no deja el registro vacío', () => {
-  assert.ok(getCatalogs().length >= 2);
+  /* Lo que importa: los catálogos propios siguen publicados aunque el addon
+   * de terceros no responda. */
+  assert.ok(getCatalogs().length >= 1);
+  assert.ok(getCatalogs().every((catalog) => catalog.source.kind !== 'remote'));
 });
 
 test('con un manifest cacheado, las filas remotas sobreviven a la caída del addon', async () => {
@@ -107,7 +102,7 @@ test('con un manifest cacheado, las filas remotas sobreviven a la caída del add
 
   assert.deepEqual(
     getCatalogs().map((catalog) => `${catalog.type}/${catalog.id}`),
-    ['tv/live', 'movie/top', 'movie/streaming_nfx', 'series/streaming_nfx'],
+    ['movie/top', 'movie/streaming_nfx', 'series/streaming_nfx'],
   );
 
   const netflix = findCatalog('movie', 'streaming_nfx');
@@ -116,7 +111,7 @@ test('con un manifest cacheado, las filas remotas sobreviven a la caída del add
 });
 
 test('el registro sigue sirviendo los catálogos propios', () => {
-  const live = findCatalog('tv', 'live');
-  assert.equal(live.source.kind, 'local');
-  assert.equal(live.posterShape, 'landscape');
+  const top = findCatalog('movie', 'top');
+  assert.equal(top.source.kind, 'cinemeta');
+  assert.equal(top.posterShape, 'poster');
 });

@@ -10,8 +10,7 @@ import kotlinx.serialization.Serializable
 enum class MediaType(val wire: String) {
     Movie("movie"),
     Series("series"),
-    Anime("anime"),
-    Live("tv");
+    Anime("anime");
 
     companion object {
         fun fromWire(value: String): MediaType? =
@@ -24,7 +23,7 @@ enum class RowAspect {
     /** 2:3 — pósters de películas, series y anime. */
     Poster,
 
-    /** 16:9 — canales en directo, deportes y "continuar viendo". */
+    /** 16:9 — "continuar viendo" y filas de arte ancho. */
     Landscape,
 }
 
@@ -33,9 +32,8 @@ enum class RowAspect {
  * detalles.
  *
  * [id] es el identificador completo que espera el backend, con el proveedor
- * incluido (`gnula:street-fighter`, `monoschinos:one-piece:1`,
- * `tv:futbolibre:espn-1`) y, en series, la temporada y el episodio cuando toca
- * (`pelisplushd:x:1:2`).
+ * incluido (`gnula:street-fighter`, `monoschinos:one-piece:1`) y, en series, la
+ * temporada y el episodio cuando toca (`pelisplushd:x:1:2`).
  *
  * El modelo es deliberadamente "gordo": todos los campos de presentación
  * (sinopsis, géneros, calidad, progreso) viajan en el mismo JSON del catálogo,
@@ -64,21 +62,6 @@ data class MediaEntry(
     val runtime: String? = null,
     /** Marca de "tendencia": pinta la insignia de top 10. */
     @SerialName("trending") val trending: Boolean = false,
-    /** Canal en emisión continua. */
-    @SerialName("live") val live: Boolean = false,
-    /**
-     * Estado explícito del directo cuando el tipo no basta (fila `deportes`):
-     * un partido de hoy que aún no ha empezado es `tv` pero no está al aire.
-     * `null` = dedúcelo del tipo, como el resto de las filas.
-     */
-    @SerialName("onAir") val onAir: Boolean? = null,
-    /** Equipos del partido (sólo deportes). El título ya es "A vs B". */
-    @SerialName("home") val homeTeam: String? = null,
-    @SerialName("away") val awayTeam: String? = null,
-    /** Competición: "Liga 1", "MLB", "NBA"… Sólo deportes. */
-    @SerialName("league") val league: String? = null,
-    /** Hora de comienzo del partido ("19:00"). Sólo deportes. */
-    @SerialName("startTime") val startTime: String? = null,
     /** 0-100 para las tarjetas de "Continuar viendo". */
     @SerialName("progressPercent") val progressPercent: Int? = null,
     /**
@@ -89,11 +72,6 @@ data class MediaEntry(
     @kotlinx.serialization.Transient val resumePositionMs: Long = 0L,
 ) {
     val mediaType: MediaType get() = MediaType.fromWire(type) ?: MediaType.Movie
-
-    val isLive: Boolean get() = onAir ?: (live || mediaType == MediaType.Live)
-
-    /** Fila de deportes con dos equipos: la tarjeta se pinta como marcador. */
-    val isMatch: Boolean get() = !homeTeam.isNullOrBlank() && !awayTeam.isNullOrBlank()
 
     /** "Acción · Aventura · 2026 · 2 h 08 min" (sin huecos). */
     val metaLine: String
@@ -119,14 +97,10 @@ data class CatalogRow(
     /** `poster` (2:3) o `landscape` (16:9). */
     val aspect: String = "poster",
     val items: List<MediaEntry> = emptyList(),
-    /**
-     * Cómo se pinta la fila. `cards` (por defecto) usa las tarjetas de arte;
-     * `sports` pinta marcadores: liga, equipos, hora y EN VIVO.
-     */
+    /** Cómo se pinta la fila: `cards` usa las tarjetas de arte. */
     val layout: String = LAYOUT_CARDS,
     /**
-     * De dónde salen los títulos: `cinemeta` | `local` | `live` | `remote` |
-     * `embedded`. Lo publica el addon al describir sus catálogos; el buscador lo
+     * De dónde salen los títulos: `cinemeta` | `remote` | `embedded`. Lo publica el addon al describir sus catálogos; el buscador lo
      * usa para ofrecer las recomendaciones de Cinemeta y no las de un proveedor.
      *
      * `null` en servidores antiguos que aún no lo publican (se deduce del id).
@@ -136,11 +110,8 @@ data class CatalogRow(
     val rowAspect: RowAspect
         get() = if (aspect.equals("landscape", ignoreCase = true)) RowAspect.Landscape else RowAspect.Poster
 
-    val isSports: Boolean get() = layout.equals(LAYOUT_SPORTS, ignoreCase = true)
-
     companion object {
         const val LAYOUT_CARDS = "cards"
-        const val LAYOUT_SPORTS = "sports"
     }
 }
 
@@ -150,39 +121,28 @@ data class CatalogRow(
  * @param startIndex fuente elegida en la hoja de detalles (0 = la de mayor
  *   prioridad). El failover continúa desde ahí hacia abajo.
  */
-fun MediaEntry.playbackRequest(
-    startIndex: Int = 0,
-    /**
-     * Parrilla de la fila de la que salió la tarjeta (ver
-     * [toChannelQueue]). Sólo se usa para zapear con `CH+`/`CH−` dentro del
-     * reproductor; en películas y series va vacía.
-     */
-    queue: List<PlaybackChannel> = emptyList(),
-) = PlaybackRequest(
+fun MediaEntry.playbackRequest(startIndex: Int = 0) = PlaybackRequest(
     id = id,
     type = type,
     title = title,
-    isLive = isLive,
     startIndex = startIndex,
     poster = poster,
     backdrop = backdrop,
     startPositionMs = resumePositionMs,
-    queue = queue,
 )
 
 /**
  * Lo que el reproductor necesita saber para abrir un título.
  *
  * `@Serializable` por [PlaybackRestore]: es lo que se guarda en
- * `onSaveInstanceState` para volver al mismo canal y al mismo segundo si el
- * sistema mata el proceso mientras se ve algo.
+ * `onSaveInstanceState` para volver al mismo segundo si el sistema mata el
+ * proceso mientras se ve algo.
  */
 @Serializable
 data class PlaybackRequest(
     val id: String,
     val type: String,
     val title: String,
-    val isLive: Boolean = false,
     /**
      * Fuente con la que arrancar, elegida en la hoja de detalles
      * (`0` = la de mayor prioridad; el failover sigue desde ahí hacia abajo).
@@ -196,16 +156,6 @@ data class PlaybackRequest(
     val backdrop: String? = null,
     /** Posición de arranque: 0 salvo que venga de "Seguir viendo". */
     val startPositionMs: Long = 0L,
-    /**
-     * Parrilla de canales de la que salió este título, en el orden en que el
-     * usuario la vio. Es lo que permite `CH+`/`CH−` y la guía sin volver al
-     * Home; vacía en películas, series y cuando se abre desde fuera.
-     *
-     * El canal **actual** se localiza aquí por `id`, no por posición: si el
-     * catálogo se reordena entre abrir y zapear, seguimos apuntando al mismo
-     * canal.
-     */
-    val queue: List<PlaybackChannel> = emptyList(),
 )
 
 /** Tanto :temporada:episodio como los ids de anime proveedor:slug:episodio. */

@@ -2,7 +2,6 @@ package com.tanasi.streamflix.ui.player
 
 import com.tanasi.streamflix.data.ContentClient
 import com.tanasi.streamflix.data.model.CatalogDescriptor
-import com.tanasi.streamflix.data.model.PlaybackChannel
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.RemoteCatalogResponse
 import com.tanasi.streamflix.data.model.RemoteMeta
@@ -20,18 +19,15 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
 /**
- * El `ViewModel` del reproductor: cargar, zapear y volver.
+ * El `ViewModel` del reproductor: cargar y reintentar.
  *
- * Lo que se prueba es lo que el usuario siente: al zapear la imagen anterior se
- * queda en pantalla ("tuning") hasta que engancha la señal nueva, y el canal
- * que se ve es el último sintonizado —no el que abrió la pantalla—, aunque el
- * sistema mate y recree la actividad.
+ * Lo que se prueba es que el estado sobrevive a la actividad y que reintentar
+ * vuelve a pedir las fuentes del título en curso.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class PlayerViewModelTest {
@@ -119,7 +115,6 @@ class PlayerViewModelTest {
         assertEquals(listOf("https://cdn/a.m3u8", "https://cdn/b.m3u8"), state.sources.map { it.url })
         assertEquals(1, state.subtitles.size)
         assertEquals("es", state.subtitles.single().lang)
-        assertFalse(state.tuning)
         assertEquals(listOf("tt0133093"), client.asked)
     }
 
@@ -141,88 +136,6 @@ class PlayerViewModelTest {
         assertEquals("El addon no responde", (viewModel.state.value as PlayerUiState.Unavailable).message)
     }
 
-    /* ---------------------------------------------------------------------- */
-    /* Zapeo                                                                  */
-    /* ---------------------------------------------------------------------- */
-
-    @Test
-    fun `zapear cambia el canal y conserva la imagen hasta enganchar`() {
-        val gate = CompletableDeferred<Unit>()
-        val client = FakeClient(
-            responses = mapOf(
-                "movie:1" to response("https://cdn/1.m3u8"),
-                "tv:a" to response("https://cdn/a.m3u8"),
-                "tv:b" to response("https://cdn/b.m3u8"),
-            ),
-            gates = mapOf("tv:b" to gate),
-        )
-        val viewModel = viewModel(client, movie("movie:1"))
-        dispatcher.scheduler.advanceUntilIdle()
-        val before = ready(viewModel)
-
-        viewModel.tune(PlaybackChannel(id = "tv:a", title = "Canal A"))
-        dispatcher.scheduler.advanceUntilIdle()
-        assertEquals("tv:a", viewModel.current.value.id)
-        assertEquals(listOf("https://cdn/a.m3u8"), ready(viewModel).sources.map { it.url })
-        assertTrue(viewModel.current.value.isLive)
-
-        /* Canales con la fuente aún sin resolver: se sigue viendo el anterior. */
-        viewModel.tune(PlaybackChannel(id = "tv:b", title = "Canal B"))
-        val during = ready(viewModel)
-        assertTrue(during.tuning)
-        assertEquals(before.sources.map { it.url }.size, during.sources.size)
-        assertEquals("Canal B", viewModel.current.value.title)
-
-        gate.complete(Unit)
-        dispatcher.scheduler.advanceUntilIdle()
-        val after = ready(viewModel)
-        assertFalse(after.tuning)
-        assertEquals(listOf("https://cdn/b.m3u8"), after.sources.map { it.url })
-        assertEquals(listOf("movie:1", "tv:a", "tv:b"), client.asked)
-        /* Un directo no arrastra la posición del título anterior. */
-        assertEquals(0L, viewModel.current.value.startPositionMs)
-    }
-
-    @Test
-    fun `sintonizar el mismo canal no vuelve a pedir fuentes`() {
-        val client = FakeClient(responses = mapOf("tv:a" to response("https://cdn/a.m3u8")))
-        val viewModel = viewModel(
-            client,
-            PlaybackRequest(id = "tv:a", type = "tv", title = "Canal A", isLive = true),
-        )
-        dispatcher.scheduler.advanceUntilIdle()
-
-        viewModel.tune(PlaybackChannel(id = "tv:a", title = "Canal A"))
-        dispatcher.scheduler.advanceUntilIdle()
-
-        assertEquals(listOf("tv:a"), client.asked)
-    }
-
-    @Test
-    fun `volver atras deshace el zapeo`() {
-        val client = FakeClient(
-            responses = mapOf(
-                "movie:1" to response("https://cdn/1.m3u8"),
-                "tv:a" to response("https://cdn/a.m3u8"),
-            ),
-        )
-        val viewModel = viewModel(client, movie("movie:1"))
-        dispatcher.scheduler.advanceUntilIdle()
-        val original = viewModel.current.value
-
-        viewModel.tune(PlaybackChannel(id = "tv:a", title = "Canal A"))
-        dispatcher.scheduler.advanceUntilIdle()
-        assertEquals("tv:a", viewModel.current.value.id)
-
-        viewModel.restore(original)
-        dispatcher.scheduler.advanceUntilIdle()
-
-        assertEquals("movie:1", viewModel.current.value.id)
-        assertEquals("Matrix", viewModel.current.value.title)
-        assertFalse(viewModel.current.value.isLive)
-        assertEquals(listOf("https://cdn/1.m3u8"), ready(viewModel).sources.map { it.url })
-    }
-
     @Test
     fun `reintentar vuelve a pedir las fuentes del titulo en curso`() {
         val client = FakeClient(responses = mapOf("tt1" to response("https://cdn/1.m3u8")))
@@ -236,17 +149,17 @@ class PlayerViewModelTest {
         assertEquals(listOf("https://cdn/1.m3u8"), ready(viewModel).sources.map { it.url })
     }
     @Test
-    fun `fuentes iguales en canales distintos reciben nueva generacion`() {
-        val client = FakeClient(responses = mapOf(
-            "tv:a" to response("https://cdn/shared.m3u8"),
-            "tv:b" to response("https://cdn/shared.m3u8"),
-        ))
-        val vm = viewModel(client, PlaybackRequest(id = "tv:a", type = "tv", title = "A", isLive = true))
+    fun `reintentar con las mismas fuentes recibe nueva generacion`() {
+        val client = FakeClient(responses = mapOf("tt1" to response("https://cdn/shared.m3u8")))
+        val vm = viewModel(client, movie("tt1"))
         dispatcher.scheduler.advanceUntilIdle()
         val before = ready(vm).generation
-        vm.tune(PlaybackChannel(id = "tv:b", title = "B"))
-        assertEquals(before, ready(vm).generation)
+
+        vm.load()
         dispatcher.scheduler.advanceUntilIdle()
+
+        /* El `ExoPlayer` se memoriza por generación: sin número nuevo, el
+         * reintento reutilizaría el reproductor que ya falló. */
         assertTrue(ready(vm).generation > before)
     }
 

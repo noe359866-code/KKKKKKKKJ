@@ -88,7 +88,7 @@ jobs:
         run: |
           set -o pipefail
           ./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest --no-daemon --stacktrace 2>&1 | tee "$RUNNER_TEMP/android.log"
-      - name: Verify Python runtime and all twelve scrapers are actually packaged
+      - name: Verify Python runtime and all ten scrapers are actually packaged
         run: |
           set -euo pipefail
           python3 scripts/verify-embedded-apk.py app/build/outputs/apk/debug/app-debug.apk 2>&1 | tee "$RUNNER_TEMP/apk-debug.json" | tee -a "$RUNNER_TEMP/android.log"
@@ -98,7 +98,7 @@ jobs:
           for name in ('debug', 'release'):
               with open(os.path.join(os.environ['RUNNER_TEMP'], f'apk-{name}.json')) as file:
                   result = json.load(file)
-              print(f"::notice title=Autonomous APK ({name})::{result['bytes']} bytes / {result['MiB']} MiB; Python + 12 scrapers; ARM32, ARM64, x86_64")
+              print(f"::notice title=Autonomous APK ({name})::{result['bytes']} bytes / {result['MiB']} MiB; Python + 10 scrapers; ARM32, ARM64, x86_64")
           PY
       - name: Enable emulator acceleration
         run: |
@@ -140,11 +140,39 @@ jobs:
             const raw = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '(No Gradle log: inspect the failed setup or emulator step.)';
             const lines = raw.split('\n');
             const errors = lines.filter(l => /FAILED|AssertionError|expected:|Unresolved|^e: |Execution failed|error:|What went wrong/i.test(l));
+
+            /* El mensaje del assert no siempre viaja al log de Gradle: los
+             * informes XML de JUnit sí lo traen, y desde el sandbox los
+             * artefactos de Actions no se pueden descargar, así que se copian
+             * aquí línea a línea (nombre del test + primera línea del fallo). */
+            const { execSync } = require('child_process');
+            let junit = '(sin informes XML de tests)';
+            try {
+              const xmls = execSync("find app/build/test-results -name '*.xml' -type f", { encoding: 'utf8' })
+                .split('\n').filter(Boolean);
+              const failures = [];
+              for (const xml of xmls) {
+                const text = fs.readFileSync(xml, 'utf8');
+                for (const [, attrs, body] of text.matchAll(/<testcase([^>]*)>([\s\S]*?)<\/testcase>/g)) {
+                  if (!/<failure|<error/.test(body)) continue;
+                  const name = (attrs.match(/name="([^"]*)"/) || [, '?'])[1];
+                  const cls = (attrs.match(/classname="([^"]*)"/) || [, '?'])[1];
+                  const msg = (body.match(/message="([^"]*)"/) || [, ''])[1];
+                  const trace = (body.match(/<failure[^>]*>([\s\S]*?)<\/failure>/) || [, ''])[1];
+                  failures.push(`${cls}.${name}\n  ${msg}\n  ${trace.split('\n').slice(0, 6).join('\n  ')}`);
+                }
+              }
+              junit = failures.length ? failures.join('\n\n') : '(los XML no registran fallos: el error fue de compilación o lint)';
+            } catch (error) {
+              junit = `(no se pudieron leer los XML: ${error.message})`;
+            }
+
             await github.rest.checks.create({
               owner: context.repo.owner, repo: context.repo.repo, name: 'autonomous-build-diagnostic',
               head_sha: context.sha, status: 'completed', conclusion: 'neutral',
               output: {title: 'Autonomous app build diagnostic',
                 summary: 'Build failed. Emulator failures are in the workflow log.',
                 text: ['### Errors', '```', errors.slice(-120).join('\n'), '```',
+                       '### Fallos de tests (XML de JUnit)', '```', junit, '```',
                        '### Tail', '```', lines.slice(-120).join('\n'), '```'].join('\n').slice(-60000)},
             });

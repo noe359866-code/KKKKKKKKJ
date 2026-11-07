@@ -10,24 +10,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerInteractionPolicyTest {
-    @Test fun `seek exige duracion y capacidad y no ofrece DVR en directo`() {
-        assertTrue(canSeekPlayback(false, true, 60_000L, false))
-        assertFalse(canSeekPlayback(true, true, 60_000L, false))
-        assertFalse(canSeekPlayback(false, false, 60_000L, false))
-        assertFalse(canSeekPlayback(false, true, 0L, false))
-        assertFalse(canSeekPlayback(false, true, Long.MIN_VALUE + 1, false))
-        assertFalse(canSeekPlayback(false, true, 60_000L, true))
+    @Test fun `seek exige duracion conocida y capacidad de la fuente`() {
+        assertTrue(canSeekPlayback(true, 60_000L))
+        assertFalse(canSeekPlayback(false, 60_000L))
+        assertFalse(canSeekPlayback(true, 0L))
+        assertFalse(canSeekPlayback(true, Long.MIN_VALUE + 1))
     }
 
     @Test fun `muestras transitorias no borran el progreso confirmado`() {
         val snapshots = PlaybackSnapshotCache()
-        snapshots.observe(false, false, 0L, 0L)
+        snapshots.observe(false, 0L, 0L)
         assertNull(snapshots.latest)
-        snapshots.observe(false, true, 45_000L, 100_000L)
-        snapshots.observe(false, false, 0L, 100_000L)
-        snapshots.observe(true, true, 10L, 100_000L)
+        snapshots.observe(true, 45_000L, 100_000L)
+        /* Cambio de fuente: deja de haber reproducción confirmada y llegan
+         * posiciones transitorias; la última muestra buena se conserva. */
+        snapshots.observe(false, 0L, 100_000L)
+        snapshots.observe(false, 10L, 100_000L)
         assertEquals(PlaybackSnapshot(45_000L, 100_000L), snapshots.latest)
-        snapshots.observe(false, true, 110_000L, 100_000L)
+        snapshots.observe(true, 110_000L, 100_000L)
         assertEquals(PlaybackSnapshot(100_000L, 100_000L), snapshots.latest)
     }
 

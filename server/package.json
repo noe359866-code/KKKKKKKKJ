@@ -15,9 +15,6 @@
     "test": "LOG_LEVEL=error NODE_ENV=test node --test",
     "cache:stats": "node scripts/cache-stats.js",
     "bridge:demo": "node scripts/bridge-demo.js",
-    "channels:tvenvivo": "python3 scrapers/tvenvivo.py --list",
-    "channels:deportelibre": "python3 scrapers/deportelibre.py --list",
-    "channels:futbolibre": "python3 scrapers/futbolibre.py --list",
     "anime:animeflv": "python3 scrapers/animeflv.py --list",
     "anime:jkanime": "python3 scrapers/jkanime.py --list",
     "anime:monoschinos": "python3 scrapers/monoschinos.py --list",
@@ -27,11 +24,7 @@
     "movies:repelis": "python3 scrapers/repelis.py --list --query",
     "movies:peliculasflix": "python3 scrapers/peliculasflix.py --list --query",
     "movies:pelisjuanita": "python3 scrapers/pelisjuanita.py --list --query",
-    "movies:novahd": "python3 scrapers/novahd.py --list --query",
-    "channels:livelive24": "python3 scrapers/livelive24.py --list",
-    "channels:damitv": "python3 scrapers/damitv.py --list",
-    "channels:ntv": "python3 scrapers/ntv.py --list",
-    "channels:streamcorner": "python3 scrapers/streamcorner.py --list"
+    "movies:novahd": "python3 scrapers/novahd.py --list --query"
   },
   "dependencies": {
     "cors": "^2.8.5",

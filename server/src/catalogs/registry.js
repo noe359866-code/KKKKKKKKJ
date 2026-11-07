@@ -46,9 +46,7 @@ import { createLogger } from '../lib/logger.js';
 
 const log = createLogger('catalogs');
 
-const KINDS = new Set(['cinemeta', 'local', 'remote', 'live']);
-/*: Secciones de la estantería que construye `scrapers/_liveshelf.py`. */
-const LIVE_SECTIONS = new Set(['channels', 'events']);
+const KINDS = new Set(['cinemeta', 'remote']);
 const SHAPES = new Set(['poster', 'landscape']);
 const ID_RE = /^[a-zA-Z0-9_-]{1,48}$/;
 
@@ -58,30 +56,6 @@ const ID_RE = /^[a-zA-Z0-9_-]{1,48}$/;
  * (un manifest sin `catalogs` deja el Home del cliente vacío).
  */
 export const DEFAULT_CATALOGS = Object.freeze([
-  {
-    type: 'tv',
-    id: 'live',
-    name: 'TV en Vivo y Deportes',
-    posterShape: 'landscape',
-    order: 1,
-    source: { kind: 'local' },
-  },
-  {
-    type: 'tv',
-    id: 'canales',
-    name: 'TV en vivo · Canales',
-    posterShape: 'landscape',
-    order: 2,
-    source: { kind: 'live', section: 'channels' },
-  },
-  {
-    type: 'tv',
-    id: 'agenda',
-    name: 'Agenda deportiva',
-    posterShape: 'landscape',
-    order: 3,
-    source: { kind: 'live', section: 'events' },
-  },
   {
     type: 'movie',
     id: 'top',
@@ -160,11 +134,6 @@ export function normalizeCatalog(raw, index = 0) {
     source.limit = Number.isInteger(raw.source.limit) && raw.source.limit > 0
       ? Math.min(raw.source.limit, config.catalogs.pageSize)
       : config.catalogs.pageSize;
-  } else if (sourceKind === 'live') {
-    /* Canales y agenda se recogen de los proveedores de directo; la fila sólo
-     * elige qué sección publica. */
-    const section = String(raw.source.section || 'channels').toLowerCase().trim();
-    source.section = LIVE_SECTIONS.has(section) ? section : 'channels';
   } else if (sourceKind === 'cinemeta') {
     const sourceType = String(raw.source.type || type).toLowerCase().trim();
     if (!CINEMETA_TYPES.includes(sourceType)) {
@@ -175,9 +144,9 @@ export function normalizeCatalog(raw, index = 0) {
     source.id = String(raw.source.id || id).trim() || id;
     if (raw.source.genre) source.genre = String(raw.source.genre).trim();
   } else {
-    /* Fuente local: el filtro opcional por categoría permite publicar
-     * "Deportes" y "Canales" como dos filas del mismo JSON. */
-    if (raw.source?.category) source.category = String(raw.source.category).trim().toLowerCase();
+    /* Fuente desconocida: la fila se descarta en vez de publicar una vacía. */
+    log.warn('catalog skipped: unknown source kind', { type, id, sourceKind });
+    return null;
   }
 
   return {

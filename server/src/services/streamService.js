@@ -44,23 +44,12 @@ export function cacheKey(type, id) {
 }
 
 /**
- * Live content is identified by:
- *  - Stremio type "tv"
- *  - custom live ids: "tv:canal-13", "sports:..." (see lib/ids.js)
+ * TTL for a content class, clamped to the contract: VOD 2h–6h (links are
+ * stable). El parámetro se conserva para no cambiar la firma de los llamantes
+ * que aún pasan la clase de contenido; hoy todas acaban en la ventana de VOD.
  */
-export function isLiveContent(type, parsed) {
-  return String(type).toLowerCase() === 'tv' || parsed.isLive || parsed.isSports;
-}
-
-/**
- * TTL for a content class, clamped to the contract of that class:
- * live/sports 2h–4h (URLs rotate), VOD 2h–6h (links are stable).
- */
-export function ttlFor(isLive) {
-  const ttl = isLive ? config.cache.ttlLiveMs : config.cache.ttlVodMs;
-  const min = isLive ? config.cache.ttlLiveMinMs : config.cache.ttlMinMs;
-  const max = isLive ? config.cache.ttlLiveMaxMs : config.cache.ttlMaxMs;
-  return Math.min(Math.max(ttl, min), max);
+export function ttlFor() {
+  return Math.min(Math.max(config.cache.ttlVodMs, config.cache.ttlMinMs), config.cache.ttlMaxMs);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -125,7 +114,7 @@ export function normalizeProviderStream(raw, provider, context = {}) {
     userAgent,
     quality: quality !== 'Unknown' ? quality : undefined,
     provider: provider.id,
-    isLive: Boolean(raw.isLive ?? context.isLive),
+    isLive: Boolean(raw.isLive),
   });
 
   return stream ? { ...stream, _priority: provider.priority, _qualityRank: qualityRank(quality) } : null;
@@ -151,7 +140,7 @@ function toPublicStream(stream) {
  * (the one from the highest-priority provider).
  *
  * @param {Array<{ provider: object, streams: object[] }>} results
- * @param {{ isLive?: boolean }} [context]
+ * @param {object} [context]
  * @returns {object[]}
  */
 export function buildStreamList(results, context = {}) {
@@ -189,7 +178,7 @@ export function buildStreamList(results, context = {}) {
  * @param {string} params.id   - Stremio video id
  * @param {boolean} [params.bypassCache] - force a fresh scrape (admin use)
  * @returns {Promise<{
- *   streams: object[], subtitles: object[], isLive: boolean, ttlMs: number, cacheKey: string,
+ *   streams: object[], subtitles: object[], ttlMs: number, cacheKey: string,
  *   cached: boolean, stale: boolean, coalesced: boolean, durationMs: number,
  *   providers: Array<{ id: string, status: string, streams: number, ms: number|null }>
  * }>}
@@ -198,8 +187,7 @@ export async function getStreams({ type, id, bypassCache = false }) {
   const startedAt = process.hrtime.bigint();
   const normalizedId = normalizeStreamId(id);
   const parsed = parseMediaId(normalizedId);
-  const isLive = isLiveContent(type, parsed);
-  const ttlMs = ttlFor(isLive);
+  const ttlMs = ttlFor(false);
   const key = cacheKey(type, normalizedId);
 
   const respond = (payload) => ({
@@ -208,7 +196,6 @@ export async function getStreams({ type, id, bypassCache = false }) {
      * sola petición resuelve el título entero, sin segundo round-trip. Va
      * después del spread para que nunca quede `undefined`. */
     subtitles: payload.subtitles || [],
-    isLive,
     /* El TTL real de la entrada: si una URL firmada caduca antes, es el suyo
      * (ver lib/signedUrls.js), no la política de 2 h/6 h. */
     ttlMs: payload.ttlMs ?? ttlMs,
@@ -244,7 +231,7 @@ export async function getStreams({ type, id, bypassCache = false }) {
     /* 2. Stale entry: answer immediately and refresh in the background. */
     if (hit && hit.stale) {
       log.info('stale cache hit, serving and revalidating', { key, ageMs: hit.ageMs });
-      refreshInBackground(key, { type, id: normalizedId, parsed, isLive, ttlMs });
+      refreshInBackground(key, { type, id: normalizedId, parsed, ttlMs });
       return respond({
         streams: hit.value,
         subtitles: hit.meta.subtitles || [],
@@ -261,16 +248,15 @@ export async function getStreams({ type, id, bypassCache = false }) {
 
   /* 3. Cache miss: coalesce concurrent identical requests into one scrape. */
   const { value, coalesced } = await cache.singleFlight(key, async () => {
-    const providers = getProvidersFor(isLive);
+    const providers = getProvidersFor(false);
 
     const { results, durationMs, timedOut } = await runProviderPool(providers, {
       type,
       id: normalizedId,
       parsed,
-      isLive,
     });
 
-    const streams = buildStreamList(results, { isLive });
+    const streams = buildStreamList(results, {});
     /* Los subtítulos salen del mismo scrape: `meta.subtitles` de cada proveedor
      * (hoy novaHD) se normaliza y se cachea junto a las fuentes. */
     const subtitles = buildSubtitleList(results);
@@ -299,7 +285,7 @@ export async function getStreams({ type, id, bypassCache = false }) {
     }
 
     cache.set(key, streams, effectiveTtlMs, {
-      providers: providerStatus, subtitles, isLive, ttlMs: effectiveTtlMs, negative: false,
+      providers: providerStatus, subtitles, ttlMs: effectiveTtlMs, negative: false,
     });
     log.info('scrape complete, cached', {
       key,
@@ -336,14 +322,13 @@ function refreshInBackground(key, context) {
 
   cache
     .singleFlight(key, async () => {
-      const providers = getProvidersFor(context.isLive);
+      const providers = getProvidersFor(false);
       const { results } = await runProviderPool(providers, {
         type: context.type,
         id: context.id,
         parsed: context.parsed,
-        isLive: context.isLive,
       });
-      const streams = buildStreamList(results, { isLive: context.isLive });
+      const streams = buildStreamList(results, {});
       const subtitles = buildSubtitleList(results);
       const effectiveTtlMs = capTtlByExpiry(context.ttlMs, streams);
 
@@ -359,7 +344,6 @@ function refreshInBackground(key, context) {
           ms: result.durationMs,
         })),
         subtitles,
-        isLive: context.isLive,
         ttlMs: effectiveTtlMs,
         negative: false,
       });
@@ -390,14 +374,11 @@ export function invalidate({ type, id }) {
 /** Returns TTL policy for observability. */
 export function ttlPolicy() {
   return {
-    liveMs: ttlFor(true),
     vodMs: ttlFor(false),
-    liveMinMs: config.cache.ttlLiveMinMs,
-    liveMaxMs: config.cache.ttlLiveMaxMs,
     minMs: config.cache.ttlMinMs,
     maxMs: config.cache.ttlMaxMs,
     missMs: config.cache.ttlMissMs,
   };
 }
 
-export default { getStreams, invalidate, cacheKey, isLiveContent, ttlFor, buildStreamList, ttlPolicy };
+export default { getStreams, invalidate, cacheKey, ttlFor, buildStreamList, ttlPolicy };

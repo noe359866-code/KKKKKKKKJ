@@ -90,7 +90,13 @@ before(async () => {
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
 
-after(() => new Promise((resolve) => server.close(resolve)));
+after(() => new Promise((resolve) => {
+  server.close(resolve);
+  /* `fetch` deja sockets keep-alive abiertos: sin esto el proceso de test no
+   * termina y `npm test` se queda colgado esperando a que muera. */
+  server.closeIdleConnections?.();
+  server.closeAllConnections?.();
+}));
 
 test('a signed source shortens the cache instead of the 6h policy', async () => {
   const res = await fetch(`${baseUrl}/stream/movie/signed-demo.json`);

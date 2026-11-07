@@ -62,18 +62,12 @@ const HOUR = 60 * 60 * 1000;
 
 /*
  * TTL contract (enforced at boot and again when the cache is written):
- *  - LIVE (live TV, sports, IPTV): 2h – 4h. The .m3u8 URLs of tvenvivo,
- *    deportelibre and futbolibre must be answered from a cache hit, but they
- *    rotate, so the window is capped at 4 hours.
- *  - VOD  (movies / series / anime): 2h – 6h. Links are stable for longer.
+ *  - VOD (movies / series / anime): 2h – 6h. Links are stable for longer.
  */
 const TTL_MIN_MS = 2 * HOUR;
 const TTL_MAX_MS = 6 * HOUR;
-const TTL_LIVE_MIN_MS = 2 * HOUR;
-const TTL_LIVE_MAX_MS = 4 * HOUR;
 
 /* Out of range => throw at boot instead of silently caching stale links. */
-const ttlLiveMs = envInt('CACHE_TTL_LIVE_HOURS', 2, { min: 2, max: 4 }) * HOUR;
 const ttlVodMs = envInt('CACHE_TTL_VOD_HOURS', 6, { min: 2, max: 6 }) * HOUR;
 
 /* -------------------------------------------------------------------------- */
@@ -107,27 +101,23 @@ export const config = {
     name: process.env.ADDON_NAME || 'Streamflix Reborn',
     description:
       process.env.ADDON_DESCRIPTION ||
-      'Live TV, sports, movies, series and anime aggregated from multiple providers with automatic failover.',
+      'Movies, series and anime aggregated from multiple providers with automatic failover.',
     logo: process.env.ADDON_LOGO || '',
     /* Base URL used to build the public manifest "id"/links preview.
      * Left empty in dev: it is derived from the incoming request headers. */
     publicUrl: (process.env.PUBLIC_URL || '').replace(/\/+$/, ''),
     /* Types declared by the manifest. "anime" is a custom type on this addon;
      * Stremio/ExoPlayer clients treat it as an extra row in the catalog. */
-    types: envList('ADDON_TYPES', ['movie', 'series', 'anime', 'tv']),
+    types: envList('ADDON_TYPES', ['movie', 'series', 'anime']),
     resources: ['stream'],
   },
 
   cache: {
-    /* Hard contract: 2h <= TTL <= 6h (live: 2h <= TTL <= 4h). */
+    /* Hard contract: 2h <= TTL <= 6h. */
     ttlMinMs: TTL_MIN_MS,
     ttlMaxMs: TTL_MAX_MS,
-    ttlLiveMinMs: TTL_LIVE_MIN_MS,
-    ttlLiveMaxMs: TTL_LIVE_MAX_MS,
     /* VOD / movies / series / anime. */
     ttlVodMs,
-    /* Live TV + sports: streams expire fast, so cache them conservatively. */
-    ttlLiveMs,
     /* Ephemeral cache for negative results (no working source found).
      * Kept short so a provider outage does not poison the cache for hours. */
     ttlMissMs: envInt('CACHE_TTL_MISS_SECONDS', 120, { min: 5, max: 3600 }) * 1000,
@@ -161,14 +151,6 @@ export const config = {
     pageSize: envInt('CATALOG_PAGE_SIZE', 100, { min: 10, max: 200 }),
     /* Where the published catalogs are declared (type, id, name, source). */
     configPath: process.env.CATALOGS_CONFIG || path.join(ROOT, 'config', 'catalogs.json'),
-    /* Curated live TV / sports channels: the "local" half of the home screen. */
-    liveCatalogPath: process.env.LIVE_CATALOG_PATH || path.join(ROOT, 'config', 'live-catalog.json'),
-    /* Channels and the sports agenda are collected from the live providers
-     * (`scrapers/_liveshelf.py`). That is a scrape per window, not per request:
-     * 15 min for both, and a per-provider budget so a slow site cannot hold
-     * the row. If every provider fails, the curated JSON is still served. */
-    liveTtlMs: envInt('CATALOG_LIVE_TTL_MINUTES', 15, { min: 1, max: 1440 }) * 60_000,
-    liveTimeoutMs: envInt('CATALOG_LIVE_TIMEOUT_MS', 2_500, { min: 500, max: 30_000 }),
     /* Third-party Stremio addons whose *catalogs* we republish (see the
      * `addons` block in config/catalogs.json). Their manifest is fetched once
      * per boot and cached on disk, so a cold start behind a broken WAN still

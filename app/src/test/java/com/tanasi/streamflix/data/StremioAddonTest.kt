@@ -217,7 +217,7 @@ class StremioAddonTest {
 
         val embedded = EmbeddedContentClient(EmbeddedRuntime { op, _ ->
             when (op) {
-                "catalogs" -> """{"catalogs":[{"type":"tv","id":"bundled_live","name":"Canales"}]}"""
+                "catalogs" -> """{"catalogs":[{"type":"movie","id":"gnula","name":"Películas"}]}"""
                 "streams" -> """{"streams":[{"name":"Local Scraper","title":"720p","url":"https://local.invalid/720.m3u8","provider":"Local"}]}"""
                 else -> "{}"
             }
@@ -235,7 +235,7 @@ class StremioAddonTest {
         // 1. Catálogos combinados: canal local + fila del addon
         val catalogs = routingClient.catalogs("")
         assertEquals(2, catalogs.size)
-        assertEquals("bundled_live", catalogs[0].id)
+        assertEquals("gnula", catalogs[0].id)
         assertEquals("addon:test_addon:popular", catalogs[1].id)
         assertEquals("Populares (Test Addon)", catalogs[1].name)
 

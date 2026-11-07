@@ -10,7 +10,6 @@ import com.tanasi.streamflix.data.remote.Urls
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -70,26 +69,14 @@ class CatalogFeedTest {
     }
 
     @Test
-    fun `la TV en vivo se marca como directo y hereda arte landscape`() {
-        val descriptor = CatalogDescriptor(type = "tv", id = "live", name = "TV", posterShape = "landscape")
-        val entry = meta(id = "tv:demo:espn-1", type = "tv", releaseInfo = "En directo").toEntry(descriptor)
-
-        assertTrue(entry.isLive)
-        assertEquals("tv", entry.type)
-        assertEquals(RowAspect.Landscape, descriptor.rowAspect)
-    }
-
-    @Test
     fun `la forma de la fila la decide el servidor, no el tipo de contenido`() {
-        val live = CatalogDescriptor(type = "tv", id = "live", posterShape = "landscape")
-        val vod = CatalogDescriptor(type = "series", id = "top", posterShape = "poster")
+        val series = CatalogDescriptor(type = "series", id = "top", posterShape = "poster")
         val oddMovie = CatalogDescriptor(type = "movie", id = "featured", posterShape = "landscape")
 
-        assertEquals(RowAspect.Landscape, live.rowAspect)
-        assertEquals(RowAspect.Poster, vod.rowAspect)
+        assertEquals(RowAspect.Poster, series.rowAspect)
         assertEquals(RowAspect.Landscape, oddMovie.rowAspect)
         /* Ids de fila distintos por tipo+id: el hero indexa por fila/título. */
-        assertEquals("remote:tv/live", live.rowId)
+        assertEquals("remote:series/top", series.rowId)
         assertEquals("remote:movie/featured", oddMovie.rowId)
     }
 
@@ -111,7 +98,7 @@ class CatalogFeedTest {
     @Test
     fun `los identificadores tt se etiquetan como Cinemeta`() {
         assertEquals("Cinemeta", meta().toEntry().provider)
-        assertNull(meta(id = "tv:demo:espn-1", type = "tv").toEntry().provider)
+        assertNull(meta(id = "gnula:street-fighter", type = "movie").toEntry().provider)
     }
 
     @Test
@@ -150,8 +137,8 @@ class CatalogFeedTest {
             Urls.catalog("host:7000", "movie", "top", search = "the matrix", genre = "Sci-Fi", skip = 100),
         )
         assertEquals(
-            "http://host:7000/catalog/tv/live/search=canal%2013.json",
-            Urls.catalog("http://host:7000", "tv", "live", search = "canal 13"),
+            "http://host:7000/catalog/anime/animeflv/search=one%20piece.json",
+            Urls.catalog("http://host:7000", "anime", "animeflv", search = "one piece"),
         )
     }
 
@@ -168,7 +155,6 @@ class CatalogFeedTest {
     fun `el id de una pelicula no lleva temporada`() {
         val entry = meta(id = "tt0133093", type = "movie", releaseInfo = "1999").toEntry()
         assertFalse(entry.id.contains(":"))
-        assertFalse(entry.isLive)
     }
 
     @Test

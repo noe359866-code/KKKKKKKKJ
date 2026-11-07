@@ -51,14 +51,12 @@ class StreamSourceFilterTest {
     @Test
     fun dtoBecomesAPlayableSourceWithItsHeaders() {
         val source = StreamDto(
-            name = "iptv-org",
-            title = "ADN 40",
-            url = "https://mdstrm.com/live-stream-playlist/60b578b060947317de7b57ac.m3u8",
-            isLive = true,
+            name = "Cine",
+            title = "Una película",
+            url = "https://mdstrm.com/vod/60b578b060947317de7b57ac.m3u8",
         ).toSource(index = 0)
 
-        assertEquals("ADN 40", source?.title)
-        assertTrue(source?.isLive == true)
+        assertEquals("Una película", source?.title)
         assertTrue(source?.isHls == true)
         assertEquals(0, source?.index)
     }

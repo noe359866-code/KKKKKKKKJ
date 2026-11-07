@@ -108,14 +108,9 @@ data class SubtitleTrack(
         /**
          * Índice de la pista que conviene activar sola, o `null` si no hay
          * ninguna en español.
-         *
-         * En el directo nunca: muchas señales emiten un CC quemado (o vacío) y
-         * encenderlo por sorpresa es peor que no ofrecerlo.
          */
-        fun preferredIndex(tracks: List<SubtitleTrack>, isLive: Boolean): Int? {
-            if (isLive) return null
-            return tracks.indexOfFirst { it.isSpanish }.takeIf { it >= 0 }
-        }
+        fun preferredIndex(tracks: List<SubtitleTrack>): Int? =
+            tracks.indexOfFirst { it.isSpanish }.takeIf { it >= 0 }
     }
 }
 

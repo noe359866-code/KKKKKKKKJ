@@ -12,6 +12,17 @@
 
 Adicionalmente, Nuvio tiene una referencia de submódulo `libmpv-android` al commit `f48aa82b2677428f756a689a44c2477c3f37be51`: el contenido de ese repositorio no forma parte de los 1.684 archivos ni se ha inventariado. Los árboles recursivos de GitHub respondieron `truncated: false`.
 
+> **Licencia (comprobada el 2026-11-07).** Nuvio TV es **GPL-3.0**; Streamflix es
+> **Apache-2.0**. Copiar código de Nuvio —aunque sea un archivo suelto— obligaría
+> a relicenciar la app entera bajo GPL-3.0. Por eso de aquí sólo se toman
+> **ideas**: la lógica y los umbrales no son copyrightables, la expresión
+> concreta sí. Todo lo implementado a partir de este inventario se escribió de
+> cero, con decisiones y pruebas propias. Mantener esa línea es una condición
+> del proyecto, no una preferencia de estilo.
+>
+> `dev` seguía en `fe5c314` al hacer esta revisión, así que el inventario ya
+> cubría la versión vigente.
+
 - [nuvio.tsv](nuvio.tsv) y [sky.tsv](sky.tsv): ruta, tipo Git, tamaño cuando lo da GitHub, SHA de objeto y estado. `fetch_completo` significa que se abrieron todos los fragmentos devueltos por fetch de ese archivo hasta ahora; `pendiente` incluye archivos no examinados y los que sólo se habían consultado parcialmente en la investigación anterior. No indica pruebas funcionales.
 - Hay código, pruebas, traducciones, configuraciones, imágenes y binarios; por ejemplo, Nuvio contiene 1.375 archivos Kotlin y SkyStream 915 Dart y 1.949 Go. También hay recursos y dependencias multiplataforma: no todos son pantallas de TV. Los archivos binarios y recursos visuales requieren inspección apropiada, no lectura como texto.
 - El archivo [referencias-nuvio-skystream.md](../referencias-nuvio-skystream.md) recoge la revisión anterior de ejemplos adicionales, principalmente mediante API y capturas; no supone lectura completa del repositorio.
@@ -25,7 +36,7 @@ Adicionalmente, Nuvio tiene una referencia de submódulo `libmpv-android` al com
 3. [HomeScreenFocusState.kt](https://github.com/NuvioMedia/NuvioTV/blob/fe5c314bdca956696155f2b649de7070c2d03ba4/app/src/main/java/com/nuvio/tv/ui/screens/home/HomeScreenFocusState.kt): guarda identidad de fila y elemento, anclas de scroll y desplazamiento vertical. Prueba propuesta: abrir una ficha desde una fila larga, alterar el orden y volver; comprobar que el foco reaparece en el contenido correcto o en una alternativa válida.
 4. [FocusRestoreUtils.kt](https://github.com/NuvioMedia/NuvioTV/blob/fe5c314bdca956696155f2b649de7070c2d03ba4/app/src/main/java/com/nuvio/tv/ui/screens/detail/FocusRestoreUtils.kt): espera fotogramas y limita los intentos de restauración. No demuestra que un reintento aislado sirva para todas las listas virtualizadas; hay que probar cuándo el destino existe y qué hacer si desapareció.
 5. [SettingsCatalog.kt](https://github.com/NuvioMedia/NuvioTV/blob/fe5c314bdca956696155f2b649de7070c2d03ba4/app/src/main/java/com/nuvio/tv/ui/screens/settings/SettingsCatalog.kt): agrupa categorías y filtra algunas según perfil, modo o disponibilidad. Aplicación: conservar sólo acciones funcionales y evitar controles que no correspondan al estado actual.
-6. [LivePlaybackUiPolicy.kt](https://github.com/NuvioMedia/NuvioTV/blob/fe5c314bdca956696155f2b649de7070c2d03ba4/app/src/main/java/com/nuvio/tv/ui/screens/player/LivePlaybackUiPolicy.kt): distingue señal de directo del reproductor y tipo de catálogo; explica que la extensión HLS por sí sola no distingue directo de VOD. **Su convención de tipo no es la de Streamflix**: no trasladarla literalmente. En Streamflix, `PlayerActivity` filtra el progreso a partir de `PlaybackRequest.isLive`; conviene probar también fuentes mal etiquetadas y ventanas de directo.
+6. `LivePlaybackUiPolicy.kt` de NuvioTV: un archivo que su proyecto usa para separar señal de directo y tipo de catálogo. **Retirado del inventario**: Streamflix ya no publica contenido en directo (§26 de `docs/pendientes.md`), así que su convención no aplica. Lo único que sigue vigente es que la extensión HLS por sí sola no distingue directo de VOD, y eso aquí deja de importar: el progreso se guarda sólo con duración conocida.
 7. [ContinueWatchingCachePolicy.kt](https://github.com/NuvioMedia/NuvioTV/blob/fe5c314bdca956696155f2b649de7070c2d03ba4/app/src/main/java/com/nuvio/tv/ui/screens/home/ContinueWatchingCachePolicy.kt): restaura caché bajo condiciones explícitas para no sustituir datos remotos ya cargados. Es pertinente sólo si Streamflix incorpora sincronización remota real.
 
 ### SkyStream
@@ -35,7 +46,7 @@ Adicionalmente, Nuvio tiene una referencia de submódulo `libmpv-android` al com
 3. [home_section.dart](https://github.com/akashdh11/skystream/blob/f5523ae07d729b579be30976df8783a0b98c4559/lib/features/home/presentation/widgets/home_section.dart): oculta filas vacías y usa lista horizontal construida bajo demanda con claves por contenido. En Streamflix, validar filas vacías y elementos duplicados o reordenados; ya existe una función propia de claves con ocurrencia.
 4. [player_panel.dart](https://github.com/akashdh11/skystream/blob/f5523ae07d729b579be30976df8783a0b98c4559/lib/features/player/presentation/vlc/panel/player_panel.dart): decide pestañas por capacidades, conserva el foco inicial aunque cambien datos en segundo plano, mantiene los controles visibles bajo el panel y trata Back por niveles. Mide los rótulos para ajustar pestañas a idioma y escala. Pruebas propuestas: selección activa fuera de pantalla, cambio tardío de pistas, Back único, textos grandes y regreso al control de origen. Utiliza libVLC: Streamflix usa Media3 y debe validar sus propias capacidades.
 5. [live_window.dart](https://github.com/akashdh11/skystream/blob/f5523ae07d729b579be30976df8783a0b98c4559/lib/features/player/domain/live_window.dart): modela una ventana deslizante para libVLC y limita posiciones a segmentos reproducibles. Los márgenes son específicos de ese motor; no deben trasladarse a Media3 ni presentarse como soporte DVR ya disponible.
-6. [playback_progress.dart](https://github.com/akashdh11/skystream/blob/f5523ae07d729b579be30976df8783a0b98c4559/lib/features/player/domain/playback_progress.dart): identifica muestras por sesión, evita guardar datos de otra reproducción y preserva el progreso existente del episodio siguiente. Streamflix ya conserva una petición asociada al reproductor y limita cuándo guarda progreso; hay que verificar con cambios de fuente, zapeo y reproducción real. Los umbrales del otro proyecto son decisiones de producto, no reglas universales.
+6. [playback_progress.dart](https://github.com/akashdh11/skystream/blob/f5523ae07d729b579be30976df8783a0b98c4559/lib/features/player/domain/playback_progress.dart): identifica muestras por sesión, evita guardar datos de otra reproducción y preserva el progreso existente del episodio siguiente. Streamflix ya conserva una petición asociada al reproductor y limita cuándo guarda progreso; hay que verificar con cambios de fuente y reproducción real. Los umbrales del otro proyecto son decisiones de producto, no reglas universales.
 
 ## Cómo continuar sin confundir inventario con revisión
 

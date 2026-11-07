@@ -1,20 +1,44 @@
 # Lo que falta
 
-Auditoría del estado del proyecto tras el zapeo de canales (§18) y el buscador
-con teclado propio (§19). Todo lo de abajo está **verificado en el código**, no
+Auditoría del estado del proyecto tras el buscador con teclado propio (§19) y
+la retirada del TV en directo (§26). Todo lo de abajo está **verificado en el código**, no
 recordado: cada punto dice dónde mirar. Lo que depende de las webs (selectores,
 dominios caídos) no se puede comprobar desde aquí y queda marcado como tal.
 
 Estado: CI verde (`testDebugUnitTest`, `lintDebug`, `lintRelease`,
 `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`), Node
-**281/281**, Python **108**, 27 archivos de test en JVM.
+**209/209**, Python **83**.
 
+> **Actualización (§24):** CI en verde otra vez. El rojo de `main` no era la
+> app: `PlayerTracksOptionsTest` metía una pista en español y otra en inglés en
+> el mismo `TrackGroup`, Media3 lo reporta con `Log.e` y en la JVM de los tests
+> `android.util.Log` devuelve `null` (`returnDefaultValues`), así que el logger
+> de Media3 lanzaba `NullPointerException` antes de cualquier assert. El test ya
+> usa dos pistas del mismo idioma (se distinguen por `label`) y el diagnóstico
+> del workflow vuelca ahora los XML de JUnit al check-run. También queda hecho
+> `hls_variants` (P2 del servidor), el último punto abierto de esa lista.
+
+> **Actualización (§26):** la app pasa a ser **sólo VOD**. Se retiró todo el
+> contenido de TV en directo —los ocho proveedores de canales/deportes,
+> `_livekit`/`_liveshelf`, `live-catalog.json`, las filas `tv/*`, el zapeo
+> (`CH+`/`CH−`, guía, rótulo), la EPG, las tarjetas de marcador y el chip EN
+> VIVO— con sus pruebas y su documentación. **No** se tocó Android TV como
+> plataforma: leanback, foco D-Pad y `DeviceProfile` siguen igual.
+>
+> Cierre de la retirada, verificado en CI: los dos workflows (`APK build` y
+> `Autonomous app checks`) están en verde con `testDebugUnitTest`,
+> `lintDebug`, `lintRelease`, `assembleDebug`, `assembleRelease` y
+> `assembleDebugAndroidTest`, más `verify-embedded-apk.py` sobre el APK
+> debug y release. El APK publicado lleva 20 módulos Python —los diez
+> proveedores VOD y sus ayudas— y **ninguno** de directo, y ya no empaqueta
+> `live-catalog.json`. En el camino se corrigieron tres restos que sólo
+> aparecían al compilar: `canSeekPlayback` seguía recibiendo `isLive`,
+> `ChaquopyRuntime` abría el asset borrado `live-catalog.json` y
+> `CatalogFeedTest` usaba una variable `live` inexistente.
+>
 > **Actualización (§23):** el buscador de P2 está hecho (acentos, búsqueda en
-> vivo con retardo, historial y el panel derecho con su regla probada) y la
-> **guía por canal** ya funciona con la única fuente de horarios que existe (la
-> agenda deportiva); falta la rejilla de los canales de TV, que ningún proveedor
-> publica. También caen `cuevana.SITE["base"]` y las pruebas de
-> `HomeViewModel.suggestions`.
+> vivo con retardo, historial y el panel derecho con su regla probada). También
+> caen `cuevana.SITE["base"]` y las pruebas de `HomeViewModel.suggestions`.
 
 > **Actualización (§21):** los dos primeros puntos de P1 —subtítulos y pista de
 > audio— ya están implementados, y `loadLiveShelf` ya comparte una sola corrida
@@ -77,33 +101,14 @@ inglesa, el usuario no puede cambiar de pista.
 Falta: exponer `language` en `StreamSource`, y en los controles un selector de
 pista de audio (mismo patrón que el selector de fuentes).
 
-### ✅ (parcial) Guía de programación por canal
-
-> **Hecho lo que se puede sostener con datos reales.** `EpgEntry` viaja dentro de
-> la parrilla (`PlaybackChannel.epg`, por el mismo extra del `Intent`), así que
-> zapear no pide nada: la guía y el rótulo ya saben qué se emite al llegar.
-> `Epg.from()` la llena con lo único que publica horarios hoy —la **agenda
-> deportiva**: un partido es una emisión con hora, competición y estado— y
-> `Epg.line()` la escribe como «AHORA · 19:00 · Liga 1», en la tarjeta de la guía
-> y en el rótulo del cambio de canal. Sin programación no hay línea: la tarjeta
-> se queda como estaba en vez de enseñar un hueco. `EpgTest` (7 casos) incluye
-> el viaje por el `Intent`.
->
-> Lo que **no** hay, y no se inventa: rejilla horaria de los canales de TV.
-> Ninguno de los proveedores del proyecto publica EPG (ni XMLTV ni una API de
-> programas) y desde aquí no se puede verificar un sitio nuevo. Cuando alguno lo
-> publique basta con llenar `epg` en la fila del catálogo: el transporte, el tope
-> (`Epg.MAX_ENTRIES`), el dibujo y las pruebas ya están.
-
 ### ✅ (hecho) El canal actual no se recuerda
 
 > **Implementado.** `PlaybackRestore` guarda en `onSaveInstanceState` la
-> petición **en curso** (con la parrilla y la fuente elegida) y el segundo
-> exacto; `PlayerActivity` restaura primero lo guardado y sólo cae al `Intent`
-> si no hay nada. El reproductor reporta el avance cada 15 s, así que la
-> posición guardada no es la de la última salida limpia. Un directo no guarda
-> posición (pediría un segmento fuera de la ventana del vivo), pero sí el
-> canal. `PlaybackRestoreTest` (5 casos) y `PlayerViewModelTest` (7).
+> petición **en curso** (con la fuente elegida) y el segundo exacto;
+> `PlayerActivity` restaura primero lo guardado y sólo cae al `Intent` si no hay
+> nada. El reproductor reporta el avance cada 15 s, así que la posición guardada
+> no es la de la última salida limpia. `PlaybackRestoreTest` y
+> `PlayerViewModelTest`.
 
 ---
 
@@ -148,9 +153,24 @@ Las cuatro cosas que faltaban, resueltas sin tocar el presupuesto de pantalla
   se comparte entre peticiones simultáneas (`liveShelfInflight`) e
   `invalidateCatalogs()` tira también la estantería. Dos pruebas nuevas en
   `server/test/liveShelf.test.js`.
-- **`hls_variants` sólo prueba `/m3u8/<id>`** (`server/scrapers/_hosters.py:209`
-  reescribe `/play/<id>`): no prueba las variantes `/e/`, `/embed/`, `/v/` que
-  usan varios hosters.
+- ✅ **`hls_variants` sólo probaba `/m3u8/<id>`**: **hecho**. Estaba en
+  `server/scrapers/_hosters.py` reescribiendo `/play/<id>` a una sola ruta. Ahora
+  hay dos funciones, porque no todas las variantes son lo mismo:
+  - `hls_variants()` devuelve los manifiestos —`/m3u8/<id>` y `/hls/<id>`, con
+    y sin prefijo en el id (`/m3u8/e-<id>`)— como señales HLS directas.
+  - `hls_embed_pages()` devuelve las rutas que **siguen siendo una página**
+    (`/e/`, `/embed/`, `/v/`). Ésas entran en la cola de descarga del embed y
+    el video se busca en el HTML: entregarlas como HLS sería darle HTML a
+    ExoPlayer, que es peor que no ofrecer la fuente.
+  El tope `HLS_MAX_EMBED_PAGES = 2` es corto a propósito: el presupuesto de
+  documentos se **comparte** entre todos los servidores del episodio
+  (`Budget(len(servers) * 2)`), así que una variante de más dejaría sin turno a
+  un hoster sano. El embed original va primero en la cola, de modo que si el
+  presupuesto se agota se pierde una variante, nunca el documento bueno.
+  `HlsVariantsTest` y `HlsEmbedQueueTest` (8 casos) cubren el orden de las
+  rutas, los prefijos, la query string, que la URL original no se repita, que
+  ninguna ruta de embed salga como señal, y que un `/play/` caído con un `/e/`
+  vivo siga dando el `.m3u8`.
 - ✅ **TTL para URLs firmadas**: **hecho**. `server/src/lib/signedUrls.js` lee el
   vencimiento que lleva la propia URL (`?e=`, `?expires=`, `token=…~exp=…`) y
   `streamService` recorta el TTL al enlace más corto (con 15 s de margen, tanto
@@ -170,18 +190,95 @@ Las cuatro cosas que faltaban, resueltas sin tocar el presupuesto de pantalla
 
 ---
 
+## Hecho — navegación de TV tomada de Nuvio TV (§27)
+
+Nuvio TV es **GPL-3.0** y este proyecto es **Apache-2.0**: de allí se toman
+ideas, nunca código (ver `docs/inventario-referencias/README.md`). Lo
+implementado, escrito de cero:
+
+- ✅ **Repeticiones del D-Pad frenadas** (`core/DpadRepeatPolicy.kt` +
+  `ui/components/DpadModifiers.kt`). Compuerta de tiempo por eje —80 ms
+  horizontal, 112 ms vertical— en vez de contar repeticiones: el ritmo del
+  sistema cambia según el fabricante y el mando, y un contador daría una
+  velocidad distinta en cada tele. La primera pulsación nunca se toca, para que
+  el mando responda al instante. `DpadRepeatPolicyTest` (5 casos) fija la regla,
+  incluido el ritmo real de un mando que repite cada 50 ms: se aceptan 10 de 21
+  eventos por segundo.
+- ✅ **Deslizamiento con ARRIBA/ABAJO sostenido** (`core/DpadFastScroll.kt`).
+  Velocidad en dp/s —la misma app corre en 1080p y en 4K, y en píxeles la de 4K
+  iría cuatro veces más rápido—, tope por fotograma para que un GC no
+  teletransporte la lista, y delta acumulado para no perder el avance al
+  redondear. `DpadFastScrollTest` (5 casos).
+- ✅ **Marquee del título enfocado** (`ui/components/FocusMarqueeText.kt`). Se
+  desplaza sólo si la tarjeta tiene el foco y el texto no cabe; si no, recorta
+  con puntos suspensivos como antes. Margen de 1 px para que medir y pintar no
+  coincidan y el texto tiemble. `FocusMarqueeTest` (4 casos).
+
+## Hecho — saltar intro, resumen y créditos (§28)
+
+Con las dos bases públicas ya conectadas:
+
+- **TheIntroDB v4** (`api.theintrodb.org/v4/media`): primera opción. Es la más
+  completa, acepta IMDb/TMDB/TVDB y su `duration_ms` permite elegir la versión
+  del estreno (teatral, extendida) cuando el título tiene varias.
+- **IntroDB** (`api.introdb.app/segments`): segunda. Sólo entiende **IMDb**,
+  pero responde para series que la otra no tiene.
+
+Se consulta una y se para en la primera con datos. Preguntar a las dos siempre
+duplicaría el tráfico a servicios gratuitos sin ganar nada.
+
+Detalles que costaron mirar la documentación:
+
+- Son **tres dialectos**: v4 usa listas y milisegundos (`start_ms`/`end_ms`) y
+  llama `credits` al final; v2/v3 igual pero encabezado por `tmdb_id`;
+  IntroDB usa objetos sueltos, segundos (`start_sec`) y llama `outro` al final.
+  `SkipSegmentParser` acepta los tres y distingue por el nombre del campo, que
+  es inconfundible.
+- **`end_ms: null` en créditos significa "hasta el final"**, no "dato roto": se
+  cierra con la duración real del vídeo, y si todavía no se conoce el tramo se
+  descarta en vez de saltar a un sitio inventado.
+- **`preview` se ignora**: es el avance del próximo capítulo, no algo que el
+  usuario quiera saltarse.
+- Un solo botón por tipo (`distinctBy`): TheIntroDB publica a veces varios
+  tramos de créditos y el reproductor no puede ofrecer tres.
+- **El identificador se valida antes de pedir**: `tt` + 7 u 8 dígitos. Un id de
+  proveedor (`gnula:x`) gastaría una petición para recibir un 400.
+- La respuesta vacía **también se cachea**: si no, una serie sin marcas se
+  pediría en cada capítulo y en cada cambio de fuente.
+- **El caché lleva la duración en la clave** (`movie:tt…@7800`). TheIntroDB v4
+  elige las marcas de la versión del estreno que coincide con `duration_ms`: un
+  montaje de 100 minutos y otro de 130 son el mismo IMDb pero los créditos
+  empiezan en sitios distintos. Cachear sólo por título hacía que la segunda
+  versión heredara los tiempos de la primera y el salto cayera a mitad de una
+  escena; lo demostró `dos versiones del mismo titulo no comparten cache`. La
+  duración va truncada a segundos para que una diferencia de milisegundos no
+  duplique peticiones.
+- Nada de esto puede romper la reproducción: el cliente devuelve `null` ante
+  cualquier fallo y el repo nunca lanza.
+
+Pendiente de probar en una TV real: el chip aparece en la esquina inferior
+derecha, exige tramo activo y se oculta con los paneles abiertos. Los tiempos
+son de la comunidad, así que un ripeo distinto puede desplazarlos unos segundos.
+
+Queda **sin hacer a propósito**: skip-intro por capítulos (necesita que el
+contenedor traiga capítulos y una barra de progreso por capítulo que no
+tenemos), la API de IntroDB (dependencia externa nueva) y todo lo de nube,
+debrid, auth y libmpv (otra arquitectura de producto; libmpv además choca con
+el Media3 de esta app).
+
+---
+
 ## P2 — Falta en pruebas
 
 - ✅ **`PlayerViewModel` sin tests**: **hecho**. `PlayerViewModelTest` cubre
-  carga, subtítulos en el mismo estado, «sin fuentes», fallo de red, zapeo con
-  la imagen anterior en pantalla (`tuning`), mismo canal sin repetir petición,
-  deshacer con `restore()` y reintento.
+  carga, subtítulos en el mismo estado, «sin fuentes», fallo de red y reintento
+  con generación nueva.
 - ✅ **`HomeViewModel.suggestions` sin tests**: **hecho**.
   `HomeViewModelSuggestionsTest` (3 casos) comprueba que salen de las filas sin
   pedir nada más, que buscar **no** las borra y que refrescar las rehace.
-- **Nada de UI**: la guía de canales y el teclado del buscador están pensados
-  para el foco del D-Pad y no hay ningún test instrumentado que compruebe el
-  recorrido del foco (`app/src/androidTest` sólo tiene el smoke test del motor y
+- **Nada de UI**: el teclado del buscador y los paneles del reproductor están
+  pensados para el foco del D-Pad y no hay ningún test instrumentado que
+  compruebe el recorrido del foco (`app/src/androidTest` sólo tiene el smoke test del motor y
   el de almacenamiento de perfiles).
 - **No hay emulación de TV en CI**: compila y pasa lint, pero nadie «pulsa» las
   teclas. Lo que se rompa de foco se descubre en el sofá.
@@ -203,12 +300,9 @@ Las cuatro cosas que faltaban, resueltas sin tocar el presupuesto de pantalla
 - ✅ ~~Comentario «opt-in»~~: **hecho**. `embedded_engine.catalogs()` y
   `CatalogRepository` dicen ahora que Cinemeta viene activado de fábrica y se
   puede apagar en Ajustes.
-- ✅ ~~La cola de canales topada en 60~~: **hecho**. `MAX_CHANNEL_QUEUE` son
-  ahora 200 canales y el recorte real lo decide el **tamaño del extra**
-  (`PlaybackQueueCodec.MAX_BYTES` = 64 KB, recortando por la cola para no perder
-  el canal que se está viendo). Antes, una fila de 120 canales se zapeaba por la
-  mitad y el número 60 no protegía de nada si cada canal llevara guía.
-  `PlaybackQueueTest` (dos casos nuevos).
+- ✅ ~~La cola de canales topada en 60~~: **retirado**. La parrilla de canales y
+  su códec (`PlaybackQueueCodec`) se borraron con el TV en directo (§26); el
+  reproductor sólo abre el título que le piden.
 
 ---
 

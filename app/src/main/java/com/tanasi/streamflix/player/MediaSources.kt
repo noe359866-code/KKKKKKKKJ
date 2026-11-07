@@ -78,10 +78,6 @@ object MediaSources {
             source.isHls -> MimeTypes.APPLICATION_M3U8
             source.isDash -> MimeTypes.APPLICATION_MPD
             source.url.substringBefore('?').endsWith(".mp4", true) -> MimeTypes.VIDEO_MP4
-            /* Canales en directo sin extensión (`/live/espn-1`): el 100 % de la
-             * TV en vivo del addon sale por HLS, así que se fuerza el manifiesto
-             * en vez de dejar que ExoPlayer intente abrirlo como progresivo. */
-            source.isLive -> MimeTypes.APPLICATION_M3U8
             else -> null
         }
 
@@ -107,15 +103,14 @@ object MediaSources {
      *
      * La pista en español (si la hay) se marca `DEFAULT`, que es lo que hace
      * que Media3 la seleccione sola en cuanto el vídeo está listo: el usuario
-     * ve la película subtitulada sin tener que entrar al panel de pistas. En
-     * directo no se marca nada (muchas señales ya traen CC quemado).
+     * ve la película subtitulada sin tener que entrar al panel de pistas.
      */
     fun subtitleConfigurations(
         subtitles: List<SubtitleTrack>,
         source: StreamSource,
     ): List<MediaItem.SubtitleConfiguration> {
         if (subtitles.isEmpty()) return emptyList()
-        val preferred = SubtitleTrack.preferredIndex(subtitles, source.isLive)
+        val preferred = SubtitleTrack.preferredIndex(subtitles)
         return subtitles.mapIndexed { index, track ->
             MediaItem.SubtitleConfiguration.Builder(Uri.parse(track.url))
                 .setMimeType(track.mimeType)
@@ -137,26 +132,22 @@ object MediaSources {
      * Reproductor base.
      *
      * - `setWakeMode(WAKE_MODE_NETWORK)`: en Android TV el dispositivo no debe
-     *   suspender la red a mitad de un partido.
+     *   suspender la red a mitad de una película.
      * - `setHandleAudioBecomingNoisy(true)`: pausa al desconectar los auriculares.
      * - `LoadControl` por defecto de Media3: el buffer de fábrica ya aguanta un
      *   cambio de CDN; tocarlo hacia arriba sólo retrasa el primer frame.
-     * - incrementos de salto de ±10 s **sólo en VOD** (en directo el salto al
-     *   borde del vivo lo resuelve HlsMediaSource).
+     * - incrementos de salto de ±10 s (ver `buildPlayer`).
      */
-    fun buildPlayer(context: Context, isLive: Boolean = false): ExoPlayer =
+    fun buildPlayer(context: Context): ExoPlayer =
         ExoPlayer.Builder(context)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .apply {
-                /* En VOD, ±10 s por pulsación del mando: los CDN entregan pocos
+                /* ±10 s por pulsación del mando: los CDN entregan pocos
                  * keyframes y el incremento por defecto (5 s) deja el salto a
-                 * medias entre dos imágenes. En directo se queda el de fábrica,
-                 * que es el que usa "saltar al borde del vivo". */
-                if (!isLive) {
-                    setSeekBackIncrementMs(10_000)
-                    setSeekForwardIncrementMs(10_000)
-                }
+                 * medias entre dos imágenes. */
+                setSeekBackIncrementMs(10_000)
+                setSeekForwardIncrementMs(10_000)
             }
             .build()
 

@@ -10,6 +10,7 @@ import com.tanasi.streamflix.data.local.SearchHistoryStore
 import com.tanasi.streamflix.data.local.WatchProgressStore
 import com.tanasi.streamflix.data.remote.AddonClient
 import com.tanasi.streamflix.data.repo.CatalogRepository
+import com.tanasi.streamflix.data.repo.SkipSegmentsRepository
 import com.tanasi.streamflix.data.repo.StreamsRepository
 import com.tanasi.streamflix.data.stremio.SharedPreferencesAddonStorage
 import com.tanasi.streamflix.data.stremio.StremioAddonClient
@@ -45,6 +46,7 @@ object ServiceLocator {
 
     @Volatile
     private var streamsInstance: StreamsRepository? = null
+    private var skipSegmentsInstance: SkipSegmentsRepository? = null
 
     @Volatile
     private var catalogInstance: CatalogRepository? = null
@@ -104,6 +106,16 @@ object ServiceLocator {
         streamsInstance ?: synchronized(this) {
             streamsInstance ?: StreamsRepository(contentClient(context), settings(context))
                 .also { streamsInstance = it }
+        }
+
+    /**
+     * Marcas de "saltar intro". Vive una vez por proceso porque guarda un caché
+     * en memoria: dos reproductores abiertos no deben preguntar dos veces por
+     * el mismo capítulo a servicios gratuitos.
+     */
+    fun skipSegmentsRepository(): SkipSegmentsRepository =
+        skipSegmentsInstance ?: synchronized(this) {
+            skipSegmentsInstance ?: SkipSegmentsRepository().also { skipSegmentsInstance = it }
         }
 
     /** El mismo repositorio trabaja con ambos motores y los addons de Stremio. */

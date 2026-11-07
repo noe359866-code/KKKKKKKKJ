@@ -67,8 +67,8 @@ class CatalogRepositoryTest {
     private val catalogsFeed = json(
         """
         {"catalogs":[
-          {"type":"tv","id":"live","name":"TV en Vivo","posterShape":"landscape","order":1,"source":"local",
-           "feed":"/catalog/tv/live.json"},
+          {"type":"series","id":"top","name":"Series populares","posterShape":"poster","order":1,
+           "source":"cinemeta","feed":"/catalog/series/top.json"},
           {"type":"movie","id":"top","name":"Películas populares","posterShape":"poster","order":2,
            "source":"cinemeta","feed":"/catalog/movie/top.json"}
         ]}
@@ -90,10 +90,10 @@ class CatalogRepositoryTest {
         serve(
             mapOf(
                 "/catalogs.json" to catalogsFeed,
-                "/catalog/tv/live.json" to json(
+                "/catalog/series/top.json" to json(
                     """
-                    {"metas":[{"id":"tv:futbolibre:espn-1","type":"tv","name":"ESPN 1",
-                     "posterShape":"landscape","releaseInfo":"En directo","genres":["Deportes"]}]}
+                    {"metas":[{"id":"tt0944947","type":"series","name":"Juego de tronos",
+                     "releaseInfo":"2011","genres":["Drama"]}]}
                     """.trimIndent(),
                 ),
                 "/catalog/movie/top.json" to json(
@@ -113,15 +113,14 @@ class CatalogRepositoryTest {
         assertTrue(result is CatalogResult.Ready)
 
         val rows = (result as CatalogResult.Ready).catalog.rows
-        assertEquals(listOf("remote:tv/live", "remote:movie/top"), rows.map { it.id })
-        assertEquals("landscape", rows[0].aspect)
+        assertEquals(listOf("remote:series/top", "remote:movie/top"), rows.map { it.id })
+        assertEquals("poster", rows[0].aspect)
         assertEquals("poster", rows[1].aspect)
+        assertEquals("Juego de tronos", rows[0].items.single().title)
 
         /* Dedup por id y el id de IMDb intacto: es lo que pide /stream. */
-        assertEquals(listOf("tv:futbolibre:espn-1"), rows[0].items.map { it.id })
         assertEquals(listOf("tt0133093", "tt1375666"), rows[1].items.map { it.id })
         assertEquals(listOf(1999, 2010), rows[1].items.map { it.year })
-        assertTrue("la TV en vivo se pinta en 16:9 y con badge", rows[0].items[0].live)
     }
 
     @Test

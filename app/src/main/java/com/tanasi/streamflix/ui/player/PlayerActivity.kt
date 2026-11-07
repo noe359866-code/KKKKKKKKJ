@@ -17,7 +17,6 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tanasi.streamflix.core.DeviceDetector
 import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.core.DpadKeys
-import com.tanasi.streamflix.data.model.PlaybackQueueCodec
 import com.tanasi.streamflix.data.model.PlaybackRestore
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.WatchProgress
@@ -40,9 +39,9 @@ class PlayerActivity : ComponentActivity() {
     /**
      * Petición en curso y segundo en el que va, para [onSaveInstanceState].
      *
-     * El `ViewModel` es la fuente de verdad (zapear cambia de canal sin tocar
-     * el `Intent`); aquí sólo se copia lo último visto para poder reconstruir
-     * la sesión si el sistema mata el proceso.
+     * El `ViewModel` es la fuente de verdad (no basta con el `Intent`); aquí
+     * sólo se copia lo último visto para poder reconstruir la sesión si el
+     * sistema mata el proceso.
      */
     private var latestRequest: PlaybackRequest? = null
     private var latestPositionMs = 0L
@@ -88,8 +87,8 @@ class PlayerActivity : ComponentActivity() {
                 }
                 val playerViewModel: PlayerViewModel = viewModel(factory = factory)
 
-                /* Zapear cambia de canal dentro del `ViewModel`: se sigue aquí
-                 * para guardar el canal correcto, no el del `Intent`. */
+                /* La petición vive en el `ViewModel`: se sigue aquí para
+                 * guardar la sesión correcta y no la del `Intent`. */
                 val currentRequest by playerViewModel.current.collectAsStateWithLifecycle()
                 LaunchedEffect(currentRequest) {
                     if (latestRequest?.id != currentRequest.id || latestRequest?.type != currentRequest.type) {
@@ -105,9 +104,9 @@ class PlayerActivity : ComponentActivity() {
                         if (latestRequest?.id == current.id && latestRequest?.type == current.type) {
                             latestPositionMs = positionMs
                         }
-                        /* Un directo no se "continúa": no hay posición que
-                         * guardar. Sin perfil (lanzado desde fuera) tampoco. */
-                        if (!profileId.isNullOrBlank() && !current.isLive) {
+                        /* Sin perfil (lanzado desde fuera) no hay dónde
+                         * guardar el avance. */
+                        if (!profileId.isNullOrBlank()) {
                             progressStore.save(
                                 profileId,
                                 WatchProgress(
@@ -147,15 +146,10 @@ class PlayerActivity : ComponentActivity() {
             id = id,
             type = getStringExtra(EXTRA_TYPE) ?: "movie",
             title = getStringExtra(EXTRA_TITLE) ?: id,
-            isLive = getBooleanExtra(EXTRA_IS_LIVE, false),
             startIndex = getIntExtra(EXTRA_START_INDEX, 0).coerceAtLeast(0),
             startPositionMs = getLongExtra(EXTRA_START_POSITION, 0L).coerceAtLeast(0L),
             poster = getStringExtra(EXTRA_POSTER),
             backdrop = getStringExtra(EXTRA_BACKDROP),
-            /* La parrilla viaja serializada: el reproductor la usa para `CH+`,
-             * `CH−` y la guía. Si el extra falta o está corrupto, la lista
-             * queda vacía y todo lo demás funciona igual. */
-            queue = PlaybackQueueCodec.decode(getStringExtra(EXTRA_QUEUE)),
         )
     }
 
@@ -163,13 +157,11 @@ class PlayerActivity : ComponentActivity() {
         const val EXTRA_ID = "extra.id"
         const val EXTRA_TYPE = "extra.type"
         const val EXTRA_TITLE = "extra.title"
-        const val EXTRA_IS_LIVE = "extra.isLive"
         const val EXTRA_START_INDEX = "extra.startIndex"
         const val EXTRA_START_POSITION = "extra.startPosition"
         const val EXTRA_PROFILE_ID = "extra.profileId"
         const val EXTRA_POSTER = "extra.poster"
         const val EXTRA_BACKDROP = "extra.backdrop"
-        const val EXTRA_QUEUE = "extra.queue"
 
         /** Estado de sesión (no es un extra del `Intent`). */
         private const val STATE_PLAYBACK = "state.playback"

@@ -41,10 +41,9 @@ const { loadProviders, getProvidersFor } = await import('../src/providers/index.
 const { parseMediaId } = await import('../src/lib/ids.js');
 
 const context = {
-  type: 'tv',
-  id: 'tv:runner-test',
-  parsed: parseMediaId('tv:runner-test'),
-  isLive: true,
+  type: 'movie',
+  id: 'tt0133093',
+  parsed: parseMediaId('tt0133093'),
 };
 
 before(async () => {
@@ -52,7 +51,7 @@ before(async () => {
 });
 
 test('pool returns results in priority order', async () => {
-  const providers = getProvidersFor(true); // demo-live (10), demo-fallback (30)
+  const providers = getProvidersFor(); // demo-vod (20), demo-fallback (30)
   const started = Date.now();
 
   const { results, timedOut } = await runProviderPool(providers, context, {

@@ -35,7 +35,7 @@ export function buildManifest(baseUrl = '') {
     {
       /* Catalog resource: this is what makes the addon show a browsable Home
        * in Stremio (and what our Android client reads). No idPrefixes either,
-       * because live channels use ids like "tv:futbolibre:espn-1" that do not
+       * because republished rows use ids like "streaming_nfx" that do not
        * start with "tt"; declaring a prefix would hide those catalogs. */
       name: 'catalog',
       types,
@@ -125,7 +125,6 @@ export function buildStream({
   notWebReady = false,
   quality,
   provider,
-  isLive = false,
 }) {
   if (!url || typeof url !== 'string') return null;
 
@@ -143,7 +142,6 @@ export function buildStream({
   };
 
   if (notWebReady) hints.notWebReady = true;
-  if (isLive) hints.isLive = true;
 
   const stream = {
     name: name || config.addon.name,

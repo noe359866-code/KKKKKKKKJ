@@ -1,12 +1,12 @@
 package com.tanasi.streamflix.player
 
-/** No confundir una duración aún desconocida con un directo ni permitir saltos sin escala. */
-internal fun canSeekPlayback(isLive: Boolean, isSeekable: Boolean, durationMs: Long, tuning: Boolean): Boolean =
-    !isLive && isSeekable && durationMs > 0L && !tuning
+/** No confundir una duración aún desconocida con contenido no saltable. */
+internal fun canSeekPlayback(isSeekable: Boolean, durationMs: Long): Boolean =
+    isSeekable && durationMs > 0L
 
 /** Una muestra durante un cambio de fuente puede contener posición y duración transitorias. */
-internal fun canSavePlaybackSnapshot(isLive: Boolean, isReady: Boolean, durationMs: Long): Boolean =
-    !isLive && isReady && durationMs > 0L
+internal fun canSavePlaybackSnapshot(isReady: Boolean, durationMs: Long): Boolean =
+    isReady && durationMs > 0L
 
 /** Mantiene la selección de foco por pista, no sólo por posición de grupo. */
 internal fun sameTrack(a: TrackOption, b: TrackOption): Boolean =
@@ -25,8 +25,8 @@ internal class PlaybackSnapshotCache {
     var latest: PlaybackSnapshot? = null
         private set
 
-    fun observe(isLive: Boolean, isReady: Boolean, positionMs: Long, durationMs: Long) {
-        if (canSavePlaybackSnapshot(isLive, isReady, durationMs)) {
+    fun observe(isReady: Boolean, positionMs: Long, durationMs: Long) {
+        if (canSavePlaybackSnapshot(isReady, durationMs)) {
             latest = PlaybackSnapshot(positionMs.coerceIn(0L, durationMs), durationMs)
         }
     }

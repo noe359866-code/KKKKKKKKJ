@@ -30,9 +30,9 @@ class AutonomousContentTest {
         override var metadataCatalogs: Boolean = false,
     ) : AddonSettings
 
-    private val feed = """{"catalogs":[{"type":"tv","id":"bundled_live","name":"Canales","posterShape":"landscape","source":"embedded"}]}"""
-    private val cards = """{"metas":[{"id":"tv:futbolibre:fixture","type":"tv","name":"Canal de prueba"}]}"""
-    private val sources = """{"streams":[{"url":"https://fixture.invalid/live.m3u8","name":"Señal","provider":"Fixture","isLive":true,
+    private val feed = """{"catalogs":[{"type":"movie","id":"top","name":"Películas","posterShape":"poster","source":"cinemeta"}]}"""
+    private val cards = """{"metas":[{"id":"tt0133093","type":"movie","name":"Matrix"}]}"""
+    private val sources = """{"streams":[{"url":"https://fixture.invalid/v/pelicula","name":"Señal","provider":"Fixture",
         "behaviorHints":{"requestHeaders":{"Referer":"https://embed.invalid/","Origin":"https://origin.invalid","Cookie":"fixture=1","User-Agent":"FixtureUA"}}}],"cacheMaxAge":60}"""
 
     private fun fixture(calls: MutableList<String>) = EmbeddedContentClient(EmbeddedRuntime { operation, _ ->
@@ -55,11 +55,10 @@ class AutonomousContentTest {
         val catalogue = CatalogRepository(client, options).load()
         assertTrue(catalogue is CatalogResult.Ready)
         val card = (catalogue as CatalogResult.Ready).catalog.rows.single().items.single()
-        assertEquals("Canal de prueba", card.title)
+        assertEquals("Matrix", card.title)
         val result = StreamsRepository(client, options).streamsFor(card.type, card.id)
         assertTrue(result is StreamsResult.Ready)
         val source = (result as StreamsResult.Ready).sources.single()
-        assertTrue(source.isLive)
         assertEquals("https://embed.invalid/", source.referer)
         assertEquals("fixture=1", source.requestHeaders["Cookie"])
         assertEquals("https://origin.invalid", source.requestHeaders["Origin"])
@@ -72,10 +71,10 @@ class AutonomousContentTest {
         val remoteCalls = mutableListOf<String>()
         val options = Options(baseUrl = "https://optional.invalid")
         val client = RoutingContentClient(options, fixture(embeddedCalls), fixture(remoteCalls))
-        client.streams(options.baseUrl, "tv", "fixture")
+        client.streams(options.baseUrl, "movie", "fixture")
         assertTrue(remoteCalls.isEmpty())
         options.autonomous = false
-        client.streams(options.baseUrl, "tv", "fixture")
+        client.streams(options.baseUrl, "movie", "fixture")
         assertEquals(listOf("streams"), embeddedCalls)
         assertEquals(listOf("streams"), remoteCalls)
     }
@@ -112,36 +111,6 @@ class AutonomousContentTest {
         assertTrue(repository.load() is CatalogResult.Ready)
         assertEquals(listOf("catalogs", "catalog"), localCalls)
         assertEquals(listOf("catalogs", "catalog"), remoteCalls)
-    }
-
-    @Test
-    fun `los canales guardados se publican antes de esperar a los proveedores de Internet`() = runBlocking {
-        val firstShelf = CompletableDeferred<Unit>()
-        val allowNetwork = CompletableDeferred<Unit>()
-        val client = EmbeddedContentClient(EmbeddedRuntime { operation, payload ->
-            when (operation) {
-                "catalogs" -> """{"catalogs":[
-                    {"type":"tv","id":"bundled_live","name":"Canales"},
-                    {"type":"movie","id":"gnula","name":"Películas"}]}"""
-                "catalog" -> {
-                    if (Json.parseToJsonElement(payload).jsonObject["id"]?.jsonPrimitive?.content == "gnula") {
-                        allowNetwork.await()
-                        """{"metas":[{"id":"gnula:fixture","type":"movie","name":"Fixture"}]}"""
-                    } else cards
-                }
-                else -> error("Unexpected operation")
-            }
-        })
-        val job = async {
-            CatalogRepository(client, Options()).load(onPartial = { catalog ->
-                if (catalog.rows.size == 1 && !firstShelf.isCompleted) firstShelf.complete(Unit)
-            })
-        }
-        firstShelf.await()
-        assertFalse("La consulta remota todavía está pendiente", job.isCompleted)
-        allowNetwork.complete(Unit)
-        val result = job.await() as CatalogResult.Ready
-        assertEquals(2, result.catalog.rows.size)
     }
 
     @Test

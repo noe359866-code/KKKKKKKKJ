@@ -7,8 +7,8 @@ import org.junit.Test
 
 /**
  * Las recomendaciones del buscador salen de las filas de Cinemeta ya cargadas.
- * Si la selección se equivoca, el buscador recomienda canales o filas de un
- * addon de terceros con la etiqueta de Cinemeta.
+ * Si la selección se equivoca, el buscador recomienda filas de un addon de
+ * terceros con la etiqueta de Cinemeta.
  */
 class CinemetaSuggestionsTest {
 
@@ -17,7 +17,6 @@ class CinemetaSuggestionsTest {
         val rows = listOf(
             row("remote:movie/top", "Películas populares", source = "cinemeta", items = listOf(entry("tt1", "Uno"))),
             row("remote:movie/streaming_nfx", "Netflix", source = "remote", items = listOf(entry("tt2", "Dos"))),
-            row("remote:tv/canales", "Canales", source = "live", items = listOf(entry("tv:x:1", "Canal", live = true))),
         )
 
         assertEquals(listOf("tt1"), CinemetaSuggestions.from(rows).map { it.id })
@@ -35,7 +34,7 @@ class CinemetaSuggestionsTest {
     }
 
     @Test
-    fun `no se recomiendan canales ni titulos sin caratula`() {
+    fun `no se recomiendan titulos sin caratula`() {
         val rows = listOf(
             row(
                 "remote:movie/top",
@@ -44,7 +43,6 @@ class CinemetaSuggestionsTest {
                 items = listOf(
                     entry("tt1", "Con poster"),
                     entry("tt2", "Sin poster", poster = null),
-                    entry("tv:x:1", "Canal", live = true),
                 ),
             ),
         )
@@ -84,6 +82,6 @@ class CinemetaSuggestionsTest {
         items: List<MediaEntry> = emptyList(),
     ) = CatalogRow(id = id, title = title, items = items, source = source)
 
-    private fun entry(id: String, title: String, poster: String? = "https://cdn/$id.jpg", live: Boolean = false) =
-        MediaEntry(id = id, type = "movie", title = title, poster = poster, live = live)
+    private fun entry(id: String, title: String, poster: String? = "https://cdn/$id.jpg") =
+        MediaEntry(id = id, type = "movie", title = title, poster = poster)
 }

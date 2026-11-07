@@ -20,7 +20,6 @@ sys.path[:0] = [str(ROOT / "app/src/main/python"), str(ROOT / "server/scrapers")
 import _animekit
 import _hosters
 import _htmlkit
-import _livekit
 import _peliskit
 from _htmlkit import Deadline, guess_quality, is_media_url
 
@@ -253,6 +252,113 @@ class ResolveAllTest(unittest.TestCase):
             )
         self.assertEqual(meta["resolved_hosts"], ["Streamwish"])
         self.assertEqual(meta["unresolved"], ["HQQ"])
+
+
+class HlsVariantsTest(unittest.TestCase):
+    """El mismo id de `/play/<id>` en las rutas que usan los hosters."""
+
+    def test_manifest_routes_are_offered_first(self):
+        # Orden: el id tal cual (caso normal) y después cada variante con
+        # prefijo; dentro de cada bloque `/m3u8/` va antes que `/hls/`.
+        variants = _hosters.hls_variants("https://h.example/play/abc123")
+        self.assertEqual(
+            variants,
+            [
+                "https://h.example/m3u8/abc123",
+                "https://h.example/hls/abc123",
+                "https://h.example/m3u8/e-abc123",
+                "https://h.example/hls/e-abc123",
+                "https://h.example/m3u8/embed-abc123",
+                "https://h.example/hls/embed-abc123",
+                "https://h.example/m3u8/v-abc123",
+                "https://h.example/hls/v-abc123",
+            ],
+        )
+        self.assertEqual(variants[0], "https://h.example/m3u8/abc123")
+
+    def test_embed_pages_are_not_pretended_to_be_manifests(self):
+        # `/e/`, `/embed/` y `/v/` devuelven HTML: nunca deben salir como HLS.
+        for variant in _hosters.hls_embed_pages("https://h.example/play/abc123"):
+            path = urllib.parse.urlparse(variant).path
+            self.assertTrue(
+                path.startswith(("/e/", "/embed/", "/v/")), f"ruta inesperada: {path}"
+            )
+        manifests = _hosters.hls_variants("https://h.example/play/abc123")
+        self.assertFalse([m for m in manifests if "/e/" in m or "/embed/" in m or "/v/" in m])
+
+    def test_page_routes_cover_the_same_id_with_and_without_prefix(self):
+        pages = _hosters.hls_embed_pages("https://h.example/play/abc123")
+        self.assertIn("https://h.example/e/abc123", pages)
+        self.assertIn("https://h.example/embed/embed-abc123", pages)
+        self.assertIn("https://h.example/v/v-abc123", pages)
+
+    def test_the_original_url_is_never_repeated(self):
+        url = "https://h.example/play/abc123"
+        self.assertNotIn(url, _hosters.hls_variants(url))
+        self.assertNotIn(url, _hosters.hls_embed_pages(url))
+
+    def test_query_string_and_scheme_survive_the_rewrite(self):
+        variants = _hosters.hls_variants("http://h.example/play/abc123?token=x&e=9")
+        self.assertIn("http://h.example/m3u8/abc123?token=x&e=9", variants)
+
+    def test_urls_that_are_not_play_pages_produce_nothing(self):
+        for url in (
+            "https://h.example/e/abc123",
+            "https://h.example/m3u8/abc123",
+            "https://h.example/watch/abc123",
+            "https://h.example/play/abc123/extra",
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(_hosters.hls_variants(url), [])
+                self.assertEqual(_hosters.hls_embed_pages(url), [])
+
+
+class HlsEmbedQueueTest(unittest.TestCase):
+    """Las rutas de embed entran en la cola de descarga, no como señales."""
+
+    def test_embed_pages_are_downloaded_and_html_never_becomes_a_stream(self):
+        url = "https://h.example/play/abc123"
+        fetched = []
+
+        def fake_get(target, headers, timeout):
+            fetched.append(target)
+            # El embed original está roto; las rutas de embed del mismo id sí
+            # sirven el reproductor.
+            if "/play/" in target:
+                raise urllib.error.HTTPError(target, 404, "Not Found", {}, io.BytesIO(b""))
+            return (
+                '<script>sources: [{file: "https://cdn.example/hls/master.m3u8"}]</script>',
+                target,
+                "text/html",
+            )
+
+        with patch.object(_hosters, "http_get", side_effect=fake_get):
+            signals, _meta = _hosters.resolve(url, {}, Deadline(5000), max_docs=6)
+
+        # La página de embed se pidió de verdad.
+        self.assertIn("https://h.example/e/abc123", fetched)
+        self.assertIn("https://h.example/embed/abc123", fetched)
+
+        urls = [signal["url"] for signal in signals]
+        self.assertIn("https://cdn.example/hls/master.m3u8", urls)
+        # Ni las rutas de embed ni sus 404 acaban ofrecidas como reproductor.
+        for signal in signals:
+            path = urllib.parse.urlparse(signal["url"]).path
+            self.assertFalse(
+                path.startswith(("/e/", "/embed/", "/v/")), f"señal HTML: {signal['url']}"
+            )
+
+    def test_a_dead_play_page_still_leaves_its_variants(self):
+        url = "https://h.example/play/abc123"
+
+        def fake_get(target, headers, timeout):
+            raise urllib.error.HTTPError(target, 404, "Not Found", {}, io.BytesIO(b""))
+
+        with patch.object(_hosters, "http_get", side_effect=fake_get):
+            signals, _meta = _hosters.resolve(url, {}, Deadline(5000), max_docs=6)
+        urls = [signal["url"] for signal in signals]
+        self.assertIn("https://h.example/m3u8/abc123", urls)
+        self.assertIn("https://h.example/hls/abc123", urls)
 
 
 class ResolveSignalsTest(unittest.TestCase):
@@ -763,120 +869,6 @@ class SoftNotFoundTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Kit de directo: lo que comparten livelive24 / damitv / ntv / streamcorner
 # ---------------------------------------------------------------------------
-
-
-class LiveKitTests(unittest.TestCase):
-    """El kit sólo publica señales reales, nunca la web del proveedor."""
-
-    def test_decodes_the_manifest_hidden_in_a_player_query(self):
-        url = _livekit.decode_embedded_url(
-            "/player/jw/?url=%2Fc%2F346.m3u8&name=Willow%20Cricket", "https://damitv.st"
-        )
-        self.assertEqual(url, "https://damitv.st/c/346.m3u8")
-        # Sin pista de manifiesto no se inventa nada.
-        self.assertEqual(_livekit.decode_embedded_url("/embed/?id=abc", "https://damitv.st"), "")
-
-    def test_media_candidates_cover_data_attributes_js_and_typed_sources(self):
-        html = (
-            '<div data-src="/hls/a.m3u8"></div>'
-            '<script>var p={file:"https:\\/\\/cdn.example\\/v\\/b.m3u8"};</script>'
-            '<video><source src="https://cdn.example/c.m3u8" type="application/x-mpegURL"></video>'
-        )
-        found = _livekit.media_candidates(html, "https://site.example/watch/1")
-        self.assertIn("https://site.example/hls/a.m3u8", found)
-        self.assertIn("https://cdn.example/v/b.m3u8", found)
-        self.assertIn("https://cdn.example/c.m3u8", found)
-        self.assertTrue(all(item.endswith(".m3u8") for item in found))
-
-    def test_anchor_entries_skip_source_labels_and_other_site_links(self):
-        html = (
-            '<a href="/watch/espn"><span class="src">Football24</span> ESPN</a>'
-            '<a href="https://otro.example/watch/x">Ajeno</a>'
-            '<a href="/contacto">Contacto</a>'
-        )
-        entries = _livekit.anchor_entries(html, "https://livelive24.com/", hints=("/watch/",))
-        names = [entry["name"] for entry in entries]
-        # La etiqueta de origen desaparece; los enlaces de navegación no entran.
-        self.assertEqual(names, ["ESPN", "Ajeno"])
-        self.assertNotIn("Contacto", names)
-        self.assertEqual(entries[0]["id"], "watch/espn")
-
-    def test_build_live_streams_marks_hls_and_deduplicates(self):
-        media = [
-            {"url": "https://cdn.example/live/index.m3u8", "referer": "https://site.example/", "source": "Sky"},
-            {"url": "https://cdn.example/live/index.m3u8", "referer": "https://site.example/", "source": "dup"},
-            {"url": "https://cdn.example/live/backup.m3u8", "hd": 1, "source": "Backup"},
-        ]
-        streams = _livekit.build_live_streams("NTV", "NFL Network", media, "UA/1.0")
-        self.assertEqual(len(streams), 2)
-        first = streams[0]
-        self.assertEqual(first["isLive"], True)
-        self.assertEqual(first["behaviorHints"]["mediaType"], "hls")
-        self.assertEqual(first["referer"], "https://site.example/")
-        self.assertEqual(first["userAgent"], "UA/1.0")
-        self.assertIn("NFL Network", first["title"])
-        self.assertIn("Sky", first["title"])
-        self.assertEqual(streams[1]["quality"], "720p")
-
-    def test_env_bases_never_falls_back_to_the_real_site(self):
-        with patch.dict("os.environ", {"XX_BASE": "http://127.0.0.1:1", "XX_MIRRORS": "http://127.0.0.1:2"}):
-            self.assertEqual(
-                _livekit.env_bases("https://real.example", "XX_BASE", "XX_MIRRORS"),
-                ["http://127.0.0.1:1", "http://127.0.0.1:2"],
-            )
-        with patch.dict("os.environ", {"XX_BASE": "", "XX_MIRRORS": ""}):
-            self.assertEqual(
-                _livekit.env_bases("https://real.example", "XX_BASE", "XX_MIRRORS"),
-                ["https://real.example"],
-            )
-
-    def test_strip_live_prefix_keeps_channels_that_start_with_live(self):
-        self.assertEqual(_livekit.strip_live_prefix("LiveNFL Network"), "NFL Network")
-        self.assertEqual(_livekit.strip_live_prefix("Live NBA TV"), "NBA TV")
-        self.assertEqual(_livekit.strip_live_prefix("Liverpool TV"), "Liverpool TV")
-
-    def test_page_title_drops_the_site_suffix(self):
-        self.assertEqual(
-            _livekit.page_title("<title>NFL Network - Watch Live Stream | NTVSTREAM</title>"),
-            "NFL Network",
-        )
-        self.assertEqual(_livekit.page_title("<title>NFL NETWORK - StreamCorner</title>", "StreamCorner"),
-                         "NFL NETWORK")
-        self.assertEqual(_livekit.page_title("<title>ESPN 2 en vivo | Live24</title>"), "ESPN 2")
-
-    def test_harvest_follows_the_player_iframe_and_stops_at_the_first_signal(self):
-        class Opener(RouteOpener):
-            def __init__(self):
-                super().__init__({
-                    "https://site.example/watch/1": FakeResponse(
-                        '<html><head><title>Canal Uno - Watch Live</title></head><body>'
-                        '<iframe src="/player.php?id=7"></iframe>'
-                        '<a href="/watch/2">otro canal</a></body></html>',
-                        "https://site.example/watch/1",
-                    ),
-                    "https://site.example/player.php?id=7": FakeResponse(
-                        '<html><body><script>var s={file:"https:\\/\\/cdn.example\\/uno\\/a.m3u8"};'
-                        "</script></body></html>",
-                        "https://site.example/player.php?id=7",
-                    ),
-                })
-
-        opener = Opener()
-        _htmlkit.install_url_opener(opener)
-        try:
-            media, meta = _livekit.harvest(
-                "https://site.example/watch/1",
-                {"User-Agent": "UA/1.0", "Referer": "https://site.example/"},
-                Deadline(8000),
-            )
-        finally:
-            _htmlkit.install_url_opener(None)
-
-        self.assertEqual([item["url"] for item in media],
-                         ["https://cdn.example/uno/a.m3u8"])
-        self.assertEqual(meta["title"], "Canal Uno")
-        # La ficha dice "otro canal": es navegación, no un reproductor.
-        self.assertNotIn("/watch/2", opener.requests)
 
 
 # ---------------------------------------------------------------------------
