@@ -43,7 +43,6 @@ class ChaquopyRuntime(context: Context) : EmbeddedRuntime {
             engine.callAttr(
                 "configure", cache.absolutePath,
                 app.assets.open("providers.json").bufferedReader().use { it.readText() },
-                app.assets.open("live-catalog.json").bufferedReader().use { it.readText() },
                 ScraperHttpTransport(),
             )
         }

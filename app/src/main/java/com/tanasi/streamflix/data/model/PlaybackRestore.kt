@@ -10,7 +10,7 @@ import kotlinx.serialization.json.Json
  * En una TV box Android el `Activity` del reproductor se recrea con el `Intent`
  * original cuando el sistema mata el proceso por memoria: sin esto, el usuario
  * que llevaba 40 minutos de película volvía al segundo 0 (o al punto donde
- * abrió la ficha), y el que había zapeado a otro canal volvía al primero.
+ * abrió la ficha).
  *
  * Se guarda en `onSaveInstanceState`, así que:
  *  - sobrevive a la muerte del proceso (el `Bundle` lo conserva el sistema);
@@ -32,15 +32,9 @@ object PlaybackRestore {
         encodeDefaults = true
     }
 
-    /**
-     * Serializa la petición **con la posición actual**.
-     *
-     * Un directo no se "continúa": guardar su segundo haría que al volver se
-     * pidiera un segmento del pasado —o uno que ya no está en la ventana del
-     * vivo— y la señal tardaría en arrancar. El canal sí se recuerda.
-     */
+    /** Serializa la petición **con la posición actual**. */
     fun encode(request: PlaybackRequest, positionMs: Long): String {
-        val safePosition = if (request.isLive) 0L else positionMs.coerceAtLeast(0L)
+        val safePosition = positionMs.coerceAtLeast(0L)
         return runCatching {
             json.encodeToString(Dto.serializer(), Dto(request.copy(startPositionMs = safePosition), safePosition))
         }.getOrDefault("")
@@ -52,7 +46,7 @@ object PlaybackRestore {
         return runCatching {
             val dto = json.decodeFromString(Dto.serializer(), text)
             if (dto.request.id.isBlank()) return@runCatching null
-            val position = if (dto.request.isLive) 0L else dto.positionMs.coerceAtLeast(0L)
+            val position = dto.positionMs.coerceAtLeast(0L)
             Snapshot(dto.request.copy(startPositionMs = position), position)
         }.getOrNull()
     }

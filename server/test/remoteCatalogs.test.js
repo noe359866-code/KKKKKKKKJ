@@ -147,14 +147,6 @@ await writeFile(
     {
       catalogs: [
         {
-          type: 'tv',
-          id: 'live',
-          name: 'TV en Vivo',
-          posterShape: 'landscape',
-          order: 1,
-          source: { kind: 'local' },
-        },
-        {
           type: 'movie',
           id: 'top',
           name: 'Películas populares',
@@ -272,7 +264,6 @@ test('expandManifest filtra por only/types y conserva los extras declarados', ()
 test('las filas del addon remoto se publican con su origen y su capacidad', () => {
   const ids = getCatalogs().map((catalog) => `${catalog.type}/${catalog.id}`);
   assert.deepEqual(ids, [
-    'tv/live',
     'movie/top',
     'movie/streaming_nfx',
     'series/streaming_nfx',
@@ -315,7 +306,8 @@ test('un segundo loadCatalogs reutiliza la caché y no vuelve a pedir el manifes
   await loadCatalogs();
   const afterCount = upstreamRequests.filter((url) => url === '/manifest.json').length;
   assert.equal(afterCount, beforeCount, 'el manifest está fresco: no se repite la petición');
-  assert.ok(getCatalogs().length >= 6);
+  /* 1 catálogo propio + 4 filas del addon remoto. */
+  assert.ok(getCatalogs().length >= 5);
 });
 
 /* -------------------------------------------------------------------------- */

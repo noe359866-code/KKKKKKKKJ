@@ -117,18 +117,12 @@ fun LandscapeCard(
         widthDp = deviceProfile.landscapeWidthDp,
         aspectRatio = 16f / 9f,
     ) {
-        /* Un canal en vivo casi siempre publica un logotipo cuadrado: se
-         * ajusta (Fit) en vez de recortarlo, para que se lea la marca. Un
-         * backdrop real 16:9 sí se recorta a sangre. */
-        val logoOnly = entry.backdrop.isNullOrBlank()
-        val fitLogo = entry.isLive && logoOnly
+        /* Un backdrop real 16:9 se recorta a sangre. */
         BackdropImage(
             url = entry.backdrop ?: entry.poster,
             entry = entry,
-            contentScale = if (fitLogo) ContentScale.Fit else ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(if (fitLogo) 24.dp else 0.dp),
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
         )
     }
 }

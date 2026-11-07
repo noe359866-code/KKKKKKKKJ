@@ -74,7 +74,6 @@ async function handleStream(req, res) {
     type,
     id,
     streams: result.streams.length,
-    live: result.isLive,
     cached: result.cached,
     stale: result.stale,
     coalesced: result.coalesced,

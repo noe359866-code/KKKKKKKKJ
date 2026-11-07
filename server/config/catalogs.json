@@ -1,51 +1,6 @@
 {
-  "$comment": "Catálogos que publica este addon en /manifest.json. 'type' e 'id' son los del protocolo Stremio: GET /catalog/<type>/<id>.json. 'source' dice de dónde salen las metas: cinemeta (addon oficial de metadatos), local (config/live-catalog.json), live (canales y agenda que recoge scrapers/_liveshelf.py de los proveedores de directo; 'section' elige 'channels' o 'events') o remote (un addon de terceros declarado en 'addons'). 'posterShape' controla si el cliente pinta tarjetas 2:3 (poster) o 16:9 (landscape). Los scrapers de VOD de server/scrapers/ NO publican filas: sólo resuelven /stream/movie|series|anime/<id>.json a partir del título.",
+  "$comment": "Catálogos que publica este addon en /manifest.json. 'type' e 'id' son los del protocolo Stremio: GET /catalog/<type>/<id>.json. 'source' dice de dónde salen las metas: cinemeta (addon oficial de metadatos) o remote (un addon de terceros declarado en 'addons'). 'posterShape' controla si el cliente pinta tarjetas 2:3 (poster) o 16:9 (landscape). Los scrapers de VOD de server/scrapers/ NO publican filas: sólo resuelven /stream/movie|series|anime/<id>.json a partir del título.",
   "catalogs": [
-    {
-      "type": "tv",
-      "id": "live",
-      "name": "TV en Vivo y Deportes",
-      "posterShape": "landscape",
-      "order": 1,
-      "genres": [
-        "Deportes",
-        "Canales",
-        "Eventos"
-      ],
-      "source": {
-        "kind": "local"
-      }
-    },
-    {
-      "type": "tv",
-      "id": "canales",
-      "name": "TV en vivo · Canales",
-      "posterShape": "landscape",
-      "order": 2,
-      "genres": [
-        "Deportes",
-        "Canales"
-      ],
-      "source": {
-        "kind": "live",
-        "section": "channels"
-      }
-    },
-    {
-      "type": "tv",
-      "id": "agenda",
-      "name": "Agenda deportiva",
-      "posterShape": "landscape",
-      "order": 3,
-      "genres": [
-        "Deportes",
-        "Eventos"
-      ],
-      "source": {
-        "kind": "live",
-        "section": "events"
-      }
-    },
     {
       "type": "movie",
       "id": "top",

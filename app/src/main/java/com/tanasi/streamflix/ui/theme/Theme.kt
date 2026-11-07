@@ -25,7 +25,7 @@ import com.tanasi.streamflix.core.LocalDeviceProfile
  *     botones: el primario es una cápsula blanca con texto negro y el resto es
  *     vidrio translúcido. El color queda para el arte, no para la interfaz.
  *  3. **Un solo rojo, sólo para "en directo".** Si el rojo también fuese el
- *     foco o el acento, una fila de deportes sería ilegible.
+ *     foco o el acento, una fila de tarjetas sería ilegible.
  *  4. **Grises neutros** (`#8E8E93`), sin tinte, como los del sistema de Apple.
  */
 object StreamflixColors {
@@ -47,13 +47,12 @@ object StreamflixColors {
     val OnSurfaceMuted = Color(0xFFAAAAAF)
 
     /** Foco del D-Pad: anillo blanco fino, como el de tvOS. */
+    /** Rojo de peligro (borrar perfil, error). No es el rojo de un directo. */
+    val Live = Color(0xFFFF453A)
     val FocusRing = Color(0xFFFFFFFF)
 
     /** Alias histórico (el neón anterior). Hoy es el mismo blanco del foco. */
     val Neon = Color(0xFFFFFFFF)
-
-    /** Rojo de emisión (insignia EN VIVO, punto de directo). */
-    val Live = Color(0xFFFF453A)
 
     /** Fondo de tarjeta mientras carga el póster. */
     val PosterPlaceholder = Color(0xFF1C1C1E)

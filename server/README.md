@@ -15,7 +15,7 @@ Incluye:
 - `GET /manifest.json` con los tipos `movie`, `series`, `anime` y `tv`.
 - `GET /stream/:type/:id.json` que devuelve `{ streams: [...] }` ordenado por
   prioridad de proveedor (failover 1 → 2 → 3 para ExoPlayer).
-- **Caché TTL en memoria** (2 h para live/deportes, 6 h para VOD) con
+- **Caché TTL en memoria** (VOD: `CACHE_TTL_VOD_HOURS`, 2–6 h) con
   `stale-while-revalidate`, *single-flight* y caché negativa.
 - **Puente Node → Python** (`child_process.spawn`) para ejecutar los scrapers
   sólo cuando hay *cache miss*.
@@ -77,9 +77,6 @@ server/
 │   ├── _htmlkit.py              # kit común: deadline, unpack JS, media_urls
 │   ├── example_provider.py      # demo con streams públicos de prueba
 │   ├── template_provider.py     # plantilla para un sitio real
-│   ├── tvenvivo.py              # proveedor real: tvenvivo.org (live)
-│   ├── deportelibre.py          # proveedor real: deportelibre.top (live)
-│   ├── futbolibre.py            # proveedor real: futbolibre.live (live)
 │   ├── _hosters.py              # resolutor de servidores de video (Streamwish, VOE…)
 │   ├── _animekit.py             # ids/literales JS/base64 comunes a los de anime
 │   ├── animeflv.py              # proveedor real: animeflv.net (vod)
@@ -94,7 +91,7 @@ server/
 │   ├── peliculasflix.py         # proveedor real: peliculasflix.co (vod, GraphQL)
 │   └── pelisjuanita.py          # proveedor real: pelisjuanita.org (vod)
 ├── scripts/
-│   ├── cache-stats.js           # métricas de caché en vivo
+│   ├── cache-stats.js           # métricas de la caché
 │   └── bridge-demo.js           # probar un scraper sin HTTP
 ├── src/
 │   ├── server.js                # bootstrap + graceful shutdown
@@ -139,7 +136,7 @@ npm run preview           # HOST=0.0.0.0 PORT=8899 node src/server.js
 Instalar en Stremio / la app: usa como URL del addon
 `http://<IP-de-tu-servidor>:7000/manifest.json`
 (o `stremio://<host>:7000/manifest.json`). Desde la propia landing (`/`) puedes
-copiar la URL y ver el estado de la caché en vivo.
+copiar la URL y ver el estado de la caché.
 
 ---
 
@@ -147,8 +144,8 @@ copiar la URL y ver el estado de la caché en vivo.
 
 | Método | Ruta | Descripción |
 | --- | --- | --- |
-| `GET` | `/manifest.json` | Manifiesto del addon (`movie`, `series`, `anime`, `tv`) con sus catálogos. |
-| `GET` | `/catalog/:type/:id.json` | Catálogo Stremio (Cinemeta + TV en vivo local). Admite `search=`, `genre=`, `skip=`. |
+| `GET` | `/manifest.json` | Manifiesto del addon (`movie`, `series`, `anime`) con sus catálogos. |
+| `GET` | `/catalog/:type/:id.json` | Catálogo Stremio (Cinemeta + addons de terceros). Admite `search=`, `genre=`, `skip=`. |
 | `GET` | `/meta/:type/:id.json` | Ficha enriquecida; en series incluye los episodios. |
 | `GET` | `/catalogs.json` | Qué filas publica el addon (extensión propia para la app Android). |
 | `GET` | `/stream/:type/:id.json` | Fuentes de video ordenadas por prioridad, con `subtitles[]` (campo extra). |
@@ -171,64 +168,32 @@ curl -s http://localhost:7000/manifest.json | jq
   "id": "org.streamflix.reborn",
   "version": "0.1.0",
   "name": "Streamflix Reborn",
-  "types": ["movie", "series", "anime", "tv"],
+  "types": ["movie", "series", "anime"],
   "resources": [
-    { "name": "stream", "types": ["movie", "series", "anime", "tv"] },
-    { "name": "catalog", "types": ["movie", "series", "anime", "tv"] },
-    { "name": "meta", "types": ["movie", "series", "anime", "tv"] },
-    { "name": "subtitles", "types": ["movie", "series", "anime", "tv"] }
+    { "name": "stream", "types": ["movie", "series", "anime"] },
+    { "name": "catalog", "types": ["movie", "series", "anime"] },
+    { "name": "meta", "types": ["movie", "series", "anime"] },
+    { "name": "subtitles", "types": ["movie", "series", "anime"] }
   ],
   "catalogs": [
     {
-      "type": "tv",
-      "id": "live",
-      "name": "TV en Vivo y Deportes",
-      "posterShape": "landscape",
+      "type": "movie",
+      "id": "top",
+      "name": "Películas populares",
+      "posterShape": "poster",
       "extra": [
         { "name": "search", "isRequired": false },
         { "name": "skip", "isRequired": false },
-        { "name": "genre", "options": ["Deportes", "Canales", "Eventos"], "isRequired": false }
+        { "name": "genre", "isRequired": false }
       ]
-    },
-    {
-      "type": "tv",
-      "id": "canales",
-      "name": "TV en vivo · Canales",
-      "posterShape": "landscape",
-      "extra": [ …search, skip, genre["Deportes", "Canales"] ]
-    },
-    {
-      "type": "tv",
-      "id": "agenda",
-      "name": "Agenda deportiva",
-      "posterShape": "landscape",
-      "extra": [ …search, skip, genre["Deportes", "Eventos"] ]
     }
   ]
 }
 ```
 
-> `idPrefixes` se omite a propósito en el recurso `catalog`: los canales en vivo
-> usan ids como `tv:futbolibre:espn-1`, que no empiezan por `tt`. Declarar el
-> prefijo escondería esas filas en Stremio.
-
-### TV en vivo y agenda deportiva: tres filas, dos orígenes
-
-| Fila | Origen | Qué enseña |
-| --- | --- | --- |
-| `tv/live` | `config/live-catalog.json` (`kind: local`) | Los canales **fijados a mano**. Es el respaldo: si todo lo demás falla, sigue ahí. |
-| `tv/canales` | `kind: "live"` → `scrapers/_liveshelf.py` | Todos los canales que publican los proveedores de directo, deduplicados. |
-| `tv/agenda` | `kind: "live"` → `scrapers/_liveshelf.py` | Los partidos de hoy con liga, equipos, hora, estado y proveedor. |
-
-La estantería se construye una vez por ventana (`CATALOG_LIVE_TTL_MINUTES`, 15
-min) y se comparte con el motor del APK, que usa el mismo `_liveshelf.py`. Si el
-scrape no trae nada, `tv/canales` cae a la lista curada y `tv/agenda` se queda
-vacía a propósito: un partido de ayer pintado como "Hoy" es una tarjeta muerta.
-
-```bash
-curl -s "http://localhost:7000/catalog/tv/canales.json" | jq '.metas | length'
-python3 scrapers/_liveshelf.py --json --section events | jq '.items[0]'
-```
+> `idPrefixes` se omite a propósito en el recurso `catalog`: las filas de los
+> addons de terceros usan ids como `streaming_netflix`, que no empiezan por
+> `tt`. Declarar el prefijo escondería esas filas en Stremio.
 
 ### Catálogos
 
@@ -250,12 +215,10 @@ Las filas se declaran en `config/catalogs.json` (misma idea que
   el tipo publicado al real: `anime` en realidad es `series` filtrado por
   `Animation`. Las metas se normalizan (`releaseInfo` → `year`,
   `imdbRating` → `rating`), se deduplican por id y conservan `sourceType`.
-- `source.kind: "local"` → sale de `config/live-catalog.json`. El `id` de cada
-  canal **es** el id de stream (`tv:futbolibre:espn-1`), así que tocar una
-  tarjeta va directo a `/stream/tv/…`. Se sirven con
-  `posterShape: "landscape"` (16:9).
+- `source.kind: "remote"` → se republica la fila de un addon de terceros (ver
+  abajo). Un `kind` desconocido se descarta con un log: la fila no se inventa.
 - `posterShape` decide cómo pinta las tarjetas el cliente: `poster` = 2:3
-  (películas/series/anime), `landscape` = 16:9 (TV en vivo y deportes).
+  (películas/series/anime) o `landscape` = 16:9 para una fila de arte ancho.
 
 #### Catálogos de addons de terceros
 
@@ -290,7 +253,7 @@ Prime Video, HBO Max, Apple TV+, Hulu, Paramount+, Peacock, Crunchyroll…:
 - `types` limita qué tipos se republican; `limit` recorta metas por fila
   (por defecto `CATALOG_PAGE_SIZE`).
 - El id publicado se prefija (`streaming_nfx`) para no chocar con los ids
-  propios (`top`, `live`); el id remoto se conserva en `source.id`.
+  propios (`top`, `imdbRating`); el id remoto se conserva en `source.id`.
 - Sólo se anuncian los *extras* que el manifest remoto declara: si no anuncia
   `search`, no se le manda y el cliente no enseña buscador (ver el `extra` del
   manifest).
@@ -313,9 +276,7 @@ Extras del protocolo, como segmentos de path:
 
 ```bash
 curl -s "http://localhost:7000/catalog/movie/top/search=matrix.json" | jq '.metas[0]'
-curl -s "http://localhost:7000/catalog/tv/live/genre=Deportes.json" | jq '.metas[].name'
-curl -s "http://localhost:7000/catalog/tv/canales.json" | jq '.metas[].name'   # todos los canales
-curl -s "http://localhost:7000/catalog/tv/agenda.json" | jq '.metas[0]'        # partidos de hoy
+curl -s "http://localhost:7000/catalog/anime/top/skip=20.json" | jq '.metas[].name'
 curl -s "http://localhost:7000/meta/series/tt0944947:1:2.json" | jq '.meta.selectedVideo'
 ```
 
@@ -360,7 +321,7 @@ Política de fallos:
 ### Streams
 
 ```bash
-curl -s "http://localhost:7000/stream/tv/demo-live.json" | jq
+curl -s "http://localhost:7000/stream/movie/gnula:demo-vod.json" | jq
 ```
 
 ```json
@@ -413,10 +374,10 @@ Ida y vuelta con la app Android:
 
 | Característica | Detalle |
 | --- | --- |
-| TTL por entrada | live/deportes `CACHE_TTL_LIVE_HOURS` (2 h, ventana **2–4 h**), VOD `CACHE_TTL_VOD_HOURS` (6 h, ventana **2–6 h**). Fuera de rango el servidor no arranca. |
-| Hot path | Un *hit* de un `.m3u8` live responde en **1–3 ms** sin lanzar Python. |
+| TTL por entrada | `CACHE_TTL_VOD_HOURS` (6 h, ventana **2–6 h**). Fuera de rango el servidor no arranca. |
+| Hot path | Un *hit* de un stream responde en **1–3 ms** sin lanzar Python. |
 | `stale-while-revalidate` | Pasado el TTL, sirve el valor viejo al instante y refresca en segundo plano (hasta `ttl × CACHE_STALE_FACTOR`). |
-| *Single-flight* | N peticiones simultáneas del mismo canal = **un solo** proceso Python (`X-Cache: COALESCED` en las demás). |
+| *Single-flight* | N peticiones simultáneas del mismo título = **un solo** proceso Python (`X-Cache: COALESCED` en las demás). |
 | Caché negativa | Si ningún proveedor devuelve nada, se cachea `[]` por `CACHE_TTL_MISS_SECONDS` (120 s) para no martillear sitios caídos. |
 | LRU + sweep | Cota `CACHE_MAX_ENTRIES` y limpieza periódica de expirados: memoria estable en TV boxes y VPS pequeños. |
 | Métricas | `hits`, `staleHits`, `misses`, `coalesced`, `evictions`, `hitRate`, `size` en `/health` y `npm run cache:stats`. |
@@ -425,8 +386,8 @@ Comprobación rápida del requisito "milisegundos" (con el proveedor demo, que
 simula 350 ms de scraping):
 
 ```bash
-curl -s -o /dev/null -w "cold %{time_total}s\n" http://localhost:7000/stream/tv/demo-live.json
-curl -s -o /dev/null -w "warm %{time_total}s\n" http://localhost:7000/stream/tv/demo-live.json
+curl -s -o /dev/null -w "cold %{time_total}s\n" http://localhost:7000/stream/movie/gnula:demo-vod.json
+curl -s -o /dev/null -w "warm %{time_total}s\n" http://localhost:7000/stream/movie/gnula:demo-vod.json
 # cold 0.40s
 # warm 0.002s
 ```
@@ -435,7 +396,7 @@ La clave de caché es determinista: `streams:<type>:<id>`. Se puede invalidar
 puntualmente:
 
 ```bash
-curl -X DELETE "http://localhost:7000/admin/cache?type=tv&id=demo-live" \
+curl -X DELETE "http://localhost:7000/admin/cache?type=movie&id=gnula:demo-vod" \
      -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
@@ -446,7 +407,7 @@ curl -X DELETE "http://localhost:7000/admin/cache?type=tv&id=demo-live" \
 Contrato (documentado también en `scrapers/_base.py`):
 
 ```
-stdin  → {"type":"tv","id":"demo-live","isLive":true,"provider":"demo-live",
+stdin  → {"type":"movie","id":"gnula:demo-vod","provider":"gnula",
           "referer":"https://sitio/","userAgent":"Mozilla/5.0…","timeoutMs":12000}
 stdout ← {"streams":[{"name":"…","title":"…","url":"https://…/index.m3u8",
                       "quality":"1080p","referer":"https://sitio/"}],
@@ -468,85 +429,13 @@ Probar un scraper aislado:
 
 ```bash
 npm run bridge:demo -- example_provider.py '{"type":"movie","id":"tt0133093","provider":"demo-vod"}'
-npm run bridge:demo -- tvenvivo.py '{"type":"tv","id":"tv:tvenvivo:espn-2","isLive":true}'
+npm run bridge:demo -- animeflv.py '{"type":"anime","id":"animeflv:one-piece:1180"}'
 ```
-
-### Proveedor real incluido: `tvenvivo.py`
-
-`scrapers/tvenvivo.py` scrapea **https://www.tvenvivo.org/** (TV y deportes en
-directo). Está habilitado en `config/providers.json` con prioridad **5**, así
-que sus señales encabezan el array de failover:
-
-```bash
-curl -s "http://localhost:7000/stream/tv/tv:tvenvivo:espn-2.json" | jq
-curl -s "http://localhost:7000/stream/tv/tv:tvenvivo:espn-2.json" -D- -o/dev/null | grep X-Cache
-```
-
-Formas de id admitidas: `tv:tvenvivo:espn-2`, `tvenvivo:espn-2`, `espn-2`,
-`espn-2-en-vivo-online(.php)`, la URL completa de la página del canal, o el
-nombre libre `ESPN 2` (se busca en el índice del sitio).
-
-Listar canales e ids listos para Stremio:
-
-```bash
-npm run channels:tvenvivo                 # tabla nombre → tv:tvenvivo:<slug>
-npm run channels:tvenvivo -- --query espn
-npm run channels:tvenvivo -- --json
-```
-
-Cómo lo resuelve: página del canal → mapa JavaScript `SOURCES` →
-`/live/core.php?canal=…` → `<iframe>` → `.m3u8` del CDN (desescapando
-`https:\/\/…`). Sigue como máximo `TVENVIVO_MAX_DOCS` documentos /
-`TVENVIVO_MAX_DEPTH` saltos, ignora hosts de publicidad y devuelve **una
-entrada por opción**. Detalles y variables de entorno en
-[`scrapers/README.md`](scrapers/README.md#proveedor-incluido-tvenvivopy).
-
-### Proveedor real incluido: `deportelibre.py`
-
-`scrapers/deportelibre.py` scrapea **https://deportelibre.top/** (agenda
-deportiva y canales 24/7). Habilitado con prioridad **4**:
-
-```bash
-curl -s "http://localhost:7000/stream/tv/tv:deportelibre:stream-01.json" | jq
-npm run channels:deportelibre      # catálogo + ids tv:deportelibre:<id>
-npm run bridge:demo -- deportelibre.py '{"type":"tv","id":"tv:deportelibre:stream-01","isLive":true}'
-```
-
-Cadena de resolución: catálogo `/stream/` → `/total/stream-NN.php` → opciones
-`/en-vivo-online/<slug>/embedN.php` → reproductor **Clappr**. La URL del CDN
-vive dentro de un JS empaquetado (`eval(function(p,a,c,k,e,d)…)`), donde el
-esquema aparece como índice de su tabla (`46://host/…`): el scraper lo
-**desempaqueta** y, si la tabla no se puede recuperar, normaliza el esquema.
-También entiende la variante JSON (`stream_url` / `stream_url_nop2p`) y los
-tokens con caducidad (`?s=…&e=<epoch>`), que marca y deja al final. Detalles en
-[`scrapers/README.md`](scrapers/README.md#proveedor-incluido-deportelibrep).
-
-### Proveedor real incluido: `futbolibre.py`
-
-`scrapers/futbolibre.py` scrapea **https://futbolibre.live/** (canales
-deportivos de México y agenda de partidos). Habilitado con prioridad **3**, la
-más alta de los proveedores reales, así que sus señales encabezan el failover:
-
-```bash
-curl -s "http://localhost:7000/stream/tv/tv:futbolibre:espn-1.json" | jq
-curl -s "http://localhost:7000/stream/tv/tv:futbolibre:evento:liga-1-cienciano-vs-atletico-grau.json" | jq
-npm run channels:futbolibre        # canales + agenda de hoy, con sus ids
-npm run channels:futbolibre -- --events --query liga
-npm run bridge:demo -- futbolibre.py '{"type":"tv","id":"tv:futbolibre:espn-1","isLive":true}'
-```
-
-Cadena de resolución: tarjeta del canal → `/en-vivo/<slug>` → reproductor del
-backend (`la18hd.su/vivo/canal.php?stream=…`, a veces tras un salto
-`sw3.html?get=…`) → `.m3u8` dentro del JS. La agenda
-(`/eventos/json/agenda123.json`) agrupa **varias señales por partido**: se
-devuelve una entrada por señal, se descarta el parámetro `ip` del CDN y los
-tokens caducados van al final marcados `· token caducado`. Detalles en
-[`scrapers/README.md`](scrapers/README.md#proveedor-incluido-futbolibrep).
 
 ### Proveedores reales de anime (VOD)
 
 Tres proveedores `kind: "vod"` sirven episodios de anime, en este orden de
-prioridad: **`animeflv` 6 → `jkanime` 7 → `monoschinos` 8**.
+prioridad: **`animeflv` → `jkanime` → `monoschinos`**.
 
 | Proveedor | Sitio | Id de ejemplo |
 | --- | --- | --- |
@@ -667,8 +556,7 @@ Agregar un proveedor real:
 | `PUBLIC_URL` | *(derivada)* | Origen público para el manifest detrás de proxy. |
 | `CORS_ORIGINS` | `*` | Orígenes permitidos (lista separada por comas). |
 | `RATE_LIMIT_MAX` | `120` | Peticiones/min/IP en `/stream`, `/proxy`, `/catalog` y `/meta` (0 = off). |
-| `CACHE_TTL_LIVE_HOURS` | `2` | TTL live/deportes. Ventana válida **2–4 h** (fuera de rango no arranca). |
-| `CACHE_TTL_VOD_HOURS` | `6` | TTL VOD/anime/series (2–6). |
+| `CACHE_TTL_VOD_HOURS` | `6` | TTL de películas, series y anime. Ventana válida **2–6 h** (fuera de rango no arranca). |
 | `CACHE_TTL_MISS_SECONDS` | `120` | Caché negativa. |
 | `CACHE_MAX_ENTRIES` | `5000` | Cota LRU. |
 | `CACHE_STALE_FACTOR` | `1.25` | Ventana de `stale-while-revalidate`. |
@@ -682,18 +570,6 @@ Agregar un proveedor real:
 | `ADMIN_TOKEN` | *(vacío)* | Activa `/admin/*`; sin él devuelven 404. |
 | `PROXY_ENABLED` | `true` | Habilita `/proxy`. |
 | `LOG_LEVEL` / `LOG_JSON` | `info` / `false` | Logging. |
-| `TVENVIVO_BASE` | `https://www.tvenvivo.org` | Base del sitio (los tests usan un fixture local). |
-| `TVENVIVO_INDEX_TTL_SECONDS` | `21600` | TTL del índice de canales (`0` = sin caché). |
-| `TVENVIVO_INDEX_CACHE` | `…/streamflix-tvenvivo-index.json` | Ruta del índice en disco. |
-| `TVENVIVO_MAX_DOCS` / `TVENVIVO_MAX_DEPTH` | `8` / `3` | Topes de documentos y saltos al resolver un reproductor. |
-| `DEPORTELIBRE_BASE` | `https://deportelibre.top` | Base del sitio (los tests usan un fixture local). |
-| `DEPORTELIBRE_CHANNELS_PATH` | `/stream/` | Catálogo de canales 24/7. |
-| `DEPORTELIBRE_INDEX_TTL_SECONDS` | `21600` | TTL del catálogo en disco (`0` = sin caché). |
-| `DEPORTELIBRE_MAX_OPTIONS` / `DEPORTELIBRE_MAX_DEPTH` | `4` / `2` | Opciones por canal y saltos por reproductor. |
-| `FUTBOLIBRE_BASE` | `https://futbolibre.live` | Base del sitio de canales (los tests usan un fixture local). |
-| `FUTBOLIBRE_AGENDA_URL` | `https://la18hd.su/eventos/json/agenda123.json` | Agenda de partidos con sus señales. |
-| `FUTBOLIBRE_INDEX_TTL_SECONDS` / `FUTBOLIBRE_AGENDA_TTL_SECONDS` | `21600` / `600` | TTL del catálogo de canales y de la agenda. |
-| `FUTBOLIBRE_MAX_SIGNALS` / `FUTBOLIBRE_MAX_DEPTH` | `6` / `2` | Señales por contenido y saltos por reproductor. |
 | `ANIMEFLV_BASE` / `JKANIME_BASE` / `MONOSCHINOS_BASE` | dominios oficiales | Base de cada sitio de anime (los tests usan un fixture local). |
 | `ANIMEFLV_MAX_SERVERS` / `JKANIME_MAX_SERVERS` / `MONOSCHINOS_MAX_SERVERS` | `6` | Servidores que se intentan por episodio. |
 | `GNULA_BASE` / `CUEVANA_BASE` / `PELISPLUSHD_BASE` / `REPELIS_BASE` / `PELICULASFLIX_BASE` / `PELISJUANITA_BASE` | dominios oficiales | Base de cada sitio de cine (los tests usan un fixture local). |
@@ -708,7 +584,6 @@ Agregar un proveedor real:
 | `CATALOG_MISS_SECONDS` | `60` | Ventana del modo degradado cuando Cinemeta no responde. |
 | `CATALOG_PAGE_SIZE` | `100` | Tope de metas por catálogo. |
 | `CATALOGS_CONFIG` | `./config/catalogs.json` | Filas publicadas (tipo, id, nombre, `posterShape`, origen). |
-| `LIVE_CATALOG_PATH` | `./config/live-catalog.json` | Canales de TV en vivo y deportes curados. |
 | `CATALOG_REMOTE_TIMEOUT_MS` | `8000` | Timeout al leer el manifest de un addon de terceros. |
 | `CATALOG_REMOTE_TTL_HOURS` | `6` | Vigencia del manifest cacheado en disco. |
 | `CATALOG_REMOTE_CACHE` | `./.cache/remote-catalogs.json` | Caché de manifests remotos. |
@@ -724,29 +599,19 @@ dependencias) o inyectarlas desde el orquestador.
 npm test
 ```
 
-161 pruebas con `node:test`:
+209 pruebas con `node:test`:
 
 - caché: TTL, expiración, stale, LRU, *single-flight*, caché negativa;
 - protocolo: manifest, forma del stream, cabeceras, ids, calidades, HLS, SSRF;
 - pool de proveedores: ejecución en paralelo, orden por prioridad y deadline;
 - integración: arranca Express en un puerto efímero y ejecuta los scrapers
   Python reales para validar `MISS → HIT` y la coalescencia de peticiones;
-- `tvenvivo.py`: fixture HTTP local que imita el sitio (página → `SOURCES` →
-  wrapper → iframe → `.m3u8` escapado), ids aceptados, búsqueda por nombre,
-  descarte de anuncios, degradación a `{"streams":[]}` y caché del índice;
-- `deportelibre.py`: fixture con el reproductor empaquetado (`46://…` → `https`),
-  variante JSON `stream_url`/`stream_url_nop2p`, tokens caducados al final,
-  opciones offline descartadas, resolución por nombre y catálogo en caché;
-- `futbolibre.py`: fixture canal → `/en-vivo/<slug>` → reproductor del backend,
-  salto `sw3.html?get=`, agenda con señales duplicadas (agrupadas y
-  deduplicadas), parámetro `ip` descartado, token caducado al final, agenda
-  inalcanzable sin romper y `--list` de canales + partidos;
 - `src/bridge/pythonBridge.js`: payload por stdin, ids con caracteres raros sin
   pasar por un shell, timeout que mata el proceso, salida no-JSON, script que
   falla, script inexistente, intento de salir de `SCRAPER_DIR` y liberación del
   semáforo en todos los desenlaces;
-- `src/config.js`: el presupuesto de 8 s y las ventanas de TTL (live 2–4 h, VOD
-  2–6 h), incluido el arranque rechazado cuando el TTL se sale de rango;
+- `src/config.js`: el presupuesto de 8 s y la ventana de TTL VOD (2–6 h),
+  incluido el arranque rechazado cuando el TTL se sale de rango;
 - `animeflv.py` / `jkanime.py` / `monoschinos.py`: fixtures por sitio (página del
   episodio → lista de servidores en base64 → embed → `.m3u8`/`.mp4`), incluidos
   el JS empaquetado, el redirect por JavaScript de VOE, los servidores de
@@ -788,7 +653,7 @@ ordenado). El `HEALTHCHECK` consulta `/health`.
   instancias, sustituye `TtlCache` por Redis (`GET/SET EX` + `SET NX` para el
   *single-flight*) manteniendo la misma interfaz.
 - Desactiva o elimina los proveedores `demo-*` de `config/providers.json`
-  cuando conectes fuentes reales (`futbolibre`, `deportelibre` y `tvenvivo` ya lo son).
+  cuando conectes fuentes reales (los proveedores incluidos ya lo son).
 
 ### Siguientes pasos sugeridos
 

@@ -66,7 +66,7 @@ def versionNameValue = resolve(['VERSION_NAME', 'versionName']) ?: '1.1.0'
 def embeddedAssetsDir = layout.buildDirectory.dir('generated/embeddedAssets')
 def generateEmbeddedAssets = tasks.register('generateEmbeddedAssets', Sync) {
     from(rootProject.file('server/config')) {
-        include 'providers.json', 'live-catalog.json'
+        include 'providers.json'
     }
     into embeddedAssetsDir
     /* El servidor conserva los proveedores de demostración para sus pruebas,

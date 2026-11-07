@@ -1,27 +1,15 @@
 package com.tanasi.streamflix.ui.components
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tanasi.streamflix.data.model.MediaEntry
@@ -31,7 +19,7 @@ import com.tanasi.streamflix.ui.theme.StreamflixColors
  * Insignias flotantes (estilo Prime Video).
  *
  * Reglas de composición que se repiten en todas las tarjetas:
- *   - esquina superior izquierda: estado (EN VIVO / TOP 10);
+ *   - esquina superior izquierda: estado (TOP 10);
  *   - esquina superior derecha: calidad (4K / HD / CAM);
  *   - esquina inferior izquierda: proveedor, o sea el servidor que servirá el
  *     stream y desde el que arrancará el failover;
@@ -66,41 +54,6 @@ fun GlassBadge(
     }
 }
 
-/** EN VIVO con punto que late: el único elemento animado en reposo de la app. */
-@Composable
-fun LiveBadge(modifier: Modifier = Modifier) {
-    val pulse by rememberInfiniteTransition(label = "livePulse").animateFloat(
-        initialValue = 0.45f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "livePulseAlpha",
-    )
-
-    Row(
-        modifier = modifier
-            .background(StreamflixColors.Live, RoundedCornerShape(4.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(6.dp)
-                .graphicsLayer { alpha = pulse }
-                .background(Color.White, RoundedCornerShape(3.dp)),
-        )
-        Spacer(Modifier.width(4.dp))
-        Text(
-            text = "EN VIVO",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            maxLines = 1,
-        )
-    }
-}
 
 /** Calidad anunciada. `4K` va en neón para que destaque sobre el póster. */
 @Composable
@@ -158,7 +111,6 @@ fun FailoverBadge(text: String, modifier: Modifier = Modifier) {
 @Composable
 internal fun EntryTopStartBadge(entry: MediaEntry, modifier: Modifier = Modifier) {
     when {
-        entry.isLive -> LiveBadge(modifier)
         entry.trending -> TrendingBadge(modifier)
         entry.quality != null -> QualityBadge(entry.quality!!, modifier)
         else -> Unit
@@ -169,12 +121,12 @@ internal fun EntryTopStartBadge(entry: MediaEntry, modifier: Modifier = Modifier
 internal fun EntryTopEndBadge(entry: MediaEntry, modifier: Modifier = Modifier) {
     /* La nota es el dato que más se mira al elegir: si existe, ocupa la
      * derecha. La calidad sólo se repite aquí cuando el estado de la izquierda
-     * no la muestra ya (directos y tendencias). */
+     * no la muestra ya (tendencias). */
     val rating = entry.rating
     val quality = entry.quality
     when {
         rating != null -> RatingBadge(rating, modifier)
-        quality != null && (entry.isLive || entry.trending) -> QualityBadge(quality, modifier)
+        quality != null && entry.trending -> QualityBadge(quality, modifier)
         else -> Unit
     }
 }

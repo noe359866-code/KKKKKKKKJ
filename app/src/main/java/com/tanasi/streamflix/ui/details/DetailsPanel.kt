@@ -74,7 +74,6 @@ import com.tanasi.streamflix.data.model.enrichedBy
 import com.tanasi.streamflix.data.model.normalizeArtworkUrl
 import com.tanasi.streamflix.ui.components.HeroBackdropImage
 import com.tanasi.streamflix.ui.components.GlassBadge
-import com.tanasi.streamflix.ui.components.LiveBadge
 import com.tanasi.streamflix.ui.components.RatingBadge
 import com.tanasi.streamflix.ui.theme.Dimens
 import com.tanasi.streamflix.ui.theme.StreamflixColors
@@ -272,10 +271,6 @@ private fun DetailsHero(
                 ),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (entry.isLive) {
-                    LiveBadge()
-                    Spacer(Modifier.width(8.dp))
-                }
                 GlassBadge(text = typeLabel(entry))
                 entry.rating?.let { rating ->
                     Spacer(Modifier.width(8.dp))
@@ -841,11 +836,10 @@ private fun CheckGlyph(modifier: Modifier = Modifier, color: Color) {
     }
 }
 
-/** Etiqueta del tipo publicado: PELÍCULA · SERIE · ANIME · EN VIVO. */
+/** Etiqueta del tipo publicado: PELÍCULA · SERIE · ANIME. */
 private fun typeLabel(entry: MediaEntry): String = when (entry.type.lowercase()) {
     "movie" -> "Película"
     "series" -> "Serie"
     "anime" -> "Anime"
-    "tv" -> "TV"
     else -> entry.type
 }

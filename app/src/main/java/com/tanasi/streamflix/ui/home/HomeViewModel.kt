@@ -174,14 +174,13 @@ class HomeViewModel(
      * Pide `/meta` del título que ocupa el hero para completar lo que el
      * catálogo no trae: backdrop 16:9, sinopsis, nota y géneros.
      *
-     * La fila de Cinemeta ya trae póster y backdrop; los canales en vivo no
-     * tienen ficha. Se espera [HERO_DEBOUNCE_MS] porque en una TV el foco salta
-     * de tarjeta en tarjeta y no tiene sentido pedir una ficha por cada salto.
+     * La fila de Cinemeta ya trae póster y backdrop. Se espera
+     * [HERO_DEBOUNCE_MS] porque en una TV el foco salta de tarjeta en tarjeta y
+     * no tiene sentido pedir una ficha por cada salto.
      */
     private fun enrichHero(spotlight: Spotlight?) {
         val client = client ?: return
         val entry = spotlight?.entry ?: return
-        if (entry.isLive) return
         if (!entry.backdrop.isNullOrBlank() && !entry.synopsis.isNullOrBlank()) return
 
         val key = "${entry.type}:${entry.id}"

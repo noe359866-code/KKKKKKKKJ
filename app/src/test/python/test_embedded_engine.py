@@ -22,24 +22,7 @@ import _embedded_catalogs as catalogs
 from _embedded_cache import JsonCache
 
 REGISTRY = json.loads((ROOT / "server/config/providers.json").read_text())
-LIVE = json.loads((ROOT / "server/config/live-catalog.json").read_text())
 PADDING = "<!--" + "x" * 500 + "-->"
-
-
-@contextlib.contextmanager
-def live_offline(**overrides):
-    """Todos los cargadores de los proveedores de directo devuelven [] (o lo que se pida).
-
-    La estantería de TV/agenda pregunta a cada proveedor: en las pruebas tiene
-    que ser determinista y sin red, así que se sustituyen los cargadores.
-    """
-    with contextlib.ExitStack() as stack:
-        for provider_id in catalogs.LIVE:
-            module = catalogs.module_for(provider_id)
-            for loader in ("load_index", "load_channels", "load_agenda"):
-                if hasattr(module, loader):
-                    stack.enter_context(patch.object(module, loader, return_value=overrides.get(provider_id, [])))
-        yield
 
 
 class FixtureHandler(BaseHTTPRequestHandler):
@@ -98,7 +81,7 @@ class EngineTests(unittest.TestCase):
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.engine = embedded.Engine(self.temp.name, REGISTRY, LIVE, self.base)
+        self.engine = embedded.Engine(self.temp.name, REGISTRY, self.base)
         FixtureHandler.requests.clear()
 
     def tearDown(self):
@@ -113,206 +96,19 @@ class EngineTests(unittest.TestCase):
             if item.get("enabled", True) and "demo" not in item["id"]
         }
         self.assertEqual(expected, set(self.engine.providers))
-        self.assertIn("livelive24", expected)
-        self.assertIn("damitv", expected)
-        self.assertIn("ntv", expected)
-        self.assertIn("streamcorner", expected)
+        self.assertIn("pelisplushd", expected)
+        self.assertIn("novahd", expected)
+        self.assertIn("animeflv", expected)
         self.assertFalse(any("demo" in key for key in self.engine.providers))
         with patch("urllib.request.urlopen", side_effect=AssertionError("No network at discovery")):
             rows = self.engine.dispatch("catalogs", {})["catalogs"]
             health = self.engine.dispatch("health", {})
         self.assertEqual(len(expected), len(health["providers"]))
-        # Los scrapers resuelven streams; no son catálogo. La Home lleva canales
-        # en vivo, el área de deportes (y Cinemeta cuando el cliente lo pide).
-        self.assertEqual(["iptvorg", "bundled_live", "canales", "deportes"],
-                         [row["id"] for row in rows])
-        self.assertEqual("sports", rows[-1]["layout"])
+        # Los scrapers resuelven streams; no son catálogo. La Home sólo lleva
+        # Cinemeta cuando el cliente lo pide: sin metadatos, ninguna fila.
+        self.assertEqual([], [row["id"] for row in rows])
         self.assertFalse({row["id"] for row in rows} & set(self.engine.providers))
-        self.assertTrue(all(row["source"] in ("embedded", "iptv") for row in rows))
         self.assertTrue(all(callable(catalogs.module_for(p).scrape) for p in health["providers"]))
-
-    def test_sports_row_lists_todays_matches_with_league_teams_and_state(self):
-        agenda = [
-            {"id": "evento:mlb-yankees-vs-red-sox", "title": "MLB: Yankees vs Red Sox",
-             "category": "beisbol", "date": "2026-10-29", "time": "21:00",
-             "status": "Programado", "links": ["https://la18hd.su/vivo/x"]},
-            {"id": "evento:liga-1-cienciano-vs-atletico-grau",
-             "title": "Liga 1: Cienciano vs Atlético Grau", "category": "futbol",
-             "date": "2026-10-29", "time": "19:00", "status": "En vivo",
-             "links": ["https://la18hd.su/vivo/y"]},
-        ]
-        channels = [
-            {"name": "ESPN 2", "logo": "https://logos.invalid/espn.png",
-             "url": "https://cdn.invalid/espn/index.m3u8"},
-            {"name": "Canal de cocina", "logo": "", "url": "https://cdn.invalid/food/index.m3u8"},
-        ]
-        with live_offline(futbolibre=agenda), \
-                patch.object(embedded, "iptv_channels", return_value=channels):
-            result = self.engine.dispatch("catalog", {"type": "tv", "id": "deportes"})
-            metas = result["metas"]
-        self.assertTrue(metas)
-        # El partido en directo va primero, después el programado y los canales.
-        live, upcoming = metas[0], metas[1]
-        self.assertEqual("tv:futbolibre:evento:liga-1-cienciano-vs-atletico-grau", live["id"])
-        self.assertEqual("Cienciano vs Atlético Grau", live["name"])
-        self.assertEqual("Cienciano", live["home"])
-        self.assertEqual("Atlético Grau", live["away"])
-        self.assertEqual("Liga 1", live["league"])
-        self.assertEqual(["Deportes", "Liga 1"], live["genres"])
-        self.assertTrue(live["onAir"])
-        self.assertEqual("19:00", live["startTime"])
-        self.assertEqual(self.engine.providers["futbolibre"]["label"], live["sourceName"])
-        self.assertFalse(upcoming["onAir"])
-        self.assertEqual("MLB", upcoming["league"])
-        self.assertEqual("Hoy · 21:00", upcoming["releaseInfo"])
-        # Canales: sólo los deportivos, y el de cocina no entra.
-        self.assertTrue(any(meta["name"] == "ESPN 2" and meta["onAir"] for meta in metas))
-        self.assertFalse(any(meta["name"] == "Canal de cocina" for meta in metas))
-        # Y el partido se reproduce por el camino de siempre (el id del scraper).
-        module = catalogs.module_for("futbolibre")
-        with patch.object(module, "scrape", return_value=([{"url": "https://cdn.invalid/live.m3u8"}], {})):
-            self.assertTrue(self.engine.streams("tv", live["id"])["streams"])
-
-    def test_sports_titles_drop_the_broadcast_suffix_from_team_names(self):
-        meta = embedded.sports_event_meta(
-            {"id": "futbolibre", "label": "Fútbol Libre"},
-            {"id": "evento:nba", "title": "NBA: Lakers vs Celtics (Final)",
-             "time": "02:30", "status": "En vivo"},
-        )
-        self.assertEqual("Lakers", meta["home"])
-        self.assertEqual("Celtics", meta["away"])
-        self.assertEqual("Lakers vs Celtics", meta["name"])
-
-    def test_sports_row_is_empty_rather_than_stale_when_there_is_no_agenda(self):
-        with live_offline(), patch.object(embedded, "iptv_channels", return_value=[]):
-            self.assertEqual([], self.engine.dispatch("catalog", {"type": "tv", "id": "deportes"})["metas"])
-
-    def test_cinemeta_is_explicit_opt_in_and_always_first_when_enabled(self):
-        base_rows = self.engine.catalogs()["catalogs"]
-        extra_rows = self.engine.catalogs(True)["catalogs"]
-        self.assertEqual(len(base_rows) + len(embedded.CINEMETA_CATALOGS), len(extra_rows))
-        self.assertFalse(any("cinemeta" in row["id"] for row in base_rows))
-        # Cinemeta encabeza el Home: sus pósters y backdrops son el arte bueno.
-        self.assertTrue(all(row["provider"] == "Cinemeta" for row in extra_rows[:len(embedded.CINEMETA_CATALOGS)]))
-        self.assertEqual("iptvorg", extra_rows[len(embedded.CINEMETA_CATALOGS)]["id"])
-        self.assertEqual("bundled_live", extra_rows[len(embedded.CINEMETA_CATALOGS) + 1]["id"])
-
-    def test_iptv_playlist_parsing_drops_geo_blocked_and_non_hls(self):
-        playlist = "\r\n".join((
-            "#EXTM3U",
-            '#EXTINF:-1 tvg-logo="https://logos.invalid/a.png",Canal Abierto',
-            "https://cdn.invalid/a/index.m3u8",
-            '#EXTINF:-1 tvg-logo="https://logos.invalid/a.png",Canal Abierto',
-            "https://cdn.invalid/a/index.m3u8",
-            '#EXTINF:-1,Canal Geobloqueado [Geo-blocked]',
-            "https://cdn.invalid/b/index.m3u8",
-            "#EXTINF:-1,Nada reproducible",
-            "https://cdn.invalid/c/embed",
-            "#EXTINF:-1,Canal DASH",
-            "https://cdn.invalid/d/manifest.mpd",
-        ))
-        channels = embedded.parse_playlist(playlist)
-        self.assertEqual(["Canal Abierto", "Canal DASH"], [item["name"] for item in channels])
-        self.assertEqual("https://logos.invalid/a.png", channels[0]["logo"])
-
-    def test_iptv_channels_are_playable_without_any_provider(self):
-        channel = {"name": "Canal de prueba", "logo": "https://logos.invalid/x.png",
-                   "url": "https://cdn.invalid/live/index.m3u8"}
-        with patch.object(embedded, "iptv_channels", return_value=[channel]):
-            metas = self.engine.catalogue("tv", "iptvorg")["metas"]
-            self.assertEqual(1, len(metas))
-            self.assertEqual("Canal de prueba", metas[0]["name"])
-            self.assertEqual("https://logos.invalid/x.png", metas[0]["poster"])
-            streams = self.engine.streams("tv", metas[0]["id"])["streams"]
-        self.assertEqual(1, len(streams))
-        self.assertEqual("https://cdn.invalid/live/index.m3u8", streams[0]["url"])
-        self.assertTrue(streams[0]["isLive"])
-        self.assertEqual("Canal de prueba", streams[0]["title"])
-
-    def test_can_browse_bundled_live_cards_without_network_or_url(self):
-        with live_offline(), patch("urllib.request.urlopen", side_effect=AssertionError("No backend")):
-            result = self.engine.dispatch("catalog", {"type": "tv", "id": "bundled_live"})
-        self.assertTrue(result["metas"])
-        self.assertTrue(all(item["type"] == "tv" for item in result["metas"]))
-        self.assertTrue(all("demo" not in item["id"] for item in result["metas"]))
-
-    def test_live_search_and_pagination_remain_filtered_when_cached(self):
-        with live_offline():
-            first = self.engine.catalogue("tv", "bundled_live", "ESPN", skip=1)
-        again = self.engine.catalogue("tv", "bundled_live", "ESPN", skip=1)
-        self.assertEqual(first, again)
-        self.assertTrue(first["metas"])
-        self.assertTrue(all("espn" in item["name"].lower() for item in first["metas"]))
-        all_matches = self.engine.catalogue("tv", "bundled_live", "ESPN")
-        self.assertEqual(all_matches["metas"][1:], first["metas"])
-
-    def test_channels_row_collects_every_provider_and_skips_duplicates(self):
-        """La fila de canales se llena sola: curdos primero, luego todos los proveedores."""
-        channels_by_provider = {
-            "futbolibre": [{"slug": "espn-1", "name": "ESPN 1"},
-                           {"slug": "fox-sports", "name": "Fox Sports"}],
-            "ntv": [{"id": "nfl-network", "name": "NFL Network"}],
-            "streamcorner": [{"id": "nfl/nfl-network", "name": "NFL Network"},
-                             {"id": "mlb/mlb-network", "name": "MLB Network"}],
-        }
-        overrides = {name: items for name, items in channels_by_provider.items()}
-        with live_offline(**overrides):
-            metas = self.engine.dispatch("catalog", {"type": "tv", "id": "canales"})["metas"]
-        names = [meta["name"] for meta in metas]
-        # El curado (ESPN 1) va primero y bloquea al duplicado del proveedor.
-        self.assertEqual("ESPN 1", names[0])
-        self.assertEqual(1, names.count("ESPN 1"))
-        # NFL Network sale en NTV y StreamCorner: una sola tarjeta.
-        self.assertEqual(1, names.count("NFL Network"))
-        self.assertIn("MLB Network", names)
-        self.assertIn("Fox Sports", names)
-        # Todo resuelve por el camino de siempre y trae su proveedor.
-        self.assertTrue(all(meta["id"].startswith("tv:") for meta in metas))
-        self.assertTrue(all(meta.get("sourceName") for meta in metas))
-        self.assertTrue(all(meta["type"] == "tv" for meta in metas))
-
-    def test_without_any_provider_the_channels_row_still_shows_the_curated_list(self):
-        with live_offline():
-            shelf = self.engine.live_shelf()
-        curated = [item["name"] for item in LIVE["items"]]
-        self.assertEqual(curated, [meta["name"] for meta in shelf["channels"]])
-        self.assertEqual([], shelf["events"], "sin agenda real la fila se queda vacía")
-
-    def test_a_failed_scrape_keeps_stale_channels_but_never_old_matches(self):
-        stale = {
-            "channels": [{"id": "tv:ntv:viejo", "type": "tv", "name": "Canal viejo"}],
-            "events": [{"id": "tv:futbolibre:evento:ayer", "type": "tv", "name": "Ayer vs Viejo"}],
-        }
-
-        def fake_get(key, stale_seconds=0):
-            # La copia "fresca" ya caducó; la rancia sí se puede leer.
-            return None if stale_seconds == 0 else stale
-
-        empty_curated = embedded.Engine(self.temp.name, REGISTRY, {"items": []}, self.base)
-        try:
-            with live_offline(), patch.object(empty_curated.cache, "get", side_effect=fake_get):
-                shelf = empty_curated.live_shelf()
-        finally:
-            empty_curated.close()
-        self.assertEqual(["Canal viejo"], [meta["name"] for meta in shelf["channels"]])
-        self.assertEqual([], shelf["events"], "un partido de ayer es una tarjeta muerta")
-        self.assertTrue(shelf["meta"]["degraded"])
-
-    def test_channels_row_is_cached_between_requests(self):
-        calls = {"futbolibre": 0}
-
-        def counting(headers, deadline):
-            calls["futbolibre"] += 1
-            return [{"slug": "espn-1", "name": "ESPN 1"}]
-
-        with live_offline(), patch.object(catalogs.module_for("futbolibre"), "load_channels", side_effect=counting):
-            first = self.engine.dispatch("catalog", {"type": "tv", "id": "canales"})["metas"]
-            second = self.engine.dispatch("catalog", {"type": "tv", "id": "canales"})["metas"]
-        self.assertTrue(first)
-        self.assertEqual(first, second)
-        self.assertEqual(1, calls["futbolibre"], "la estantería se cachea: un scrape por ventana")
-
-
 
     def test_scraper_resolves_streams_without_publishing_a_catalog(self):
         with patch.dict(os.environ, {"PELISPLUSHD_BASE": self.base}), patch("subprocess.Popen", side_effect=AssertionError("No child processes")):
@@ -329,7 +125,7 @@ class EngineTests(unittest.TestCase):
         self.assertIn("Referer", sources[0]["behaviorHints"]["requestHeaders"])
         self.assertIn("User-Agent", sources[0]["behaviorHints"]["requestHeaders"])
         self.assertEqual("PelisPlus", sources[0]["provider"])
-        self.assertFalse(sources[0]["isLive"])
+        self.assertNotIn("isLive", sources[0])
 
     def test_subtitles_ride_with_the_streams_and_are_cached_once(self):
         """Los subtítulos del `meta` del proveedor salen en la misma respuesta.
@@ -368,17 +164,6 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["subtitles"], again["subtitles"])
         # Sin duplicados y sin la página de embed del proveedor.
         self.assertEqual(2, len({item["url"] for item in result["subtitles"]}))
-
-    def test_live_content_never_publishes_subtitles(self):
-        module = embedded.providers.module_for("futbolibre")
-        with patch.object(module, "scrape", return_value=(
-            [{"url": "https://video.invalid/live.m3u8", "name": "Fútbol Libre"}],
-            {"subtitles": [{"url": "https://video.invalid/live.es.vtt", "lang": "es"}]},
-        )):
-            self.engine.providers = {"futbolibre": self.engine.providers["futbolibre"]}
-            result = self.engine.streams("tv", "futbolibre:espn-1")
-        self.assertEqual(1, len(result["streams"]))
-        self.assertEqual([], result["subtitles"])
 
     def test_subtitle_normalization_rejects_what_media3_cannot_open(self):
         provider = {"label": "NovaHD"}
@@ -459,7 +244,7 @@ class EngineTests(unittest.TestCase):
             first = self.engine.streams("movie", "pelisplushd:fixture")
             self.assertEqual(first, self.engine.streams("movie", "pelisplushd:fixture"))
             self.assertEqual(1, scrape.call_count)
-        other = embedded.Engine(self.temp.name, REGISTRY, LIVE)
+        other = embedded.Engine(self.temp.name, REGISTRY)
         try:
             with patch.object(module, "scrape", side_effect=AssertionError("Must use disk cache")):
                 self.assertEqual(first, other.streams("movie", "pelisplushd:fixture"))
@@ -476,7 +261,7 @@ class EngineTests(unittest.TestCase):
     def test_cinemeta_rows_survive_a_restart_when_the_metadata_source_is_offline(self):
         expected = self.engine.catalogue("anime", "cinemeta_top")
         self.assertTrue(expected["metas"])
-        other = embedded.Engine(self.temp.name, REGISTRY, LIVE)
+        other = embedded.Engine(self.temp.name, REGISTRY)
         try:
             other.cache.clock = lambda: time.time() + 3700
             with patch.object(embedded, "http_get_json", side_effect=OSError("offline")):
@@ -493,16 +278,6 @@ class EngineTests(unittest.TestCase):
         self.engine.cache.clock = lambda: time.time() + 45
         self.assertIsNone(self.engine.cache.get("streams:movie:pelisplushd:fixture"))
 
-    def test_headers_live_flag_and_playable_filter(self):
-        provider = self.engine.providers["futbolibre"]
-        result = embedded.normalize_stream({"url": "https://video.invalid/test.m3u8", "referer": "https://embed.invalid/",
-            "behaviorHints": {"requestHeaders": {"cookie": "session=fixture", "Origin": "https://origin.invalid"}}}, provider, True)
-        self.assertTrue(result["isLive"])
-        self.assertEqual("session=fixture", result["behaviorHints"]["requestHeaders"]["Cookie"])
-        self.assertEqual("https://embed.invalid/", result["behaviorHints"]["requestHeaders"]["Referer"])
-        for url in ("file:///test.mp4", "magnet:test", "https://site.invalid/embed/1", "https://site.invalid/a.mp4?e=1000000000"):
-            self.assertIsNone(embedded.normalize_stream({"url": url}, provider, True))
-
     def test_extensionless_media_survives_the_playable_filter(self):
         """Un HLS en `/v/abc123` es una fuente válida: antes se tiraba."""
         provider = self.engine.providers["pelisjuanita"]
@@ -510,20 +285,20 @@ class EngineTests(unittest.TestCase):
         typed = embedded.normalize_stream({
             "url": "https://cdn.invalid/v/abc123",
             "behaviorHints": {"mediaType": "hls"},
-        }, provider, False)
+        }, provider)
         self.assertEqual("hls", typed["behaviorHints"]["mediaType"])
         self.assertEqual("https://cdn.invalid/v/abc123", typed["url"])
 
         # Sin pista explícita también se acepta: el failover decide.
-        self.assertIsNotNone(embedded.normalize_stream({"url": "https://cdn.invalid/v/def456"}, provider, False))
+        self.assertIsNotNone(embedded.normalize_stream({"url": "https://cdn.invalid/v/def456"}, provider))
         # Manifiesto dentro de la consulta del reproductor.
         self.assertIsNotNone(embedded.normalize_stream(
-            {"url": "https://cdn.invalid/player.php?id=7&file=master.m3u8"}, provider, False))
+            {"url": "https://cdn.invalid/player.php?id=7&file=master.m3u8"}, provider))
         # Lo que es una página o una imagen se sigue rechazando.
         for url in ("https://cdn.invalid/embed/1", "https://cdn.invalid/pelicula/x",
                     "https://cdn.invalid/a.html", "https://cdn.invalid/poster.jpg",
                     "https://cdn.invalid/serie/x/1x03"):
-            self.assertIsNone(embedded.normalize_stream({"url": url}, provider, False), url)
+            self.assertIsNone(embedded.normalize_stream({"url": url}, provider), url)
             self.assertFalse(embedded.is_playable_stream(url, {"mediaType": "hls"}), url)
 
     def test_invalid_requests_cannot_import_arbitrary_scripts(self):

@@ -122,7 +122,7 @@ test('the manifest advertises the subtitles resource', () => {
   const manifest = buildManifest('https://addon.example');
   const names = manifest.resources.map((resource) => resource.name);
   assert.ok(names.includes('subtitles'));
-  assert.deepEqual([...manifest.types].sort(), ['anime', 'movie', 'series', 'tv']);
+  assert.deepEqual([...manifest.types].sort(), ['anime', 'movie', 'series']);
 });
 
 /* -------------------------------------------------------------------------- */
@@ -133,13 +133,10 @@ process.env.DEMO_DELAY_MS = '40';
 process.env.RATE_LIMIT_MAX = '0';
 /* Ningún proveedor real: la suite no depende de la red externa. */
 for (const name of [
-  'TVENVIVO_BASE', 'ANIMEFLV_BASE', 'JKANIME_BASE', 'MONOSCHINOS_BASE', 'GNULA_BASE',
+  'ANIMEFLV_BASE', 'JKANIME_BASE', 'MONOSCHINOS_BASE', 'GNULA_BASE',
   'CUEVANA_BASE', 'PELISPLUSHD_BASE', 'REPELIS_BASE', 'PELISJUANITA_BASE',
-  'DEPORTELIBRE_BASE',
 ]) process.env[name] = 'http://127.0.0.1:1';
 process.env.PELICULASFLIX_API = 'http://127.0.0.1:1/api/gql';
-process.env.FUTBOLIBRE_BASE = 'http://127.0.0.1:1';
-process.env.FUTBOLIBRE_AGENDA_URL = 'http://127.0.0.1:1/agenda.json';
 
 const { createApp } = await import('../src/app.js');
 const { loadProviders } = await import('../src/providers/index.js');
@@ -155,7 +152,13 @@ before(async () => {
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
 
-after(() => new Promise((resolve) => server.close(resolve)));
+after(() => new Promise((resolve) => {
+  server.close(resolve);
+  /* `fetch` deja sockets keep-alive abiertos: sin esto el proceso de test no
+   * termina y `npm test` se queda colgado esperando a que muera. */
+  server.closeIdleConnections?.();
+  server.closeAllConnections?.();
+}));
 
 test('GET /stream/... carries the subtitles resolved by the same scrape', async () => {
   const res = await fetch(`${baseUrl}/stream/movie/tt0133093.json`);
@@ -185,12 +188,6 @@ test('GET /subtitles/... serves the same list as the stream response', async () 
   assert.deepEqual(body.subtitles, stream.subtitles);
   assert.ok(body.cacheMaxAge > 0);
   assert.equal(body.staleError > 0, true);
-});
-
-test('live content never returns subtitles', async () => {
-  const res = await fetch(`${baseUrl}/stream/tv/demo-live.json`);
-  const body = await res.json();
-  assert.deepEqual(body.subtitles, []);
 });
 
 test('unknown types are rejected by the subtitles route', async () => {

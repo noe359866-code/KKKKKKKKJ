@@ -12,11 +12,6 @@ import assert from 'node:assert/strict';
 
 process.env.DEMO_DELAY_MS = '60';
 process.env.RATE_LIMIT_MAX = '0';
-/* El proveedor real `tvenvivo` está habilitado en config/providers.json.
- * En los tests se apunta a un puerto cerrado para que falle al instante y la
- * suite no dependa de la red externa. */
-process.env.TVENVIVO_BASE = 'http://127.0.0.1:1';
-process.env.TVENVIVO_INDEX_TTL_SECONDS = '0';
 /* Los proveedores reales están habilitados en config/providers.json:
  * en los tests apuntan a un puerto cerrado para no depender de la red. */
 process.env.ANIMEFLV_BASE = 'http://127.0.0.1:1';
@@ -28,12 +23,6 @@ process.env.PELISPLUSHD_BASE = 'http://127.0.0.1:1';
 process.env.REPELIS_BASE = 'http://127.0.0.1:1';
 process.env.PELICULASFLIX_API = 'http://127.0.0.1:1/api/gql';
 process.env.PELISJUANITA_BASE = 'http://127.0.0.1:1';
-process.env.FUTBOLIBRE_BASE = 'http://127.0.0.1:1';
-process.env.FUTBOLIBRE_AGENDA_URL = 'http://127.0.0.1:1/agenda.json';
-process.env.FUTBOLIBRE_INDEX_TTL_SECONDS = '0';
-process.env.FUTBOLIBRE_AGENDA_TTL_SECONDS = '0';
-process.env.DEPORTELIBRE_BASE = 'http://127.0.0.1:1';
-process.env.DEPORTELIBRE_INDEX_TTL_SECONDS = '0';
 
 const { createApp } = await import('../src/app.js');
 const { loadProviders } = await import('../src/providers/index.js');
@@ -49,14 +38,20 @@ before(async () => {
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
 
-after(() => new Promise((resolve) => server.close(resolve)));
+after(() => new Promise((resolve) => {
+  server.close(resolve);
+  /* `fetch` deja sockets keep-alive abiertos: sin esto el proceso de test no
+   * termina y `npm test` se queda colgado esperando a que muera. */
+  server.closeIdleConnections?.();
+  server.closeAllConnections?.();
+}));
 
 test('GET /manifest.json returns the Stremio manifest', async () => {
   const res = await fetch(`${baseUrl}/manifest.json`);
   assert.equal(res.status, 200);
 
   const manifest = await res.json();
-  assert.deepEqual([...manifest.types].sort(), ['anime', 'movie', 'series', 'tv']);
+  assert.deepEqual([...manifest.types].sort(), ['anime', 'movie', 'series']);
   assert.equal(manifest.resources[0].name, 'stream');
   assert.ok(manifest.id);
 });
@@ -67,13 +62,13 @@ test('GET /manifest.json accepts a Stremio config path prefix', async () => {
   assert.ok((await res.json()).id);
 });
 
-test('GET /stream/tv/:id.json returns ordered streams with request headers', async () => {
-  const res = await fetch(`${baseUrl}/stream/tv/demo-live.json`);
+test('GET /stream/movie/:id.json returns ordered streams with request headers', async () => {
+  const res = await fetch(`${baseUrl}/stream/movie/tt0133093.json`);
   assert.equal(res.status, 200);
 
   const body = await res.json();
   assert.ok(Array.isArray(body.streams));
-  assert.ok(body.streams.length >= 2, 'live demo should return several sources');
+  assert.ok(body.streams.length >= 2, 'the demo provider should return several sources');
   assert.equal(typeof body.cacheMaxAge, 'number');
 
   const [first] = body.streams;
@@ -82,7 +77,7 @@ test('GET /stream/tv/:id.json returns ordered streams with request headers', asy
   assert.equal(first.behaviorHints.requestHeaders.Referer, 'https://demo.local/');
   assert.ok(first.behaviorHints.requestHeaders['User-Agent']);
 
-  /* Priority order: demo-live (priority 10) before demo-fallback (30). */
+  /* Priority order: demo-vod (priority 20) before demo-fallback (30). */
   const providers = body.streams.map((stream) => stream.provider);
   const firstFallback = providers.indexOf('demo-fallback');
   if (firstFallback !== -1) {
@@ -91,12 +86,12 @@ test('GET /stream/tv/:id.json returns ordered streams with request headers', asy
       'lower priority providers must come last',
     );
   }
-  assert.equal(providers[0], 'demo-live');
+  assert.equal(providers[0], 'demo-vod');
 });
 
 test('second request is served from the TTL cache in milliseconds', async () => {
-  const id = 'cache-probe-' + Date.now();
-  const url = `${baseUrl}/stream/tv/${id}.json`;
+  const id = 'tt' + Date.now();
+  const url = `${baseUrl}/stream/movie/${id}.json`;
 
   const coldStart = Date.now();
   const cold = await fetch(url);
@@ -117,8 +112,8 @@ test('second request is served from the TTL cache in milliseconds', async () => 
 });
 
 test('concurrent identical requests are coalesced into one scrape', async () => {
-  const id = 'coalesce-' + Date.now();
-  const url = `${baseUrl}/stream/tv/${id}.json`;
+  const id = 'tt9' + Date.now();
+  const url = `${baseUrl}/stream/movie/${id}.json`;
 
   const responses = await Promise.all(Array.from({ length: 6 }, () => fetch(url)));
   const statuses = responses.map((res) => res.status);
@@ -148,12 +143,12 @@ test('unsupported types are rejected with a Stremio-style error', async () => {
 });
 
 test('HEAD /stream/... does not trigger a scrape', async () => {
-  const res = await fetch(`${baseUrl}/stream/tv/head-probe.json`, { method: 'HEAD' });
+  const res = await fetch(`${baseUrl}/stream/movie/tt0000001.json`, { method: 'HEAD' });
   assert.equal(res.status, 200);
   assert.equal(res.headers.get('x-cache'), 'BYPASS');
 
   /* If HEAD had scraped, the GET below would be a cache HIT. */
-  const get = await fetch(`${baseUrl}/stream/tv/head-probe.json`);
+  const get = await fetch(`${baseUrl}/stream/movie/tt0000001.json`);
   assert.ok(['MISS', 'COALESCED'].includes(get.headers.get('x-cache')));
 });
 
@@ -165,11 +160,8 @@ test('GET /health exposes cache and provider status', async () => {
   assert.equal(body.status, 'ok');
   assert.ok(body.cache.size >= 1);
   assert.ok(body.providers.enabled.length >= 1);
-  assert.equal(body.addon.liveTtlHours, 2);
   assert.equal(body.addon.vodTtlHours, 6);
-  /* Si la agenda sale vacía, aquí está el porqué (cargada o no, y cuándo). */
-  assert.equal(typeof body.liveShelf.loaded, 'boolean');
-  assert.equal(typeof body.liveShelf.channels, 'number');
+  assert.equal(body.liveShelf, undefined, 'el addon ya no publica directo');
 });
 
 test('GET /proxy rejects private targets', async () => {

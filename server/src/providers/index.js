@@ -74,13 +74,11 @@ export function getProviders() {
 }
 
 /**
- * Providers relevant for the current content class.
- * Live/sports content only hits live-capable sites; VOD only hits VOD sites.
- *
- * @param {boolean} isLive
+ * Providers relevant for VOD content. Sólo quedan proveedores de VOD: el
+ * addon no publica directo, así que `any` sigue valiendo como comodín.
  */
-export function getProvidersFor(isLive) {
-  const wanted = isLive ? new Set(['live', 'any']) : new Set(['vod', 'any']);
+export function getProvidersFor() {
+  const wanted = new Set(['vod', 'any']);
   return getProviders().filter((provider) => wanted.has(provider.kind));
 }
 

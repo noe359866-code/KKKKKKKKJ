@@ -37,8 +37,6 @@ export async function runProvider(provider, context) {
     imdbId: context.parsed.imdbId,
     season: context.parsed.season,
     episode: context.parsed.episode,
-    isLive: context.isLive,
-    isSports: context.parsed.isSports,
     /* Passed so the Python side can build absolute URLs / set the right
      * Referer for the final request if it resolves playlists itself. */
     referer: provider.referer,
@@ -75,7 +73,7 @@ export async function runProvider(provider, context) {
  * Runs a pool of providers.
  *
  * @param {Array} providers - already sorted by priority.
- * @param {object} context   - { type, id, parsed, isLive }
+ * @param {object} context   - { type, id, parsed }
  * @param {object} [options]
  * @param {number} [options.deadlineMs]      - maximum total wait.
  * @param {number} [options.minBeforeGrace]  - providers needed to start grace.

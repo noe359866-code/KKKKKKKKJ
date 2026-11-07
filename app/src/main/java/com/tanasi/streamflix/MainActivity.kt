@@ -23,8 +23,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.data.model.MediaEntry
-import com.tanasi.streamflix.data.model.toChannelQueue
-import com.tanasi.streamflix.data.model.PlaybackQueueCodec
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.WatchProgress
 import com.tanasi.streamflix.data.model.Profile
@@ -175,9 +173,6 @@ class MainActivity : ComponentActivity() {
         }
 
         var details by remember { mutableStateOf<MediaEntry?>(null) }
-        /* Títulos de la fila desde la que se abrió la ficha: la parrilla que el
-         * reproductor usará para `CH+`/`CH−`. */
-        var detailsQueue by remember { mutableStateOf<List<MediaEntry>>(emptyList()) }
         /* Primer arranque autónomo: no pide IP, dominio ni un backend. */
         var showSettings by remember { mutableStateOf(false) }
         var pendingUpdate by remember { mutableStateOf<UpdateInfo?>(null) }
@@ -218,10 +213,7 @@ class MainActivity : ComponentActivity() {
         HomeScreen(
             viewModel = homeViewModel,
             onPlay = onPlay,
-            onOpenDetails = { entry, siblings ->
-                detailsQueue = siblings
-                details = entry
-            },
+            onOpenDetails = { entry -> details = entry },
             onOpenSettings = { showSettings = true },
             profile = profile,
             continueWatching = continueWatching,
@@ -272,15 +264,13 @@ class MainActivity : ComponentActivity() {
                 },
                 onDismiss = {
                     details = null
-                    detailsQueue = emptyList()
                     catalogReturnSignal++
                 },
                 onPlay = {
                     details = null
                     /* Sin elegir servidor: el reproductor pide las fuentes y
                      * hace el failover. El id ya lleva el capítulo si tocaba. */
-                    onPlay(detailsViewModel.playbackRequest(detailsQueue.toChannelQueue()))
-                    detailsQueue = emptyList()
+                    onPlay(detailsViewModel.playbackRequest())
                 },
             )
         }
@@ -321,18 +311,13 @@ class MainActivity : ComponentActivity() {
                 .putExtra(PlayerActivity.EXTRA_ID, request.id)
                 .putExtra(PlayerActivity.EXTRA_TYPE, request.type)
                 .putExtra(PlayerActivity.EXTRA_TITLE, request.title)
-                .putExtra(PlayerActivity.EXTRA_IS_LIVE, request.isLive)
                 .putExtra(PlayerActivity.EXTRA_START_INDEX, request.startIndex)
                 .putExtra(PlayerActivity.EXTRA_START_POSITION, request.startPositionMs)
                 /* Con estos tres extras el reproductor puede guardar el
                  * progreso del perfil y su arte para "Seguir viendo". */
                 .putExtra(PlayerActivity.EXTRA_PROFILE_ID, profileId)
                 .putExtra(PlayerActivity.EXTRA_POSTER, request.poster)
-                .putExtra(PlayerActivity.EXTRA_BACKDROP, request.backdrop)
-                /* Parrilla para zapear dentro del reproductor. Serializada con
-                 * kotlinx: un `ArrayList<String>` de extras obligaría a
-                 * reconstruir id/título/carátula a mano en la otra punta. */
-                .putExtra(PlayerActivity.EXTRA_QUEUE, PlaybackQueueCodec.encode(request.queue)),
+                .putExtra(PlayerActivity.EXTRA_BACKDROP, request.backdrop),
         )
     }
 

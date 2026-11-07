@@ -85,15 +85,14 @@ class SubtitlesTest {
     }
 
     @Test
-    fun `solo se activa sola una pista en espanol y nunca en directo`() {
+    fun `solo se activa sola una pista en espanol`() {
         val tracks = listOf(
             SubtitleTrack(url = "https://cdn/a.en.vtt", lang = "en", label = "Inglés"),
             SubtitleTrack(url = "https://cdn/b.es.srt", lang = "es", label = "Español"),
         )
-        assertEquals(1, SubtitleTrack.preferredIndex(tracks, isLive = false))
-        assertNull(SubtitleTrack.preferredIndex(tracks, isLive = true))
-        assertNull(SubtitleTrack.preferredIndex(listOf(tracks.first()), isLive = false))
-        assertNull(SubtitleTrack.preferredIndex(emptyList(), isLive = false))
+        assertEquals(1, SubtitleTrack.preferredIndex(tracks))
+        assertNull(SubtitleTrack.preferredIndex(listOf(tracks.first())))
+        assertNull(SubtitleTrack.preferredIndex(emptyList()))
     }
 
     @Test

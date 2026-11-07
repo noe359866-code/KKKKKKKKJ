@@ -41,7 +41,6 @@ object CinemetaSuggestions {
         rows.asSequence()
             .filter(::isCinemeta)
             .flatMap { it.items.asSequence() }
-            .filter { !it.isLive }
             .filter { !it.poster.isNullOrBlank() || !it.backdrop.isNullOrBlank() }
             .distinctBy { "${it.type}:${it.id}" }
             .take(limit)

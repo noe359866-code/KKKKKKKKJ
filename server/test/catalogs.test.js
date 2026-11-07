@@ -72,13 +72,12 @@ await new Promise((resolve) => mock.listen(0, '127.0.0.1', resolve));
 process.env.RATE_LIMIT_MAX = '0';
 process.env.CINEMETA_BASE = `http://127.0.0.1:${mock.address().port}/`;
 process.env.CATALOGS_CONFIG = path.join(fixtures, 'catalogs.json');
-process.env.LIVE_CATALOG_PATH = path.join(fixtures, 'live-catalog.json');
 process.env.CATALOG_TTL_MINUTES = '30';
 process.env.CATALOG_SEARCH_TTL_MINUTES = '5';
 
 const { createApp } = await import('../src/app.js');
 const { loadCatalogs, getCatalogs, manifestCatalogs } = await import('../src/catalogs/registry.js');
-const { invalidateCatalogs, liveItemToMeta, loadLiveCatalog, catalogCacheKey } = await import(
+const { invalidateCatalogs, catalogCacheKey } = await import(
   '../src/services/catalogService.js'
 );
 const { normalizeMeta, normalizeMetas, normalizeVideos, buildCatalogPath, buildMetaPath, parseYear, parseRating } =
@@ -196,10 +195,10 @@ test('buildCatalogPath pone los extras en el orden del protocolo', () => {
 test('parseCatalogPath entiende extras en segmentos de path', () => {
   assert.deepEqual(parseCatalogPath('/catalog/movie/top.json'), { type: 'movie', id: 'top', extras: {} });
 
-  assert.deepEqual(parseCatalogPath('/catalog/tv/live/genre=Deportes/skip=20.json'), {
-    type: 'tv',
-    id: 'live',
-    extras: { genre: 'Deportes', skip: '20' },
+  assert.deepEqual(parseCatalogPath('/catalog/movie/top/genre=Drama/skip=20.json'), {
+    type: 'movie',
+    id: 'top',
+    extras: { genre: 'Drama', skip: '20' },
   });
 
   /* Un `search` con `:` y espacios codificados debe sobrevivir intacto. */
@@ -215,49 +214,20 @@ test('parseCatalogPath entiende extras en segmentos de path', () => {
 });
 
 /* -------------------------------------------------------------------------- */
-/* Fuente local                                                               */
-/* -------------------------------------------------------------------------- */
-
-test('liveItemToMeta produce tarjetas 16:9 listas para el cliente', () => {
-  const meta = liveItemToMeta({
-    id: 'tv:demo:espn-1',
-    name: 'ESPN 1',
-    category: 'deportes',
-    genres: ['Deportes'],
-    description: 'Señal',
-    logo: 'https://x/logo.png',
-  });
-
-  assert.equal(meta.type, 'tv');
-  assert.equal(meta.posterShape, 'landscape', 'la TV en vivo se pinta 16:9');
-  assert.equal(meta.releaseInfo, 'En directo');
-  assert.equal(meta.poster, 'https://x/logo.png');
-  assert.equal(liveItemToMeta({ name: 'sin id' }), null);
-});
-
-test('loadLiveCatalog lee el JSON y descarta canales sin id', async () => {
-  const items = await loadLiveCatalog({ force: true });
-  assert.deepEqual(items.map((meta) => meta.id), ['tv:demo:espn-1', 'tv:demo:canal-13', 'tv:demo:evento-final']);
-  assert.ok(items.every((meta) => meta.posterShape === 'landscape'));
-});
-
-/* -------------------------------------------------------------------------- */
 /* Registro                                                                   */
 /* -------------------------------------------------------------------------- */
 
 test('el registro descarta catálogos inválidos y respeta el orden', () => {
   const ids = getCatalogs().map((catalog) => `${catalog.type}/${catalog.id}`);
-  assert.deepEqual(ids, ['tv/live', 'movie/top', 'anime/top', 'movie/boom']);
+  assert.deepEqual(ids, ['movie/top', 'anime/top', 'movie/boom']);
 
   const manifest = manifestCatalogs();
-  const live = manifest.find((catalog) => catalog.type === 'tv');
-  assert.equal(live.posterShape, 'landscape');
-  assert.ok(live.extra.some((extra) => extra.name === 'genre' && extra.options.includes('Deportes')));
-  assert.ok(live.extra.some((extra) => extra.name === 'search'), 'sin `search` Stremio no muestra el buscador');
+  const top = manifest.find((catalog) => catalog.id === 'top' && catalog.type === 'movie');
+  assert.equal(top.posterShape, 'poster');
+  assert.ok(top.extra.some((extra) => extra.name === 'search'), 'sin `search` Stremio no muestra el buscador');
   /* La app usa `source` para recomendar sólo títulos de Cinemeta en el buscador;
    * el resto de clientes Stremio lo ignoran. */
-  assert.equal(live.source, 'local');
-  assert.equal(manifest.find((catalog) => catalog.id === 'top' && catalog.type === 'movie').source, 'cinemeta');
+  assert.equal(top.source, 'cinemeta');
 });
 
 /* -------------------------------------------------------------------------- */
@@ -273,10 +243,9 @@ test('GET /manifest.json publica catálogos y los recursos catalog/meta/subtitle
     manifest.resources.map((resource) => resource.name),
     ['stream', 'catalog', 'meta', 'subtitles'],
   );
-  assert.ok(manifest.catalogs.length >= 4);
-  assert.equal(manifest.catalogs[0].type, 'tv');
-  assert.equal(manifest.catalogs[0].posterShape, 'landscape');
-  assert.ok(!('idPrefixes' in manifest.catalogs[0]), 'los ids de TV no empiezan por tt');
+  assert.ok(manifest.catalogs.length >= 3);
+  assert.equal(manifest.catalogs[0].type, 'movie');
+  assert.equal(manifest.catalogs[0].posterShape, 'poster');
 });
 
 test('GET /catalog/movie/top.json normaliza, deduplica y cachea', async () => {
@@ -339,30 +308,6 @@ test('la búsqueda también se acepta por query string', async () => {
   );
 });
 
-test('GET /catalog/tv/live.json mezcla la fuente local en el Home', async () => {
-  const res = await fetch(`${baseUrl}/catalog/tv/live.json`);
-  const body = await res.json();
-
-  assert.equal(res.status, 200);
-  assert.deepEqual(body.metas.map((meta) => meta.id), [
-    'tv:demo:espn-1',
-    'tv:demo:canal-13',
-    'tv:demo:evento-final',
-  ]);
-  assert.ok(body.metas.every((meta) => meta.posterShape === 'landscape'));
-  assert.equal(body.catalog.posterShape, 'landscape');
-});
-
-test('la fila local filtra por género y por texto', async () => {
-  const byGenre = await (await fetch(`${baseUrl}/catalog/tv/live/genre=Deportes.json`)).json();
-  assert.deepEqual(byGenre.metas.map((meta) => meta.id), ['tv:demo:espn-1', 'tv:demo:evento-final']);
-
-  /* Ojo: "canal" también aparece en el género "Canales", así que se busca un
-   * término que sólo tenga un canal. */
-  const bySearch = await (await fetch(`${baseUrl}/catalog/tv/live/search=13.json`)).json();
-  assert.deepEqual(bySearch.metas.map((meta) => meta.id), ['tv:demo:canal-13']);
-});
-
 test('un upstream caído devuelve 200 degradado, no un 502', async () => {
   const res = await fetch(`${baseUrl}/catalog/movie/boom.json`);
   const body = await res.json();
@@ -421,15 +366,6 @@ test('GET /meta/series/tt0944947:1:2.json selecciona el episodio', async () => {
   assert.equal(body.meta.selectedVideo.name, 'The Kingsroad');
 });
 
-test('GET /meta/tv/<id> devuelve la ficha del canal local', async () => {
-  const res = await fetch(`${baseUrl}/meta/tv/${encodeURIComponent('tv:demo:espn-1')}.json`);
-  const body = await res.json();
-
-  assert.equal(res.status, 200);
-  assert.equal(body.meta.name, 'ESPN 1');
-  assert.equal(body.meta.posterShape, 'landscape');
-});
-
 test('GET /meta de un id inexistente responde 404', async () => {
   const res = await fetch(`${baseUrl}/meta/movie/tt0000000.json`);
   assert.equal(res.status, 404);
@@ -442,13 +378,11 @@ test('GET /catalogs.json da a Android las filas con su forma y su feed', async (
 
   assert.equal(res.status, 200);
   assert.deepEqual(body.catalogs.map((catalog) => catalog.feed), [
-    '/catalog/tv/live.json',
     '/catalog/movie/top.json',
     '/catalog/anime/top.json',
     '/catalog/movie/boom.json',
   ]);
-  assert.equal(body.catalogs[0].posterShape, 'landscape');
-  assert.equal(body.catalogs[1].posterShape, 'poster');
+  assert.equal(body.catalogs[0].posterShape, 'poster');
 });
 
 test('invalidateCatalogs limpia catálogos y fichas pero no los streams', async () => {

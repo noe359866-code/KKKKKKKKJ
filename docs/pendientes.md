@@ -1,13 +1,13 @@
 # Lo que falta
 
-Auditoría del estado del proyecto tras el zapeo de canales (§18) y el buscador
-con teclado propio (§19). Todo lo de abajo está **verificado en el código**, no
+Auditoría del estado del proyecto tras el buscador con teclado propio (§19) y
+la retirada del TV en directo (§26). Todo lo de abajo está **verificado en el código**, no
 recordado: cada punto dice dónde mirar. Lo que depende de las webs (selectores,
 dominios caídos) no se puede comprobar desde aquí y queda marcado como tal.
 
 Estado: CI verde (`testDebugUnitTest`, `lintDebug`, `lintRelease`,
 `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`), Node
-**281/281**, Python **116**, 39 archivos de test en JVM (233 casos) y 8 casos nuevos de hosters.
+**209/209**, Python **83**.
 
 > **Actualización (§24):** CI en verde otra vez. El rojo de `main` no era la
 > app: `PlayerTracksOptionsTest` metía una pista en español y otra en inglés en
@@ -18,12 +18,16 @@ Estado: CI verde (`testDebugUnitTest`, `lintDebug`, `lintRelease`,
 > del workflow vuelca ahora los XML de JUnit al check-run. También queda hecho
 > `hls_variants` (P2 del servidor), el último punto abierto de esa lista.
 
+> **Actualización (§26):** la app pasa a ser **sólo VOD**. Se retiró todo el
+> contenido de TV en directo —los ocho proveedores de canales/deportes,
+> `_livekit`/`_liveshelf`, `live-catalog.json`, las filas `tv/*`, el zapeo
+> (`CH+`/`CH−`, guía, rótulo), la EPG, las tarjetas de marcador y el chip EN
+> VIVO— con sus pruebas y su documentación. **No** se tocó Android TV como
+> plataforma: leanback, foco D-Pad y `DeviceProfile` siguen igual.
+>
 > **Actualización (§23):** el buscador de P2 está hecho (acentos, búsqueda en
-> vivo con retardo, historial y el panel derecho con su regla probada) y la
-> **guía por canal** ya funciona con la única fuente de horarios que existe (la
-> agenda deportiva); falta la rejilla de los canales de TV, que ningún proveedor
-> publica. También caen `cuevana.SITE["base"]` y las pruebas de
-> `HomeViewModel.suggestions`.
+> vivo con retardo, historial y el panel derecho con su regla probada). También
+> caen `cuevana.SITE["base"]` y las pruebas de `HomeViewModel.suggestions`.
 
 > **Actualización (§21):** los dos primeros puntos de P1 —subtítulos y pista de
 > audio— ya están implementados, y `loadLiveShelf` ya comparte una sola corrida
@@ -86,33 +90,14 @@ inglesa, el usuario no puede cambiar de pista.
 Falta: exponer `language` en `StreamSource`, y en los controles un selector de
 pista de audio (mismo patrón que el selector de fuentes).
 
-### ✅ (parcial) Guía de programación por canal
-
-> **Hecho lo que se puede sostener con datos reales.** `EpgEntry` viaja dentro de
-> la parrilla (`PlaybackChannel.epg`, por el mismo extra del `Intent`), así que
-> zapear no pide nada: la guía y el rótulo ya saben qué se emite al llegar.
-> `Epg.from()` la llena con lo único que publica horarios hoy —la **agenda
-> deportiva**: un partido es una emisión con hora, competición y estado— y
-> `Epg.line()` la escribe como «AHORA · 19:00 · Liga 1», en la tarjeta de la guía
-> y en el rótulo del cambio de canal. Sin programación no hay línea: la tarjeta
-> se queda como estaba en vez de enseñar un hueco. `EpgTest` (7 casos) incluye
-> el viaje por el `Intent`.
->
-> Lo que **no** hay, y no se inventa: rejilla horaria de los canales de TV.
-> Ninguno de los proveedores del proyecto publica EPG (ni XMLTV ni una API de
-> programas) y desde aquí no se puede verificar un sitio nuevo. Cuando alguno lo
-> publique basta con llenar `epg` en la fila del catálogo: el transporte, el tope
-> (`Epg.MAX_ENTRIES`), el dibujo y las pruebas ya están.
-
 ### ✅ (hecho) El canal actual no se recuerda
 
 > **Implementado.** `PlaybackRestore` guarda en `onSaveInstanceState` la
-> petición **en curso** (con la parrilla y la fuente elegida) y el segundo
-> exacto; `PlayerActivity` restaura primero lo guardado y sólo cae al `Intent`
-> si no hay nada. El reproductor reporta el avance cada 15 s, así que la
-> posición guardada no es la de la última salida limpia. Un directo no guarda
-> posición (pediría un segmento fuera de la ventana del vivo), pero sí el
-> canal. `PlaybackRestoreTest` (5 casos) y `PlayerViewModelTest` (7).
+> petición **en curso** (con la fuente elegida) y el segundo exacto;
+> `PlayerActivity` restaura primero lo guardado y sólo cae al `Intent` si no hay
+> nada. El reproductor reporta el avance cada 15 s, así que la posición guardada
+> no es la de la última salida limpia. `PlaybackRestoreTest` y
+> `PlayerViewModelTest`.
 
 ---
 
@@ -197,15 +182,14 @@ Las cuatro cosas que faltaban, resueltas sin tocar el presupuesto de pantalla
 ## P2 — Falta en pruebas
 
 - ✅ **`PlayerViewModel` sin tests**: **hecho**. `PlayerViewModelTest` cubre
-  carga, subtítulos en el mismo estado, «sin fuentes», fallo de red, zapeo con
-  la imagen anterior en pantalla (`tuning`), mismo canal sin repetir petición,
-  deshacer con `restore()` y reintento.
+  carga, subtítulos en el mismo estado, «sin fuentes», fallo de red y reintento
+  con generación nueva.
 - ✅ **`HomeViewModel.suggestions` sin tests**: **hecho**.
   `HomeViewModelSuggestionsTest` (3 casos) comprueba que salen de las filas sin
   pedir nada más, que buscar **no** las borra y que refrescar las rehace.
-- **Nada de UI**: la guía de canales y el teclado del buscador están pensados
-  para el foco del D-Pad y no hay ningún test instrumentado que compruebe el
-  recorrido del foco (`app/src/androidTest` sólo tiene el smoke test del motor y
+- **Nada de UI**: el teclado del buscador y los paneles del reproductor están
+  pensados para el foco del D-Pad y no hay ningún test instrumentado que
+  compruebe el recorrido del foco (`app/src/androidTest` sólo tiene el smoke test del motor y
   el de almacenamiento de perfiles).
 - **No hay emulación de TV en CI**: compila y pasa lint, pero nadie «pulsa» las
   teclas. Lo que se rompa de foco se descubre en el sofá.
@@ -227,12 +211,9 @@ Las cuatro cosas que faltaban, resueltas sin tocar el presupuesto de pantalla
 - ✅ ~~Comentario «opt-in»~~: **hecho**. `embedded_engine.catalogs()` y
   `CatalogRepository` dicen ahora que Cinemeta viene activado de fábrica y se
   puede apagar en Ajustes.
-- ✅ ~~La cola de canales topada en 60~~: **hecho**. `MAX_CHANNEL_QUEUE` son
-  ahora 200 canales y el recorte real lo decide el **tamaño del extra**
-  (`PlaybackQueueCodec.MAX_BYTES` = 64 KB, recortando por la cola para no perder
-  el canal que se está viendo). Antes, una fila de 120 canales se zapeaba por la
-  mitad y el número 60 no protegía de nada si cada canal llevara guía.
-  `PlaybackQueueTest` (dos casos nuevos).
+- ✅ ~~La cola de canales topada en 60~~: **retirado**. La parrilla de canales y
+  su códec (`PlaybackQueueCodec`) se borraron con el TV en directo (§26); el
+  reproductor sólo abre el título que le piden.
 
 ---
 

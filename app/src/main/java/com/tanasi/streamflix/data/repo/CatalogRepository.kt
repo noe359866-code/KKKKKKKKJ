@@ -104,21 +104,12 @@ class CatalogRepository(
     private suspend fun loadRows(baseUrl: String, descriptors: List<CatalogDescriptor>, search: String?, onPartial: ((HomeCatalog) -> Unit)?): List<CatalogRow> =
         coroutineScope {
             val completed = linkedMapOf<String, CatalogRow>()
-            // Arranca con los canales empaquetados antes de ocupar el pool con peticiones de Internet.
-            val saved = descriptors.firstOrNull { settings.autonomous && it.id == "bundled_live" && it.type == "tv" }
-            if (saved != null) {
-                fetchRow(baseUrl, saved, search)?.let { row ->
-                    completed[saved.rowId] = row
-                    onPartial?.invoke(HomeCatalog(listOf(row)))
-                }
-            }
-            descriptors.filterNot { it == saved }
-                .map { descriptor ->
+            descriptors.map { descriptor ->
                     async(ioDispatcher) {
                         val row = withTimeoutOrNull(ROW_TIMEOUT_MS) { fetchRow(baseUrl, descriptor, search) }
                         if (row != null) synchronized(completed) {
                             completed[descriptor.rowId] = row
-                            // Publica primero los canales guardados; las filas de Internet aparecen al llegar.
+                            // Las filas aparecen en el Home según van llegando.
                             onPartial?.invoke(HomeCatalog(descriptors.mapNotNull { completed[it.rowId] }))
                         }
                         descriptor to row

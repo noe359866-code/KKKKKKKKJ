@@ -21,7 +21,7 @@ data class CatalogsResponse(
  * @param type tipo Stremio publicado (`movie`, `series`, `anime`, `tv`).
  * @param id id del catálogo en la URL; junto a [type] forma la clave.
  * @param posterShape `poster` (2:3) o `landscape` (16:9).
- * @param feed ruta relativa que devolvió el servidor (`/catalog/tv/live.json`).
+ * @param feed ruta relativa que devolvió el servidor (`/catalog/movie/top.json`).
  */
 @Serializable
 data class CatalogDescriptor(
@@ -40,8 +40,8 @@ data class CatalogDescriptor(
     /** Nombre del addon de origen cuando [source] es `remote`. */
     @SerialName("provider") val provider: String? = null,
     /**
-     * Pista de presentación que manda la fuente: `cards` (por defecto) o
-     * `sports` para la fila de deportes, que se pinta como marcador.
+     * Pista de presentación que manda la fuente. Hoy sólo `cards` (por
+     * defecto): las tarjetas de arte.
      */
     @SerialName("layout") val layout: String? = null,
 ) {
@@ -113,21 +113,9 @@ data class RemoteMeta(
      * filas; las de Cinemeta se reconocen por el id `tt…`.
      */
     @SerialName("sourceName") val sourceName: String? = null,
-    /**
-     * Deportes: equipos, competición y estado. [onAir] distingue el partido que
-     * ya empezó del que aún no, aunque los dos sean `tv`.
-     */
-    @SerialName("home") val home: String? = null,
-    @SerialName("away") val away: String? = null,
-    @SerialName("league") val league: String? = null,
-    @SerialName("startTime") val startTime: String? = null,
-    @SerialName("status") val status: String? = null,
-    @SerialName("onAir") val onAir: Boolean? = null,
     @SerialName("videos") val videos: List<RemoteVideo> = emptyList(),
 ) {
     val mediaType: MediaType get() = MediaType.fromWire(type) ?: MediaType.Movie
-
-    val isLive: Boolean get() = mediaType == MediaType.Live
 
     /**
      * Convierte la meta en la tarjeta que pinta el Home.
@@ -149,12 +137,6 @@ data class RemoteMeta(
         genres = genres,
         rating = rating,
         runtime = runtime,
-        live = mediaType == MediaType.Live,
-        onAir = onAir,
-        homeTeam = home?.takeIf { it.isNotBlank() },
-        awayTeam = away?.takeIf { it.isNotBlank() },
-        league = league?.takeIf { it.isNotBlank() },
-        startTime = startTime?.takeIf { it.isNotBlank() },
         provider = providerLabel(descriptor),
     )
 

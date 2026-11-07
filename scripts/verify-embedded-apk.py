@@ -9,19 +9,18 @@ import sys
 import zipfile
 
 PROVIDERS = {
-    "futbolibre", "deportelibre", "tvenvivo", "livelive24", "damitv", "ntv",
-    "streamcorner", "animeflv", "jkanime", "monoschinos",
+    "animeflv", "jkanime", "monoschinos",
     "gnula", "cuevana", "pelisplushd", "repelis", "peliculasflix", "pelisjuanita",
     "novahd",
 }
-HELPERS = {"embedded_engine", "_embedded_cache", "_embedded_catalogs", "_android_http", "_base", "_htmlkit", "_hosters", "_animekit", "_peliskit", "_livekit", "_liveshelf", "_tmdb"}
+HELPERS = {"embedded_engine", "_embedded_cache", "_embedded_catalogs", "_android_http", "_base", "_htmlkit", "_hosters", "_animekit", "_peliskit", "_tmdb"}
 ABIS = {"armeabi-v7a", "arm64-v8a", "x86_64"}
 
 
 def verify(path: Path):
     with zipfile.ZipFile(path) as apk:
         names = set(apk.namelist())
-        for asset in ("assets/providers.json", "assets/live-catalog.json", "assets/chaquopy/app.imy"):
+        for asset in ("assets/providers.json", "assets/chaquopy/app.imy"):
             if asset not in names:
                 raise ValueError(f"Missing APK asset: {asset}")
         with zipfile.ZipFile(io.BytesIO(apk.read("assets/chaquopy/app.imy"))) as app:
@@ -51,12 +50,8 @@ def verify(path: Path):
                  if str(item.get("id", "")).startswith("demo-")]
         if demos:
             raise ValueError(f"Demo providers must not ship in the APK: {demos}")
-        live = json.loads(apk.read("assets/live-catalog.json").decode("utf-8"))
-        channels = live.get("metas") or live.get("channels") or live.get("items") or []
-        if not channels:
-            raise ValueError("live-catalog.json is empty: the TV en vivo shelf would render with no channels")
     return {"apk": path.name, "bytes": path.stat().st_size, "MiB": round(path.stat().st_size / 1024**2, 2),
-            "embeddedProviders": sorted(PROVIDERS), "liveChannels": len(channels), "abis": sorted(ABIS)}
+            "embeddedProviders": sorted(PROVIDERS), "abis": sorted(ABIS)}
 
 
 if __name__ == "__main__":

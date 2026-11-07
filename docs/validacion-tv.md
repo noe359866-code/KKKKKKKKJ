@@ -55,11 +55,11 @@ No marcar una casilla sin haberla comprobado en el dispositivo correspondiente. 
 - [ ] Con el mando, recorrer inicio, categorías y carruseles en las cuatro direcciones; confirmar que siempre hay foco visible, no queda atrapado y el scroll revela el elemento enfocado.
 - [ ] Entrar y salir de búsqueda; usar el teclado D-pad propio y la entrada física, probar sin resultados y devolver el foco al elemento esperado.
 - [ ] En los campos de servidor y addons, usar el teclado del sistema; probar flechas, cierre y reapertura del teclado, y acceso a Guardar tanto en Android TV como en Fire OS.
-- [ ] Abrir película, serie y directo; comprobar ficha, metadatos ausentes, selección de temporada/episodio y retorno del foco a la tarjeta de origen. Probar series sin lista y reintento.
+- [ ] Abrir película, serie y anime; comprobar ficha, metadatos ausentes, selección de temporada/episodio y retorno del foco a la tarjeta de origen. Probar series sin lista y reintento.
 - [ ] Recorrer ajustes en dos columnas, abrir y cerrar diálogos con Back, guardar y descartar cambios; comprobar conexión, addons y actualización con servicios reales sin afirmar éxito si hay error.
-- [ ] Reproducir contenido disponible; probar pausa, reanudación, avance/retroceso, Back, regreso al catálogo y progreso después de reabrir. Revisar también los eventos de TV todavía no emitidos.
+- [ ] Reproducir contenido disponible; probar pausa, reanudación, avance/retroceso, Back, regreso al catálogo y progreso después de reabrir.
 - [ ] Probar reproducción en segundo plano y regreso, interrupción de red, fuentes fallidas y reintento; no cambiar de fuente por una pausa intencional.
-- [ ] Probar únicamente pistas de audio y subtítulos realmente presentes, activar/desactivar, cambio de fuente y zapeo con una cola de canales disponible.
+- [ ] Probar únicamente pistas de audio y subtítulos realmente presentes, activar/desactivar y cambio de fuente.
 - [ ] Navegar listas largas, volver varias veces a inicio y reproducir durante un periodo prolongado; observar fluidez, tiempos de carga, bloqueos y memoria (`adb shell dumpsys meminfo com.tanasi.streamflix.debug`). Registrar mediciones antes de sacar conclusiones.
 - [ ] Si el dispositivo permite cambiar resolución o densidad sin reiniciar, verificar que márgenes, tarjetas y foco se actualizan correctamente en catálogo y reproductor.
 

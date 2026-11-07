@@ -66,8 +66,8 @@ largos, pantallas de distinta altura y mando real.
   logo real con texto de respaldo, tipo/año/duración/nota sólo si existen,
   sinopsis breve y acciones «Reproducir» y «Más información».
 - Filas horizontales con encabezados legibles. Póster 2:3 para películas/series;
-  16:9 para progreso y directos. El arte no debe quedar cortado por el foco.
-- Menú con Inicio, Películas, Series, En vivo, Buscar, Perfil y Ajustes. Elegir
+  16:9 para progreso y filas de arte ancho. El arte no debe quedar cortado por el foco.
+- Menú con Inicio, Películas, Series, Buscar, Perfil y Ajustes. Elegir
   entre barra superior y lateral como decisión de diseño; no introducir ambos
   simultáneamente sin justificar el espacio y probar el foco.
 - Mantener el foco durante navegación entre filas y al regresar de la ficha o
@@ -121,8 +121,7 @@ clasificaciones, tráilers o calidades que el proveedor no devuelve.
 Comportamiento previsto: OK pausa/reanuda en el vídeo; izquierda/derecha buscan
 en VOD cuando la superficie tiene foco y navegan cuando el foco está en un
 control; botones multimedia físicos funcionan independientemente. Atrás cierra
-primero la capa superior y luego vuelve a la ficha/catálogo. Para directo,
-definir y probar por separado el comportamiento de flechas y zapeo. Google
+primero la capa superior y luego vuelve a la ficha/catálogo. Google
 exige soporte de controles D-pad y pausa/reanudación [1](https://developer.android.com/docs/quality-guidelines/tv-app-quality);
 Amazon documenta las teclas del mando [1](https://developer.amazon.com/docs/fire-tv/remote-input.html).
 
@@ -216,7 +215,7 @@ proyecto de adaptación, reproductor e integración específicos y pruebas propi
 - Restituir foco tras Atrás, reproductor y diálogos; sin foco invisible, trampas,
   selección accidental ni dependencias de ratón/pantalla táctil.
 - Verificar reproducción en segundo plano, reanudación y fin de vídeo, pista no
-  disponible, número de fuentes variable y zapeo en directo.
+  disponible y número de fuentes variable.
 - Medir arranque, memoria, fotogramas perdidos y consumo de red en dispositivos
   representativos; documentar cifras obtenidas, no prometer objetivos sin medir.
 

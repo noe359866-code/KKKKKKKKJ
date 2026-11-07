@@ -11,7 +11,7 @@
  *      `anime`, que Cinemeta no tiene: la fila "Anime en emisión" es en realidad
  *      el catálogo `series` filtrado por `genre=Animation`.
  *   2. **Mezcla fuentes.** Las filas de TV en vivo y deportes salen de
- *      `config/live-catalog.json` (ids locales tipo `tv:futbolibre:espn-1`), no
+ *      los catálogos de VOD (Cinemeta y addons de terceros), no
  *      de Cinemeta. El cliente ve una sola cartelera coherente.
  *   3. **Aísla la caída de Cinemeta.** Si el upstream falla se sirve la copia
  *      *stale* si existe; si no, una lista vacía con `degraded: true` y un TTL
@@ -23,12 +23,8 @@
  * espera Stremio y lo que consume la app Android.
  */
 
-import { readFile } from 'node:fs/promises';
-
 import config from '../config.js';
 import { cache } from '../cache/TtlCache.js';
-import { runScript } from '../bridge/pythonBridge.js';
-import { getProvidersFor } from '../providers/index.js';
 import { ensureCatalogs, findCatalog } from '../catalogs/registry.js';
 import {
   buildCatalogPath,
@@ -72,232 +68,6 @@ export function metaCacheKey(type, id) {
 /* Catálogo local (TV en vivo y deportes)                                     */
 /* -------------------------------------------------------------------------- */
 
-/* El JSON de canales cambia cuando el usuario lo edita, no en cada request:
- * se guarda en memoria con una marca de tiempo y se recarga cada 5 minutos. */
-const LIVE_RELOAD_MS = 5 * 60 * 1000;
-let liveState = { items: [], loadedAtMs: 0 };
-
-/**
- * Lee `config/live-catalog.json` y lo convierte en metas Stremio.
- *
- * El `id` de cada canal es el id de stream (`tv:futbolibre:espn-1`), así que el
- * cliente puede pedir `/stream/tv/<id>.json` con lo que ya tiene en la tarjeta.
- *
- * @param {object} [options]
- * @param {boolean} [options.force] - ignora la copia en memoria
- * @param {string} [options.path]   - ruta alternativa (tests)
- * @returns {Promise<object[]>} metas normalizadas
- */
-export async function loadLiveCatalog({ force = false, path = config.catalogs.liveCatalogPath } = {}) {
-  const now = Date.now();
-  if (!force && liveState.items.length > 0 && now - liveState.loadedAtMs < LIVE_RELOAD_MS) {
-    return liveState.items;
-  }
-
-  try {
-    const raw = JSON.parse(await readFile(path, 'utf8'));
-    const items = Array.isArray(raw) ? raw : raw.items || [];
-    const metas = items.map(liveItemToMeta).filter(Boolean);
-    liveState = { items: metas, loadedAtMs: now };
-    log.debug('live catalog loaded', { path, items: metas.length });
-    return metas;
-  } catch (error) {
-    log.warn('could not read the live catalog', { path, error: error.message });
-    /* Se conserva la última copia buena: un JSON a medio guardar no debe
-     * vaciar la fila de TV en vivo. */
-    return liveState.items;
-  }
-}
-
-/* -------------------------------------------------------------------------- */
-/* Canales y agenda recogidos de los proveedores de directo                   */
-/* -------------------------------------------------------------------------- */
-
-/* Un scrape cada `CATALOG_LIVE_TTL_MINUTES` para las dos filas: los canales de
- * los sitios cambian poco y la agenda, cada hora. Pedirlo por request sería
- * castigar a los proveedores y a la vez al usuario. */
-let liveShelfState = { data: null, loadedAtMs: 0, failedAtMs: 0 };
-
-/* Una sola corrida a la vez. El Home pide canales y agenda a la vez (y varias
- * TV pueden abrir la app al mismo tiempo): sin esto, tres peticiones
- * simultáneas levantan tres procesos de Python y golpean tres veces los sitios
- * de origen para traer exactamente el mismo JSON. */
-let liveShelfInflight = null;
-
-/**
- * Canales y agenda que publican los proveedores de directo.
- *
- * Se delega en `scrapers/_liveshelf.py` (el mismo constructor que usa el motor
- * del APK) para no tener dos listas distintas en el servidor y en la app.
- *
- * @param {object} [options]
- * @param {object} [options.liveShelf] - inyección para las pruebas
- * @returns {Promise<{channels: object[], events: object[]}>}
- */
-export async function loadLiveShelf(options = {}) {
-  if (options.liveShelf) return options.liveShelf;
-
-  const now = Date.now();
-  if (liveShelfState.data && now - liveShelfState.loadedAtMs < config.catalogs.liveTtlMs) {
-    return liveShelfState.data;
-  }
-  /* Tras un fallo no se reintenta en cada request: 1 minuto de calma. */
-  if (!liveShelfState.data && now - liveShelfState.failedAtMs < 60_000) {
-    return { channels: [], events: [] };
-  }
-  /* Petición en vuelo: se comparte en vez de lanzar otra corrida. */
-  if (liveShelfInflight) return liveShelfInflight;
-
-  const run = scrapeLiveShelf();
-  liveShelfInflight = run;
-  const clear = () => {
-    if (liveShelfInflight === run) liveShelfInflight = null;
-  };
-  run.then(clear, clear);
-  return run;
-}
-
-/**
- * Corre `_liveshelf.py` y guarda el resultado. Nunca lanza: un proveedor caído
- * deja la estantería vacía (y el Home cae al JSON curado), no un 500.
- */
-async function scrapeLiveShelf() {
-  const providers = getProvidersFor(true)
-    .map(({ id, label, referer, userAgent }) => ({ id, label, referer, userAgent }));
-
-  const result = await runScript('_liveshelf.py', {
-    providers,
-    channelLimit: config.catalogs.pageSize,
-    eventLimit: config.catalogs.pageSize,
-    timeoutMs: config.catalogs.liveTimeoutMs,
-  }, { timeoutMs: config.catalogs.liveTimeoutMs * 2 + 4_000 });
-
-  const data = result.ok && result.data && typeof result.data === 'object'
-    ? {
-        channels: Array.isArray(result.data.channels) ? result.data.channels : [],
-        events: Array.isArray(result.data.events) ? result.data.events : [],
-      }
-    : { channels: [], events: [] };
-
-  if (data.channels.length === 0 && data.events.length === 0) {
-    liveShelfState = { ...liveShelfState, failedAtMs: Date.now() };
-    log.warn('live shelf came back empty', { providers: providers.length, reason: result.meta?.reason });
-    return { channels: [], events: [] };
-  }
-
-  liveShelfState = { data, loadedAtMs: Date.now(), failedAtMs: 0 };
-  log.debug('live shelf loaded', { channels: data.channels.length, events: data.events.length });
-  return data;
-}
-
-/**
- * Estado de la estantería de directo, para `/health`.
- *
- * `tv/agenda` devuelve `[]` cuando ningún proveedor publica horarios (o cuando
- * todos están caídos) y eso, desde fuera, parece un bug del addon. Aquí queda
- * el porqué: si nunca cargó, cuándo se intentó y cuántos canales/eventos hay.
- */
-export function liveShelfStatus(now = Date.now()) {
-  const data = liveShelfState.data;
-  return {
-    loaded: Boolean(data),
-    ageMs: data ? now - liveShelfState.loadedAtMs : null,
-    ttlMs: config.catalogs.liveTtlMs,
-    channels: data ? data.channels.length : 0,
-    events: data ? data.events.length : 0,
-    failedAgoMs: liveShelfState.failedAtMs ? now - liveShelfState.failedAtMs : null,
-    inflight: Boolean(liveShelfInflight),
-  };
-}
-
-/** Tira la estantería cacheada (admin y pruebas): la próxima petición raspa. */
-export function invalidateLiveShelf() {
-  liveShelfState = { data: null, loadedAtMs: 0, failedAtMs: 0 };
-  liveShelfInflight = null;
-}
-
-/** Fila `live`: canales o agenda, con los filtros de Stremio y respaldo curado. */
-async function liveMetas(definition, extra, options) {
-  const section = definition.source.section === 'events' ? 'events' : 'channels';
-  let metas = [];
-  try {
-    const shelf = await loadLiveShelf(options);
-    metas = Array.isArray(shelf[section]) ? shelf[section] : [];
-  } catch (error) {
-    log.warn('live shelf unavailable', { error: error.message });
-  }
-
-  /* Si el scrape no trae nada, la fila curada sigue en pie: una Home sin
-   * canales sería peor que una con los de siempre. La agenda es distinto: un
-   * partido de ayer pintado como "Hoy" es una tarjeta muerta, así que se queda
-   * vacía en vez de mentir. */
-  if (metas.length === 0) {
-    if (section === 'events') return [];
-    return localMetas(definition, extra);
-  }
-
-  metas = metas.map((meta) => ({
-    ...meta,
-    type: definition.type,
-    posterShape: 'landscape',
-  }));
-  return filterLiveMetas(metas, extra);
-}
-
-/** Género, búsqueda y `skip` sobre las tarjetas de la estantería. */
-function filterLiveMetas(metas, extra) {
-  let result = metas;
-
-  if (extra.genre) {
-    const wanted = normalizeText(extra.genre);
-    result = result.filter((meta) =>
-      (meta.genres || []).some((genre) => normalizeText(genre) === wanted));
-  }
-
-  if (extra.search) {
-    const query = normalizeText(extra.search);
-    result = result.filter((meta) =>
-      normalizeText(meta.name).includes(query) ||
-      normalizeText(meta.league || '').includes(query) ||
-      normalizeText(meta.description || '').includes(query) ||
-      (meta.genres || []).some((genre) => normalizeText(genre).includes(query)));
-  }
-
-  const skip = Number(extra.skip);
-  if (Number.isInteger(skip) && skip > 0) result = result.slice(skip);
-  return result;
-}
-
-/**
- * Un canal del JSON local → meta Stremio.
- *
- * `posterShape: 'landscape'` es la señal estándar para que cualquier cliente
- * (Stremio web incluido) pinte la tarjeta en 16:9.
- */
-export function liveItemToMeta(item) {
-  if (!item || typeof item !== 'object') return null;
-  const id = String(item.id || '').trim();
-  if (!id) return null;
-
-  const genres = Array.isArray(item.genres) ? item.genres.filter(Boolean) : [];
-  const meta = {
-    id,
-    type: 'tv',
-    name: String(item.name || id).trim(),
-    posterShape: 'landscape',
-    releaseInfo: String(item.releaseInfo || 'En directo'),
-    genres: genres.length > 0 ? genres : ['Deportes'],
-  };
-
-  if (item.description) meta.description = String(item.description);
-  if (item.logo) meta.poster = String(item.logo);
-  if (item.poster) meta.poster = String(item.poster);
-  if (item.background) meta.background = String(item.background);
-  if (item.category) meta.category = String(item.category);
-
-  return meta;
-}
-
 /* -------------------------------------------------------------------------- */
 /* Catálogos                                                                  */
 /* -------------------------------------------------------------------------- */
@@ -327,11 +97,7 @@ export async function getCatalog({ type, id, extra = {} }, options = {}) {
   const key = catalogCacheKey({ type, id, extra });
   /* Los canales y la agenda se recogen con su propia ventana: cachear 30 min una
    * agenda que cambia cada hora dejaría partidos ya jugados en la fila. */
-  const ttlMs = extra.search
-    ? config.catalogs.searchTtlMs
-    : definition.source.kind === 'live'
-      ? config.catalogs.liveTtlMs
-      : config.catalogs.ttlMs;
+  const ttlMs = extra.search ? config.catalogs.searchTtlMs : config.catalogs.ttlMs;
 
   const { value, source, coalesced } = await cache.fetch(
     key,
@@ -380,10 +146,11 @@ function metasFor(definition, extra, options) {
       return cinemetaMetas(definition, extra, options);
     case 'remote':
       return remoteMetas(definition, extra, options);
-    case 'live':
-      return liveMetas(definition, extra, options);
     default:
-      return localMetas(definition, extra);
+      /* No queda ninguna fuente local: los catálogos son Cinemeta o addons
+       * de terceros. Un `source.kind` desconocido devuelve vacío en vez de
+       * romper el Home. */
+      return [];
   }
 }
 
@@ -464,45 +231,6 @@ async function cinemetaMetas(definition, extra, options) {
   }));
 }
 
-/** Fuente local: filtros por categoría, género y búsqueda por nombre. */
-async function localMetas(definition, extra) {
-  const items = await loadLiveCatalog();
-  let metas = items;
-
-  if (definition.source.category) {
-    metas = metas.filter((meta) => String(meta.category || '').toLowerCase() === definition.source.category);
-  }
-
-  if (extra.genre) {
-    /* Un canal coincide por género ("Deportes") o por categoría ("deportes"):
-     * el JSON curado usa categorías internas y el manifest anuncia géneros
-     * legibles, y ambos deben filtrar igual. */
-    const wanted = normalizeText(extra.genre);
-    metas = metas.filter(
-      (meta) =>
-        (meta.genres || []).some((genre) => normalizeText(genre) === wanted) ||
-        normalizeText(meta.category || '') === wanted,
-    );
-  }
-
-  if (extra.search) {
-    const query = normalizeText(extra.search);
-    metas = metas.filter(
-      (meta) =>
-        normalizeText(meta.name).includes(query) ||
-        normalizeText(meta.description || '').includes(query) ||
-        (meta.genres || []).some((genre) => normalizeText(genre).includes(query)),
-    );
-  }
-
-  /* La fila local es corta y curada: el `skip` de Stremio se respeta, pero no
-   * tiene sentido paginar por encima de la lista. */
-  const skip = Number(extra.skip);
-  if (Number.isInteger(skip) && skip > 0) metas = metas.slice(skip);
-
-  return metas;
-}
-
 /** Definición → lo que se puede contar al cliente (sin `source` interno). */
 function publicCatalog(definition) {
   return {
@@ -546,14 +274,6 @@ export async function getMeta({ type, id }, options = {}) {
   const episode = rest.length >= 1 && Number.isInteger(Number(rest[rest.length - 1]))
     ? Number(rest[rest.length - 1])
     : null;
-
-  if (normalizedType === 'tv') {
-    const items = await loadLiveCatalog();
-    const item = items.find((meta) => meta.id === normalizedId) || null;
-    return item
-      ? { meta: item, cached: true, stale: false, ttlMs: config.catalogs.metaTtlMs, durationMs: elapsedMs(startedAt) }
-      : null;
-  }
 
   /* Las filas de terceros también acaban aquí: sus metas llevan ids de IMDb,
    * así que la ficha (sinopsis, año, episodios) la sirve Cinemeta aunque el
@@ -629,8 +349,6 @@ export function invalidateCatalogs() {
       removed += 1;
     }
   }
-  liveState = { items: [], loadedAtMs: 0 };
-  invalidateLiveShelf();
   return removed;
 }
 
@@ -651,13 +369,8 @@ export default {
   getCatalog,
   getMeta,
   resolveTitle,
-  loadLiveCatalog,
-  loadLiveShelf,
-  liveItemToMeta,
   catalogCacheKey,
   metaCacheKey,
   invalidateCatalogs,
-  invalidateLiveShelf,
-  liveShelfStatus,
   normalizeText,
 };

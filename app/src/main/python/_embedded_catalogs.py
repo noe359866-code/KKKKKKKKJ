@@ -20,10 +20,6 @@ from _base import default_headers
 from _htmlkit import Deadline, clean_title, http_get, pretty_name
 from _peliskit import search_site as htmlkit_search
 
-# TV en vivo: los proveedores `kind: live` de server/config/providers.json.
-LIVE = frozenset(("futbolibre", "deportelibre", "tvenvivo", "livelive24",
-                  "damitv", "ntv", "streamcorner"))
-
 # Proveedores de Anime (Español / Español Latino)
 ANIME = frozenset(("animeflv", "jkanime", "monoschinos", "tioanime", "latanime"))
 
@@ -32,7 +28,7 @@ MOVIES = frozenset(("gnula", "cuevana", "pelisplushd", "repelis", "peliculasflix
                     "pelisjuanita", "novahd", "seriesturcas", "fanpelis",
                     "flixlatam", "sololatino"))
 
-MODULES = ANIME | LIVE | MOVIES
+MODULES = ANIME | MOVIES
 
 NON_TITLES = frozenset(("anime", "animes", "directorio", "buscar", "busqueda", "search", "browse",
                         "programacion", "horario", "calendario", "generos", "genero", "login",
@@ -186,9 +182,6 @@ def catalogue(provider: Dict[str, Any], media_type: str, query: str = "") -> Lis
     module = module_for(name)
     headers = default_headers(provider)
     deadline = Deadline(8000)
-    if name in LIVE:
-        return []
-
     site = site_for(name)
     if query and name in MOVIES:
         # Adaptación genérica para películas/series (Cuevana, Fanpelis, FlixLatam, etc.)

@@ -57,12 +57,12 @@ class StremioAddonClient(
             if (!addon.enabled) continue
             if (!addon.supportsResource("catalog")) continue
             val catalogs = addon.catalogs
-                .filter { it.type.equals("movie", true) || it.type.equals("series", true) || it.type.equals("tv", true) }
+                .filter { it.type.equals("movie", true) || it.type.equals("series", true) || it.type.equals("anime", true) }
                 .sortedBy { preferenceOf(it.id) }
                 .take(MAX_CATALOGS_PER_ADDON)
             for (cat in catalogs) {
                 val catName = cat.name?.takeIf { it.isNotBlank() } ?: cat.id
-                val shape = if (cat.type.equals("tv", ignoreCase = true)) "landscape" else "poster"
+                val shape = "poster"
                 result += CatalogDescriptor(
                     type = cat.type,
                     id = encodeCatalogId(addon.id, cat.id),

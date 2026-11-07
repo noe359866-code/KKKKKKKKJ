@@ -43,7 +43,6 @@ import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.Spotlight
 import com.tanasi.streamflix.ui.components.HeroBackdropImage
 import com.tanasi.streamflix.ui.components.GlassBadge
-import com.tanasi.streamflix.ui.components.LiveBadge
 import com.tanasi.streamflix.ui.components.RatingBadge
 import com.tanasi.streamflix.ui.components.TrendingBadge
 import com.tanasi.streamflix.ui.theme.StreamflixColors
@@ -151,13 +150,10 @@ fun HeroBanner(
         ) {
             val entry = spotlight.entry
 
-            /* tvOS no llena el hero de etiquetas: como mucho el estado (en
-             * directo / tendencia) y, debajo del título, los metadatos. */
+            /* tvOS no llena el hero de etiquetas: como mucho la tendencia y,
+             * debajo del título, los metadatos. */
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (spotlight.isLive) {
-                    LiveBadge()
-                    Spacer(Modifier.width(10.dp))
-                } else if (entry.trending) {
+                if (entry.trending) {
                     TrendingBadge()
                     Spacer(Modifier.width(10.dp))
                 }

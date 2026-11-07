@@ -11,7 +11,7 @@ your real provider logic (requests + BeautifulSoup/Playwright), keep the rest.
 
 How the Node side calls it:
 
-    echo '{"type":"tv","id":"demo-live","isLive":true,"provider":"demo-live"}' \
+    echo '{"type":"movie","id":"tt0133093","provider":"demo-vod"}' \
       | python3 scrapers/example_provider.py
 """
 
@@ -28,18 +28,6 @@ from _base import log, run, stream
 # Public test streams (safe, no copyrighted content).
 # ---------------------------------------------------------------------------
 HLS_TEST_STREAMS = {
-    "demo-live": [
-        {
-            "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-            "name": "Demo TV · 1080p",
-            "quality": "1080p",
-        },
-        {
-            "url": "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
-            "name": "Demo TV · 720p",
-            "quality": "720p",
-        },
-    ],
     "demo-vod": [
         {
             "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
@@ -89,24 +77,14 @@ def scrape(payload):
 
     Here we just simulate a slow network call so the TTL cache is observable.
     """
-    provider = payload.get("provider", "demo-live")
-    is_live = bool(payload.get("isLive"))
+    provider = payload.get("provider", "demo-vod")
     content_id = payload.get("id", "?")
 
     # Simulated scrape latency. Cache hits must be MUCH faster than this.
     delay_ms = int(os.getenv("DEMO_DELAY_MS", "350"))
     time.sleep(delay_ms / 1000)
 
-    candidates = HLS_TEST_STREAMS.get(provider, HLS_TEST_STREAMS["demo-live"])
-
-    # A "live" provider shouldn't answer VOD requests and vice versa, except
-    # for the fallback provider which serves both.
-    if provider == "demo-live" and not is_live:
-        log("demo-live skipping non-live id", content_id)
-        return [], {"reason": "type_mismatch", "provider": provider}
-    if provider == "demo-vod" and is_live:
-        log("demo-vod skipping live id", content_id)
-        return [], {"reason": "type_mismatch", "provider": provider}
+    candidates = HLS_TEST_STREAMS.get(provider, HLS_TEST_STREAMS["demo-vod"])
 
     # Algunos CDN firman sus .m3u8 con su propio vencimiento (`?e=<unix>`): un
     # id que contenga "signed" simula esa respuesta para probar que el TTL de
@@ -116,7 +94,7 @@ def scrape(payload):
     streams = []
     for candidate in candidates:
         url = candidate["url"]
-        if signed_until and not is_live:
+        if signed_until:
             url = f"{url}{'&' if '?' in url else '?'}e={signed_until}"
         streams.append(
             stream(
@@ -128,13 +106,12 @@ def scrape(payload):
                 referer=payload.get("referer") or "https://demo.local/",
                 user_agent=payload.get("userAgent"),
                 not_web_ready=False,
-                is_live=is_live,
             )
         )
 
-    meta = {"provider": provider, "delay_ms": delay_ms, "live": is_live}
+    meta = {"provider": provider, "delay_ms": delay_ms}
     subtitles = DEMO_SUBTITLES.get(provider)
-    if subtitles and not is_live:
+    if subtitles:
         meta["subtitles"] = subtitles
 
     log(f"provider={provider} id={content_id} streams={len(streams)} delay_ms={delay_ms}")

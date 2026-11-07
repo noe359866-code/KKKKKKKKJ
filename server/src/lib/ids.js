@@ -8,15 +8,13 @@
  *
  *   tt1254207                    -> a movie
  *   tt0944947:1:2                -> series tt0944947, season 1, episode 2
- *   sports:espn-1:2026-10-28     -> live event (custom id, this addon)
- *   tv:canal-13                  -> live channel (custom id, this addon)
  *   sf:movie:tt0111161           -> internal alias / search hint
  */
 
 /** Splits "tt0944947:1:2" into its parts, safely handling custom prefixes. */
 export function parseMediaId(rawId) {
   if (typeof rawId !== 'string' || rawId.length === 0) {
-    return { raw: '', base: '', season: null, episode: null, isLive: false, isSports: false };
+    return { raw: '', base: '', season: null, episode: null, isSeries: false };
   }
 
   const segments = rawId.split(':');
@@ -36,12 +34,6 @@ export function parseMediaId(rawId) {
     }
   }
 
-  const lower = base.toLowerCase();
-  const isSports = lower === 'sports' || lower === 'sport' || lower === 'deportes' || /:sport:/.test(rawId);
-  /* "tv:" is a channel id; a plain type "tv" without colon is not live per se,
-   * but Stremio sends live content as "tv:channel-slug". */
-  const isLive = isSports || lower === 'tv' || /^tv:/i.test(rawId);
-
   return {
     raw: rawId,
     base,
@@ -49,8 +41,6 @@ export function parseMediaId(rawId) {
     third: third ?? null,
     season,
     episode,
-    isLive,
-    isSports,
     isSeries: season !== null && episode !== null,
     /* IMDb id when available, used by most scrapers. */
     imdbId: base.startsWith('tt') ? base : null,

@@ -11,12 +11,11 @@ organización, no como fuentes de contenido ni como diseños para copiar:
 - CinemaCity: destacados con reproducción y ficha, metadatos breves y filas de
   tendencias que mezclan películas y series.
 
-En Streamflix, Inicio, Películas, Series (incluye anime) y En vivo filtran las
-filas **ya cargadas**. No son catálogos completos ni cambian los proveedores.
+En Streamflix, Inicio, Películas y Series (incluye anime) filtran las filas
+**ya cargadas**. No son catálogos completos ni cambian los proveedores.
 Una sección sin títulos muestra un estado vacío. Una búsqueda vuelve a Inicio;
 Inicio permite salir de sus resultados. Seguir viendo es del perfil y no se
-mezcla con resultados de búsqueda. Los canales y eventos programados se agrupan
-por tipo `tv`, aunque todavía no estén en emisión.
+mezcla con resultados de búsqueda.
 
 El mando utiliza el foco nativo de Compose: izquierda/derecha recorre filas y
 menú, arriba desde cualquier tarjeta de la primera fila va a la portada, y
