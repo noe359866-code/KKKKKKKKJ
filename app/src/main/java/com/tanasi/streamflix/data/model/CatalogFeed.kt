@@ -260,12 +260,12 @@ fun List<RemoteVideo>.toSeasonGroups(): List<SeasonGroup> =
 /** Enriquece la ficha sin cambiar su identificador de reproducción ni borrar datos válidos. */
 fun MediaEntry.enrichedBy(meta: RemoteMeta): MediaEntry = copy(
     title = meta.name.takeIf { it.isNotBlank() } ?: title,
-    poster = meta.poster ?: poster,
-    backdrop = meta.background ?: backdrop,
+    poster = normalizeArtworkUrl(meta.poster) ?: poster,
+    backdrop = normalizeArtworkUrl(meta.background) ?: backdrop,
     synopsis = meta.description?.takeIf { it.isNotBlank() } ?: synopsis,
     year = meta.year ?: meta.toEntry().year ?: year,
     rating = meta.rating ?: rating,
     genres = meta.genres.takeIf { it.isNotEmpty() } ?: genres,
-    runtime = meta.runtime ?: runtime,
-    provider = meta.sourceName ?: provider,
+    runtime = meta.runtime?.takeIf { it.isNotBlank() } ?: runtime,
+    provider = meta.sourceName?.takeIf { it.isNotBlank() } ?: provider,
 )

@@ -1,11 +1,7 @@
 package com.tanasi.streamflix.ui.home
 
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -62,8 +58,8 @@ import com.tanasi.streamflix.ui.theme.tvFocusGlow
  *     la de la tarjeta que el usuario está mirando. Con un mando eso se siente
  *     como si la app leyera la intención; con el dedo se queda en el destacado
  *     inicial hasta que se toca otra tarjeta.
- *  2. **Ken Burns eterno.** El fondo se mueve a un 6 % de escala durante 20 s,
- *     en una única animación infinita sobre `graphicsLayer` (no recompone).
+ *  2. **Fondo estático.** Evita animaciones continuas de pantalla completa en
+ *     dispositivos TV de recursos limitados.
  *  3. **Doble velo.** Un degradado horizontal protege el texto a la izquierda y
  *     uno vertical funde el hero con las filas, así no hay un corte duro entre
  *     la foto y el catálogo.
@@ -98,16 +94,19 @@ fun HeroBanner(
     }
 
     val isTv = deviceProfile.requiresDpadFocus
+    // A 540 dp de alto hay que dejar espacio para la barra y los controles.
+    val compactHeight = deviceProfile.screenHeightDp < 600
 
     Box(modifier = modifier.fillMaxSize()) {
         /* --- fondo ------------------------------------------------------- */
         Crossfade(
-            targetState = spotlight,
+            // Cambios de posición o metadatos no deben animar la misma imagen.
+            targetState = spotlight.entry.backdrop to spotlight.entry.poster,
             animationSpec = tween(durationMillis = 420),
             label = "heroBackdrop",
-        ) { current ->
-            KenBurnsBackdrop(
-                entry = current.entry,
+        ) { artwork ->
+            StaticBackdrop(
+                entry = spotlight.entry.copy(backdrop = artwork.first, poster = artwork.second),
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -163,7 +162,7 @@ fun HeroBanner(
                     Spacer(Modifier.width(10.dp))
                 }
                 Text(
-                    text = spotlight.rowTitle,
+                    text = "${spotlight.rowTitle} · ${spotlight.position} de ${spotlight.total}",
                     style = MaterialTheme.typography.labelSmall,
                     color = StreamflixColors.OnSurfaceMuted,
                     maxLines = 1,
@@ -175,7 +174,7 @@ fun HeroBanner(
 
             Text(
                 text = entry.title,
-                style = if (isTv) {
+                style = if (isTv && !compactHeight) {
                     MaterialTheme.typography.displaySmall
                 } else {
                     MaterialTheme.typography.headlineMedium
@@ -206,25 +205,25 @@ fun HeroBanner(
                 )
             }
 
-            entry.synopsis?.let { synopsis ->
+            entry.synopsis?.takeIf { it.isNotBlank() }?.let { synopsis ->
                 Spacer(Modifier.height(if (isTv) 12.dp else 8.dp))
                 Text(
                     text = synopsis,
                     style = MaterialTheme.typography.bodyMedium,
                     color = StreamflixColors.OnSurface.copy(alpha = 0.86f),
-                    maxLines = if (isTv) 3 else 2,
+                    maxLines = if (isTv && !compactHeight) 3 else 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
 
-            Spacer(Modifier.height(if (isTv) 22.dp else 14.dp))
+            Spacer(Modifier.height(if (isTv && !compactHeight) 22.dp else 14.dp))
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(if (isTv) 14.dp else 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 HeroButton(
-                    text = "▶  Reproducir",
+                    text = heroAction(entry).label,
                     deviceProfile = deviceProfile,
                     primary = true,
                     focusRequester = playFocusRequester,
@@ -246,35 +245,16 @@ fun HeroBanner(
 }
 
 /**
- * Fondo con movimiento lento.
- *
- * `rememberInfiniteTransition` + `graphicsLayer`: la animación corre en el hilo
- * de render y no invalida la composición, así que un TV box barato no sufre.
+ * Fondo estático para reducir trabajo gráfico continuo en dispositivos TV.
  */
 @Composable
-private fun KenBurnsBackdrop(
+private fun StaticBackdrop(
     entry: MediaEntry,
     modifier: Modifier = Modifier,
 ) {
-    val motion by rememberInfiniteTransition(label = "kenBurns").animateFloat(
-        initialValue = 1f,
-        targetValue = 1.06f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 20_000),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "kenBurnsScale",
-    )
-
-    /* backdrop 16:9 → póster desenfocado → arte local. Así el hero nunca
-     * aparece como un bloque de color liso. */
-    HeroBackdropImage(
-        entry = entry,
-        modifier = modifier.graphicsLayer {
-            scaleX = motion
-            scaleY = motion
-        },
-    )
+    // Una imagen estática evita una animación de pantalla completa permanente
+    // en dispositivos de entrada como Fire TV Stick.
+    HeroBackdropImage(entry = entry, modifier = modifier)
 }
 
 /**

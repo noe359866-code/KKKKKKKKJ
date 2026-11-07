@@ -42,6 +42,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -95,6 +97,7 @@ fun PlayerControls(
     isPlaying: Boolean,
     positionMs: Long,
     durationMs: Long,
+    canSeek: Boolean,
     deviceProfile: DeviceProfile,
     playPauseFocusRequester: FocusRequester,
     onPlayPause: () -> Unit,
@@ -108,7 +111,12 @@ fun PlayerControls(
     /** `true` cuando hay subtítulos activos (el botón se pinta encendido). */
     subtitlesOn: Boolean = false,
     onShowTracks: () -> Unit = {},
+    sourcesFocusRequester: FocusRequester? = null,
+    tracksFocusRequester: FocusRequester? = null,
 ) {
+    val compact = deviceProfile.screenWidthDp < 850
+    val controlSize = if (compact) 68.dp else 86.dp
+    val primarySize = if (compact) 88.dp else 108.dp
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(animationSpec = tween(durationMillis = 150)),
@@ -134,8 +142,8 @@ fun PlayerControls(
                     .padding(
                         start = deviceProfile.horizontalPaddingDp.dp + 8.dp,
                         end = deviceProfile.horizontalPaddingDp.dp + 8.dp,
-                        top = 34.dp,
-                        bottom = 40.dp,
+                        top = maxOf(34, deviceProfile.verticalPaddingDp).dp,
+                        bottom = maxOf(40, deviceProfile.verticalPaddingDp).dp,
                     ),
             ) {
                 TitleBlock(
@@ -151,7 +159,7 @@ fun PlayerControls(
                 /* --- transporte ------------------------------------------- */
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(26.dp, Alignment.CenterHorizontally),
+                    horizontalArrangement = Arrangement.spacedBy(if (compact) 14.dp else 26.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     /* En directo no se puede retroceder: el manifiesto HLS ya
@@ -159,7 +167,9 @@ fun PlayerControls(
                     if (!isLive) {
                         RoundControl(
                             label = "−10",
-                            size = 86.dp,
+                            accessibilityLabel = "Retroceder diez segundos",
+                            size = controlSize,
+                            enabled = canSeek,
                             onClick = {
                                 onInteraction()
                                 onRewind()
@@ -169,7 +179,8 @@ fun PlayerControls(
 
                     RoundControl(
                         label = null,
-                        size = 108.dp,
+                        size = primarySize,
+                        accessibilityLabel = if (isPlaying) "Pausar" else "Reproducir",
                         primary = true,
                         focusRequester = playPauseFocusRequester,
                         onClick = {
@@ -183,7 +194,9 @@ fun PlayerControls(
                     if (!isLive) {
                         RoundControl(
                             label = "+10",
-                            size = 86.dp,
+                            accessibilityLabel = "Avanzar diez segundos",
+                            size = controlSize,
+                            enabled = canSeek,
                             onClick = {
                                 onInteraction()
                                 onForward()
@@ -197,7 +210,7 @@ fun PlayerControls(
                     if (channelCount > 1) {
                         RoundControl(
                             label = "Canales",
-                            size = 86.dp,
+                            size = controlSize,
                             onClick = {
                                 onInteraction()
                                 onShowChannels()
@@ -207,7 +220,8 @@ fun PlayerControls(
 
                     RoundControl(
                         label = "Fuentes",
-                        size = 86.dp,
+                        size = controlSize,
+                        focusRequester = sourcesFocusRequester,
                         onClick = {
                             onInteraction()
                             onShowSources()
@@ -221,7 +235,8 @@ fun PlayerControls(
                     if (hasTracks) {
                         RoundControl(
                             label = "Pistas",
-                            size = 86.dp,
+                            size = controlSize,
+                            focusRequester = tracksFocusRequester,
                             accent = subtitlesOn,
                             onClick = {
                                 onInteraction()
@@ -248,8 +263,10 @@ fun PlayerControls(
                         } else {
                             "OK pausa · ATRÁS salir"
                         }
-                    } else {
+                    } else if (canSeek) {
                         "◀ ▶ 10 s · OK pausa · Pistas audio/CC · ATRÁS salir"
+                    } else {
+                        "OK pausa · Pistas audio/CC · ATRÁS salir"
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = StreamflixColors.OnSurfaceMuted.copy(alpha = 0.75f),
@@ -355,7 +372,9 @@ private fun RoundControl(
     modifier: Modifier = Modifier,
     primary: Boolean = false,
     accent: Boolean = false,
+    enabled: Boolean = true,
     focusRequester: FocusRequester? = null,
+    accessibilityLabel: String? = null,
     content: @Composable (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -380,10 +399,12 @@ private fun RoundControl(
 
     Box(
         modifier = modifier
+            .then(if (accessibilityLabel != null) Modifier.semantics { contentDescription = accessibilityLabel } else Modifier)
             .size(size)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
+                alpha = if (enabled) 1f else 0.45f
             }
             .tvFocusGlow(progress = ring, cornerRadius = size / 2)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
@@ -399,7 +420,7 @@ private fun RoundControl(
             )
             /* `onFocusChanged` antes de `clickable`: envuelve al nodo enfocable. */
             .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         val custom = content

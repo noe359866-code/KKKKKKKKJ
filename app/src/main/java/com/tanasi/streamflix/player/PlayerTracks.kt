@@ -22,6 +22,8 @@ data class TrackOption(
     val label: String,
     val language: String? = null,
     val selected: Boolean = false,
+    /** Grupo original: impide aplicar un índice obsoleto a otra pista. */
+    val mediaTrackGroup: TrackGroup? = null,
 ) {
     val isAutomatic: Boolean get() = trackIndex < 0
     val id: String get() = "$type:$groupIndex:$trackIndex"
@@ -109,8 +111,10 @@ object PlayerTracks {
             val group = groups[groupIndex]
             if (group.type != type) continue
             for (trackIndex in 0 until group.length) {
-                val selected = group.isTrackSelected(trackIndex)
-                if (selected) anySelected = true
+                if (!group.isTrackSupported(trackIndex)) continue
+                val actuallySelected = group.isTrackSelected(trackIndex)
+                if (actuallySelected) anySelected = true
+                val selected = actuallySelected && (type != C.TRACK_TYPE_AUDIO || hasOverride)
                 rows += TrackOption(
                     type = type,
                     groupIndex = groupIndex,
@@ -118,6 +122,7 @@ object PlayerTracks {
                     label = formatLabel(group.getTrackFormat(trackIndex), "Pista ${rows.size + 1}"),
                     language = group.getTrackFormat(trackIndex).language,
                     selected = selected,
+                    mediaTrackGroup = group.mediaTrackGroup,
                 )
             }
         }
@@ -132,10 +137,13 @@ object PlayerTracks {
     /** Grupo de una fila, o `null` si la fila es "sin elegir". */
     fun groupFor(tracks: Tracks?, option: TrackOption): TrackGroup? {
         if (option.groupIndex < 0) return null
-        return tracks?.groups?.getOrNull(option.groupIndex)?.mediaTrackGroup
+        val group = tracks?.groups?.getOrNull(option.groupIndex) ?: return null
+        if (group.type != option.type || group.mediaTrackGroup != option.mediaTrackGroup) return null
+        if (option.trackIndex !in 0 until group.length || !group.isTrackSupported(option.trackIndex)) return null
+        return group.mediaTrackGroup
     }
 
     /** ¿Hay algo que enseñar en el panel? (audio siempre, texto sólo si existe) */
     fun hasPanel(text: List<TrackOption>, audio: List<TrackOption>): Boolean =
-        text.size > 1 || audio.size > 1
+        text.size > 1 || audio.size > 2
 }

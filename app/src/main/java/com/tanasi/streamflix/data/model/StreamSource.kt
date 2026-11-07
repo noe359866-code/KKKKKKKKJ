@@ -55,7 +55,8 @@ data class StreamSource(
             add(when {
                 isHls -> "HLS"
                 isDash -> "DASH"
-                else -> "MP4"
+                mediaType == MEDIA_TYPE_MP4 || url.substringBefore('?').substringBefore('#').endsWith(".mp4", ignoreCase = true) -> "MP4"
+                else -> "Formato sin confirmar"
             })
             quality?.takeIf { it.isNotBlank() }?.let { add(it) }
         }.joinToString(" · ")

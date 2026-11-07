@@ -105,4 +105,16 @@ class SearchPanelTest {
         assertTrue(sin.none { it is SearchPanelItem.ForgetRecent })
         assertTrue(con.any { it is SearchPanelItem.ForgetRecent })
     }
+    @Test
+    fun `sin filas accionables no se ofrece destino al panel`() {
+        listOf(SearchPreview.Loading, SearchPreview.Empty, SearchPreview.Idle).forEach { preview ->
+            val items = searchPanelItems("algo", preview, emptyList(), emptyList())
+            assertEquals(-1, firstFocusableIndex(items))
+        }
+        val withResults = searchPanelItems(
+            "algo", SearchPreview.Ready(listOf(entry("tt1"))), emptyList(), emptyList(),
+        )
+        assertEquals(1, firstFocusableIndex(withResults))
+    }
+
 }

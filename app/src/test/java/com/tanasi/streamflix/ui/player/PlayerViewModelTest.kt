@@ -235,4 +235,19 @@ class PlayerViewModelTest {
         assertEquals(listOf("tt1", "tt1"), client.asked)
         assertEquals(listOf("https://cdn/1.m3u8"), ready(viewModel).sources.map { it.url })
     }
+    @Test
+    fun `fuentes iguales en canales distintos reciben nueva generacion`() {
+        val client = FakeClient(responses = mapOf(
+            "tv:a" to response("https://cdn/shared.m3u8"),
+            "tv:b" to response("https://cdn/shared.m3u8"),
+        ))
+        val vm = viewModel(client, PlaybackRequest(id = "tv:a", type = "tv", title = "A", isLive = true))
+        dispatcher.scheduler.advanceUntilIdle()
+        val before = ready(vm).generation
+        vm.tune(PlaybackChannel(id = "tv:b", title = "B"))
+        assertEquals(before, ready(vm).generation)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(ready(vm).generation > before)
+    }
+
 }

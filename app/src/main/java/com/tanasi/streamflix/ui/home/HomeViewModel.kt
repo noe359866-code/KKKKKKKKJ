@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tanasi.streamflix.data.ContentClient
 import com.tanasi.streamflix.data.model.CinemetaSuggestions
+import com.tanasi.streamflix.data.model.CatalogRow
 import com.tanasi.streamflix.data.model.HomeCatalog
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.Spotlight
@@ -164,7 +165,7 @@ class HomeViewModel(
             if (next.size > mutableSuggestions.value.size) mutableSuggestions.value = next
         }
         val previous = mutableHero.value
-        mutableHero.value = previous?.let { catalog.spotlightFor(it.rowId, it.entry.id) } ?: catalog.featured
+        mutableHero.value = previous?.let { catalog.spotlightFor(it.rowId, it.entry.id, it.entry.type) } ?: catalog.featured
         mutableState.value = HomeUiState.Ready(catalog)
         enrichHero(mutableHero.value)
     }
@@ -186,9 +187,16 @@ class HomeViewModel(
         val key = "${entry.type}:${entry.id}"
         val merged = heroDetails[key]
         val current = mutableHero.value ?: return
-        if (current.entry.id != entry.id) return
+        if (current.entry.id != entry.id || current.entry.type != entry.type) return
         if (merged != null) {
-            mutableHero.value = current.copy(entry = merged)
+            mutableHero.value = current.copy(entry = entry.copy(
+                poster = entry.poster ?: merged.poster,
+                backdrop = entry.backdrop ?: merged.backdrop,
+                synopsis = entry.synopsis ?: merged.synopsis,
+                rating = entry.rating ?: merged.rating,
+                genres = entry.genres.ifEmpty { merged.genres },
+                runtime = entry.runtime ?: merged.runtime,
+            ))
             return
         }
 
@@ -218,7 +226,19 @@ class HomeViewModel(
             if (heroDetails.size < HERO_CACHE_LIMIT) heroDetails[key] = enriched
 
             val latest = mutableHero.value ?: return@launch
-            if (latest.entry.id == entry.id) mutableHero.value = latest.copy(entry = enriched)
+            if (latest.entry.id == entry.id && latest.entry.type == entry.type) {
+                // El foco puede haber pasado a la misma obra en «Seguir viendo»
+                // mientras llegaba la ficha. No perder su posición de reanudación.
+                val visible = latest.entry
+                mutableHero.value = latest.copy(entry = visible.copy(
+                    poster = visible.poster ?: enriched.poster,
+                    backdrop = visible.backdrop ?: enriched.backdrop,
+                    synopsis = visible.synopsis ?: enriched.synopsis,
+                    rating = visible.rating ?: enriched.rating,
+                    genres = visible.genres.ifEmpty { enriched.genres },
+                    runtime = visible.runtime ?: enriched.runtime,
+                ))
+            }
         }
     }
 
@@ -274,13 +294,19 @@ class HomeViewModel(
      *    (`movie/top` y `movie/imdbRating`), así que comparar sólo el id dejaría
      *    el hero con la etiqueta de la fila equivocada.
      */
-    fun onCardFocused(rowId: String, entry: MediaEntry) {
-        val catalog = (mutableState.value as? HomeUiState.Ready)?.catalog ?: return
-        val spotlight = catalog.spotlightFor(rowId, entry.id) ?: return
+    fun onCardFocused(row: CatalogRow, entry: MediaEntry) {
+        // La fila visible puede estar filtrada o pertenecer a «Seguir viendo»,
+        // que no forma parte del catálogo del repositorio.
+        val index = row.items.indexOfFirst { it.id == entry.id && it.type == entry.type }
+        if (index < 0) return
+        val spotlight = Spotlight(entry, row.id, row.title, index + 1, row.items.size, row.items)
         val current = mutableHero.value
         val changed = current == null ||
             current.rowId != spotlight.rowId ||
-            current.entry.id != spotlight.entry.id
+            current.entry.id != spotlight.entry.id ||
+            current.entry.type != spotlight.entry.type ||
+            current.entry.resumePositionMs != spotlight.entry.resumePositionMs ||
+            current.siblings != spotlight.siblings
         if (changed) {
             mutableHero.value = spotlight
             enrichHero(spotlight)

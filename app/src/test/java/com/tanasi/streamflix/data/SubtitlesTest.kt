@@ -187,7 +187,9 @@ class SubtitlesTest {
         assertTrue(PlayerTracks.options(null, C.TRACK_TYPE_TEXT).isEmpty())
         assertFalse(PlayerTracks.hasPanel(emptyList(), emptyList()))
         assertFalse(PlayerTracks.hasPanel(listOf(apagado), listOf(automatico)))
-        assertTrue(PlayerTracks.hasPanel(listOf(apagado), listOf(automatico, automatico.copy(trackIndex = 0))))
+        assertFalse(PlayerTracks.hasPanel(listOf(apagado), listOf(automatico, automatico.copy(trackIndex = 0))))
+        assertTrue(PlayerTracks.hasPanel(emptyList(), listOf(automatico, automatico.copy(trackIndex = 0), automatico.copy(trackIndex = 1))))
+        assertTrue(PlayerTracks.hasPanel(listOf(apagado, apagado.copy(trackIndex = 0)), emptyList()))
     }
 
     @Test

@@ -6,16 +6,22 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.toChannelQueue
 import com.tanasi.streamflix.data.model.PlaybackQueueCodec
@@ -48,8 +54,8 @@ import com.tanasi.streamflix.update.UpdateInfo
  *    lleva su propio `FLAG_KEEP_SCREEN_ON`);
  *  - `enableEdgeToEdge()` evita bandas negras cuando el launcher fuerza una
  *    resolución distinta a la del panel;
- *  - el `deviceProfile` se lee de la `Application`, que es la que recibe los
- *    cambios de modo de interfaz.
+ *  - el `deviceProfile` se recalcula al cambiar las dimensiones lógicas de la
+ *    configuración, sin recrear la actividad ni perder el estado de navegación.
  */
 class MainActivity : ComponentActivity() {
 
@@ -57,9 +63,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val deviceProfile = (application as StreamflixApp).deviceProfile
-
         setContent {
+            val configuration = LocalConfiguration.current
+            val deviceProfile = DeviceProfile.fromDimensions(
+                configuration.screenWidthDp, configuration.screenHeightDp,
+            )
             /* `StreamflixTheme` ya publica el perfil en `LocalDeviceProfile`. */
             StreamflixTheme(deviceProfile = deviceProfile) {
                 Profiles(
@@ -129,8 +137,8 @@ class MainActivity : ComponentActivity() {
      * Catálogo + hojas del perfil activo.
      *
      * La hoja de detalles es estado de UI (el `MediaEntry` abierto) y no una pantalla
-     * aparte: se abre encima del Home, conserva el foco de la tarjeta que la
-     * lanzó y se cierra volviendo exactamente ahí.
+     * aparte: se abre encima del Home. Al cerrarla se solicita volver a la
+     * tarjeta de origen; este comportamiento necesita validación con mando.
      */
     @Composable
     private fun Catalogue(
@@ -160,8 +168,10 @@ class MainActivity : ComponentActivity() {
         var continueWatching by remember(profile.id) {
             mutableStateOf(progressStore.entriesFor(profile.id))
         }
+        var catalogReturnSignal by remember(profile.id) { mutableIntStateOf(0) }
         LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
             continueWatching = progressStore.entriesFor(profile.id)
+            catalogReturnSignal++
         }
 
         var details by remember { mutableStateOf<MediaEntry?>(null) }
@@ -216,13 +226,22 @@ class MainActivity : ComponentActivity() {
             profile = profile,
             continueWatching = continueWatching,
             onSwitchProfile = onSwitchProfile,
+            returnSignal = catalogReturnSignal,
+            canRestoreCatalogFocus = details == null && !showSettings && pendingUpdate == null,
         )
 
         details?.let { entry ->
-            /* Un `ViewModel` por título: si el usuario abre, cierra y vuelve a
-             * abrir la misma tarjeta, no se repiten los metadatos ni se pierde
-             * el capítulo que había elegido. */
-            val factory = remember(entry.id) {
+            // Una ficha vive sólo mientras está abierta: no reutilizar una
+            // entrada vieja de otro perfil ni acumular ViewModels en la actividad.
+            val detailsOwner = remember(entry, profile.id, settings.autonomous, settings.baseUrl) {
+                object : ViewModelStoreOwner {
+                    override val viewModelStore = ViewModelStore()
+                }
+            }
+            DisposableEffect(detailsOwner) {
+                onDispose { detailsOwner.viewModelStore.clear() }
+            }
+            val factory = remember(entry, settings.autonomous, settings.baseUrl) {
                 viewModelFactory {
                     initializer {
                         DetailsViewModel(
@@ -235,7 +254,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             val detailsViewModel: DetailsViewModel = viewModel(
-                key = "details:${settings.autonomous}:${settings.baseUrl}:${entry.id}",
+                viewModelStoreOwner = detailsOwner,
                 factory = factory,
             )
 
@@ -254,6 +273,7 @@ class MainActivity : ComponentActivity() {
                 onDismiss = {
                     details = null
                     detailsQueue = emptyList()
+                    catalogReturnSignal++
                 },
                 onPlay = {
                     details = null
@@ -275,6 +295,10 @@ class MainActivity : ComponentActivity() {
                     details = null
                     ServiceLocator.catalogRepository(applicationContext).invalidate()
                     homeViewModel.refresh()
+                },
+                onAddonsChanged = {
+                    ServiceLocator.catalogRepository(applicationContext).invalidate()
+                    homeViewModel.refreshInBackground()
                 },
                 onUpdateFound = { update ->
                     showSettings = false

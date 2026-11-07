@@ -12,7 +12,7 @@ import org.junit.Test
 class PlayerKeyMapTest {
 
     @Test
-    fun `OK y teclas multimedia alternan play pausa`() {
+    fun `OK y play pausa alternan reproduccion`() {
         val toggleKeys = listOf(
             Key.DirectionCenter,
             Key.Enter,
@@ -20,13 +20,17 @@ class PlayerKeyMapTest {
             Key.Spacebar,
             Key.ButtonA,
             Key.MediaPlayPause,
-            Key.MediaPlay,
-            Key.MediaPause,
         )
 
         toggleKeys.forEach { key ->
             assertEquals(key.toString(), PlayerKeyAction.TOGGLE_PLAY_PAUSE, PlayerKeyMap.actionFor(key))
         }
+    }
+
+    @Test
+    fun `play y pausa multimedia son acciones independientes`() {
+        assertEquals(PlayerKeyAction.PLAY, PlayerKeyMap.actionFor(Key.MediaPlay))
+        assertEquals(PlayerKeyAction.PAUSE, PlayerKeyMap.actionFor(Key.MediaPause))
     }
 
     @Test

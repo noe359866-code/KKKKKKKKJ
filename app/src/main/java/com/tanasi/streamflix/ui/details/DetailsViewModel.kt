@@ -74,7 +74,17 @@ class DetailsViewModel(
     private val mutableMetadata = MutableStateFlow<RemoteMeta?>(null)
     val metadata: StateFlow<RemoteMeta?> = mutableMetadata.asStateFlow()
 
-    private val mutableEpisodes = MutableStateFlow<EpisodesUiState>(EpisodesUiState.Hidden)
+    private val mediaType = MediaType.fromWire(entry.type)
+    private val isSeries = mediaType == MediaType.Series || mediaType == MediaType.Anime
+    private val needsEpisodeChoice = isSeries && !entry.isLive &&
+        !hasEpisodeNumber(entry.type.lowercase(), entry.id)
+    private val mutableEpisodes = MutableStateFlow<EpisodesUiState>(
+        when {
+            !needsEpisodeChoice -> EpisodesUiState.Hidden
+            client != null && settings != null -> EpisodesUiState.Loading
+            else -> EpisodesUiState.Unavailable(NO_METADATA_SOURCE)
+        },
+    )
     val episodes: StateFlow<EpisodesUiState> = mutableEpisodes.asStateFlow()
 
     /**
@@ -86,7 +96,8 @@ class DetailsViewModel(
 
     /** Sólo se resuelven episodios cuando el id no los trae ya. */
     private val needsMetadata: Boolean
-        get() = !entry.isLive && !hasEpisodeNumber(entry.type, entry.id)
+        get() = !entry.isLive && !hasEpisodeNumber(entry.type.lowercase(), entry.id) &&
+            (isSeries || mediaType == MediaType.Movie)
 
     private var episodesJob: Job? = null
 
@@ -98,15 +109,18 @@ class DetailsViewModel(
 
     /**
      * Pide la ficha al servidor para conocer los episodios y arranca con el
-     * primero (o con el más reciente, si el servidor marcó uno).
+     * primer capítulo de una temporada normal, si existe.
      */
     private fun loadEpisodes() {
         val addon = client ?: return
         val addonSettings = settings ?: return
 
         episodesJob?.cancel()
-        episodesJob = viewModelScope.launch {
+        if (needsEpisodeChoice) {
+            requestedId = entry.id
             mutableEpisodes.value = EpisodesUiState.Loading
+        }
+        episodesJob = viewModelScope.launch {
 
             val meta = try {
                 addon.meta(addonSettings.baseUrl, entry.type, entry.id)
@@ -117,30 +131,35 @@ class DetailsViewModel(
             }
 
             mutableMetadata.value = meta
+            // Las películas pueden tener extras o tráilers numerados, pero no
+            // deben convertirse en series por los videos de sus metadatos.
+            if (!needsEpisodeChoice) return@launch
             val seasons = (meta?.videos ?: emptyList()).toSeasonGroups()
             if (seasons.isEmpty()) {
-                if (entry.mediaType == MediaType.Movie) {
-                    mutableEpisodes.value = EpisodesUiState.Hidden
-                } else {
-                    /* No inventar capítulos ni reproducir en silencio el
-                     * episodio 1: se ofrece indicarlos a mano. */
-                    mutableEpisodes.value = EpisodesUiState.Unavailable(
-                        "El proveedor no publicó la lista de episodios. Indica temporada y episodio, o reproduce el título tal cual.",
-                    )
-                }
+                mutableEpisodes.value = EpisodesUiState.Unavailable(
+                    if (meta == null) "No se pudieron cargar los episodios. Indica temporada y episodio, o reproduce el título tal cual."
+                    else "El proveedor no publicó la lista de episodios. Indica temporada y episodio, o reproduce el título tal cual.",
+                )
                 return@launch
             }
 
-            val first = seasons.first().episodes.first()
+            val first = (seasons.firstOrNull { it.season > 0 } ?: seasons.first()).episodes.first()
             mutableEpisodes.value = EpisodesUiState.Ready(seasons = seasons, selected = first)
             requestedId = first.idFor(entry.id)
         }
     }
 
+    /** Reintenta la ficha sólo si hay una fuente configurada. */
+    val canRetry: Boolean get() = needsEpisodeChoice && client != null && settings != null
+
+    fun retryEpisodes() {
+        if (canRetry && mutableEpisodes.value is EpisodesUiState.Unavailable) loadEpisodes()
+    }
+
     /** El usuario cambió de episodio. */
     fun selectEpisode(episode: EpisodeOption) {
         val ready = mutableEpisodes.value as? EpisodesUiState.Ready ?: return
-        if (ready.selected == episode) return
+        if (episode !in ready.episodes || ready.selected == episode) return
         mutableEpisodes.value = ready.copy(selected = episode)
         requestedId = episode.idFor(entry.id)
     }
@@ -192,4 +211,8 @@ class DetailsViewModel(
     }
 
     private fun displayTitle(): String = mutableMetadata.value?.name?.takeIf { it.isNotBlank() } ?: entry.title
+
+    private companion object {
+        const val NO_METADATA_SOURCE = "No hay una fuente de metadatos disponible. Indica temporada y episodio, o reproduce el título tal cual."
+    }
 }

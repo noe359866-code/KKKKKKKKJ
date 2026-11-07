@@ -11,7 +11,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -113,40 +116,30 @@ fun BackdropImage(
 @Composable
 fun HeroBackdropImage(entry: MediaEntry, modifier: Modifier = Modifier) {
     val backdrop = entry.backdrop?.takeIf { it.isNotBlank() }
-    if (backdrop != null) {
-        AsyncImage(
-            model = backdrop,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = modifier,
-        )
-        return
-    }
-
     val poster = entry.poster?.takeIf { it.isNotBlank() }
-    if (poster != null) {
-        Box(modifier = modifier) {
+    var backdropFailed by remember(backdrop, poster) { mutableStateOf(false) }
+    var posterFailed by remember(backdrop, poster) { mutableStateOf(false) }
+    val usingBackdrop = backdrop != null && !backdropFailed
+    val usingPoster = !usingBackdrop && poster != null && !posterFailed
+    val url = if (usingBackdrop) backdrop else if (usingPoster) poster else null
+
+    Box(modifier = modifier) {
+        ArtworkFallback(entry = entry, modifier = Modifier.fillMaxSize(), landscape = true)
+        if (url != null) {
             AsyncImage(
-                model = poster,
+                model = url,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(36.dp),
+                onError = {
+                    if (usingBackdrop) backdropFailed = true else posterFailed = true
+                },
+                modifier = if (usingPoster) Modifier.fillMaxSize().blur(36.dp) else Modifier.fillMaxSize(),
             )
-            /* El desenfoque sube el brillo medio: se apaga un poco para que el
-             * texto blanco del hero siga teniendo contraste. */
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.42f)),
-            )
+            if (usingPoster) {
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.42f)))
+            }
         }
-        return
     }
-
-    /* Ni póster ni backdrop: degradado con el título, nunca una foto de relleno. */
-    ArtworkFallback(entry = entry, modifier = modifier, landscape = true)
 }
 
 /**

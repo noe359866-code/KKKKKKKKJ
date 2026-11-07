@@ -9,11 +9,13 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.tanasi.streamflix.core.DeviceDetector
+import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.core.DpadKeys
 import com.tanasi.streamflix.data.model.PlaybackQueueCodec
 import com.tanasi.streamflix.data.model.PlaybackRestore
@@ -58,11 +60,9 @@ class PlayerActivity : ComponentActivity() {
             return
         }
         latestRequest = request
-        latestPositionMs = restored?.positionMs ?: 0L
+        latestPositionMs = restored?.positionMs ?: request.startPositionMs
 
         val profileId = intent.getStringExtra(EXTRA_PROFILE_ID)
-        val poster = intent.getStringExtra(EXTRA_POSTER)
-        val backdrop = intent.getStringExtra(EXTRA_BACKDROP)
         val progressStore = ServiceLocator.watchProgressStore(this)
 
         val deviceProfile = DeviceDetector.detect(this)
@@ -71,7 +71,11 @@ class PlayerActivity : ComponentActivity() {
         }
 
         setContent {
-            StreamflixTheme(deviceProfile = deviceProfile) {
+            val configuration = LocalConfiguration.current
+            val currentDeviceProfile = DeviceProfile.fromDimensions(
+                configuration.screenWidthDp, configuration.screenHeightDp,
+            )
+            StreamflixTheme(deviceProfile = currentDeviceProfile) {
                 val factory = remember(request) {
                     viewModelFactory {
                         initializer {
@@ -87,14 +91,20 @@ class PlayerActivity : ComponentActivity() {
                 /* Zapear cambia de canal dentro del `ViewModel`: se sigue aquí
                  * para guardar el canal correcto, no el del `Intent`. */
                 val currentRequest by playerViewModel.current.collectAsStateWithLifecycle()
-                LaunchedEffect(currentRequest) { latestRequest = currentRequest }
+                LaunchedEffect(currentRequest) {
+                    if (latestRequest?.id != currentRequest.id || latestRequest?.type != currentRequest.type) {
+                        latestPositionMs = currentRequest.startPositionMs
+                    }
+                    latestRequest = currentRequest
+                }
 
                 PlayerScreen(
                     viewModel = playerViewModel,
                     onBack = { finish() },
-                    onProgress = { positionMs, durationMs ->
-                        latestPositionMs = positionMs
-                        val current = latestRequest ?: request
+                    onProgress = { current, positionMs, durationMs ->
+                        if (latestRequest?.id == current.id && latestRequest?.type == current.type) {
+                            latestPositionMs = positionMs
+                        }
                         /* Un directo no se "continúa": no hay posición que
                          * guardar. Sin perfil (lanzado desde fuera) tampoco. */
                         if (!profileId.isNullOrBlank() && !current.isLive) {
@@ -104,8 +114,8 @@ class PlayerActivity : ComponentActivity() {
                                     id = current.id,
                                     type = current.type,
                                     title = current.title,
-                                    poster = poster,
-                                    backdrop = backdrop,
+                                    poster = current.poster,
+                                    backdrop = current.backdrop,
                                     positionMs = positionMs,
                                     durationMs = durationMs,
                                     updatedAt = System.currentTimeMillis(),
@@ -140,6 +150,8 @@ class PlayerActivity : ComponentActivity() {
             isLive = getBooleanExtra(EXTRA_IS_LIVE, false),
             startIndex = getIntExtra(EXTRA_START_INDEX, 0).coerceAtLeast(0),
             startPositionMs = getLongExtra(EXTRA_START_POSITION, 0L).coerceAtLeast(0L),
+            poster = getStringExtra(EXTRA_POSTER),
+            backdrop = getStringExtra(EXTRA_BACKDROP),
             /* La parrilla viaja serializada: el reproductor la usa para `CH+`,
              * `CH−` y la guía. Si el extra falta o está corrupto, la lista
              * queda vacía y todo lo demás funciona igual. */

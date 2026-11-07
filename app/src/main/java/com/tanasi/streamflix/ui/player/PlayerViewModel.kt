@@ -32,6 +32,8 @@ sealed interface PlayerUiState {
         val sources: List<StreamSource>,
         val tuning: Boolean = false,
         val subtitles: List<SubtitleTrack> = emptyList(),
+        /** Cada carga exitosa identifica la sesión incluso si las fuentes son iguales. */
+        val generation: Int = 0,
     ) : PlayerUiState
 
     /** Sin fuentes (todos los proveedores fallaron) o error de red. */
@@ -133,7 +135,7 @@ class PlayerViewModel(
             val result = repository.streamsFor(request.type, request.id)
             if (ticket != loadTicket) return@launch
             mutableState.value = when (result) {
-                is StreamsResult.Ready -> PlayerUiState.Ready(result.sources, subtitles = result.subtitles)
+                is StreamsResult.Ready -> PlayerUiState.Ready(result.sources, subtitles = result.subtitles, generation = ticket)
                 StreamsResult.Empty -> PlayerUiState.Unavailable(
                     "Ningún proveedor devolvió una fuente reproducible.",
                 )

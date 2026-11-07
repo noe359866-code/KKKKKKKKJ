@@ -15,6 +15,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
  */
 data class DeviceProfile(
     val screenWidthDp: Int = DEFAULT_WIDTH_DP,
+    val screenHeightDp: Int = DEFAULT_HEIGHT_DP,
 ) {
     /** Siempre TV: el manifiesto exige `android.software.leanback`. */
     val isTelevision: Boolean get() = true
@@ -38,11 +39,24 @@ data class DeviceProfile(
     /** Separación entre tarjetas: en el salón se agradece más aire. */
     val cardSpacingDp: Int get() = 18
 
-    /** Margen lateral: alinea el hero, los títulos de fila y la primera tarjeta. */
-    val horizontalPaddingDp: Int get() = 48
+    /** Zona segura de partida: 5 % de cada dimensión lógica, no de pulgadas. */
+    val horizontalPaddingDp: Int get() = safeInsetDp(screenWidthDp, DEFAULT_WIDTH_DP)
+    val verticalPaddingDp: Int get() = safeInsetDp(screenHeightDp, DEFAULT_HEIGHT_DP)
 
     companion object {
         const val DEFAULT_WIDTH_DP = 960
+        const val DEFAULT_HEIGHT_DP = 540
+
+        private fun safeInsetDp(value: Int, fallback: Int): Int {
+            val dimension = value.takeIf { it > 0 } ?: fallback
+            return dimension / 20 + if (dimension % 20 == 0) 0 else 1
+        }
+
+        /** Normaliza los tamaños lógicos que comunica Android. */
+        fun fromDimensions(widthDp: Int, heightDp: Int) = DeviceProfile(
+            screenWidthDp = widthDp.takeIf { it > 0 } ?: DEFAULT_WIDTH_DP,
+            screenHeightDp = heightDp.takeIf { it > 0 } ?: DEFAULT_HEIGHT_DP,
+        )
 
         /** Valor por defecto para previews y tests. */
         val Tv = DeviceProfile()
@@ -60,8 +74,8 @@ data class DeviceProfile(
 object DeviceDetector {
 
     fun detect(context: Context): DeviceProfile {
-        val widthDp = context.resources.configuration.screenWidthDp
-        return if (widthDp > 0) DeviceProfile(screenWidthDp = widthDp) else DeviceProfile.Tv
+        val configuration = context.resources.configuration
+        return DeviceProfile.fromDimensions(configuration.screenWidthDp, configuration.screenHeightDp)
     }
 }
 

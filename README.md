@@ -247,7 +247,7 @@ traía el proyecto (`art_movies`, `art_series`, `art_anime`, `art_live`), el
 
 ### Diseño: Apple TV, de principio a fin
 
-La interfaz copia el lenguaje de la app **Apple TV (tvOS)**, no el de Netflix.
+La interfaz combina una portada cinematográfica y filas de catálogo inspiradas en experiencias de TV como Apple TV y Netflix. Los filtros y el contenido siguen siendo los de Streamflix. Ver [diseño y navegación para TV](docs/diseno-tv.md).
 Cuatro reglas que se ven en todas las pantallas:
 
 | Regla | Cómo se aplica |
@@ -264,8 +264,10 @@ Geometría y jerarquía:
   sinopsis de tres líneas y dos cápsulas — **▶ Reproducir** (blanca, la única
   clara de la pantalla) y *Más información*. No hay botón de *Fuentes*: el
   reproductor elige servidor por su cuenta.
-- **Deriva Ken Burns** del backdrop (escala 1 → 1,06 en 20 s) en una animación
-  infinita sobre `graphicsLayer`: no recompone, así que un TV box barato no sufre.
+- **Backdrop estático** con transición al cambiar el foco, evitando animaciones
+  permanentes de pantalla completa en dispositivos TV de recursos limitados.
+- **Menú de categorías** con filtros locales sobre el catálogo cargado y estado
+  vacío cuando no hay títulos disponibles.
 - **Filas** con encabezado mínimo (sólo el nombre, 22 sp). Se eliminaron la barra
   de acento, el contador de títulos y la etiqueta "16:9" que sólo añadían ruido.
 - **Tarjetas** de 10 dp de radio; el título debajo siempre se lee (atenuado al
