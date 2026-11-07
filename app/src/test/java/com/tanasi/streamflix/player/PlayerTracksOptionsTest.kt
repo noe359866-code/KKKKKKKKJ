@@ -11,10 +11,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerTracksOptionsTest {
+    /*
+     * Un `TrackGroup` de Media3 sólo agrupa pistas del **mismo contenido y el
+     * mismo idioma**: `TrackGroup.verifyCorrectness()` lo comprueba y, si ve
+     * idiomas distintos, escribe un `Log.e` de diagnóstico. En la JVM de los
+     * tests `android.util.Log` no existe y `returnDefaultValues = true` hace
+     * que `Log.getStackTraceString()` devuelva `null`; el propio logger lanza
+     * entonces `NullPointerException` dentro del constructor y el test muere
+     * antes del assert (así fallaba `:app:testDebugUnitTest` en CI). Las dos
+     * pistas se distinguen por `label`, que es lo que el panel pinta.
+     */
     private fun audioGroup(id: String) = TrackGroup(
         id,
-        Format.Builder().setSampleMimeType("audio/mp4a-latm").setLanguage("es").build(),
-        Format.Builder().setSampleMimeType("audio/mp4a-latm").setLanguage("en").build(),
+        Format.Builder()
+            .setSampleMimeType("audio/mp4a-latm").setLanguage("es").setLabel("Español")
+            .build(),
+        Format.Builder()
+            .setSampleMimeType("audio/mp4a-latm").setLanguage("es").setLabel("Español (alt)")
+            .build(),
     )
 
     private fun tracks(group: TrackGroup, support: IntArray = intArrayOf(C.FORMAT_HANDLED, C.FORMAT_HANDLED)) =
