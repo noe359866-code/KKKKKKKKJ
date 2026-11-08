@@ -26,7 +26,7 @@ import org.junit.runner.RunWith
 /** Sin backend y sin Internet: prueba que el Python nativo y los scrapers cargan en el dispositivo. */
 @RunWith(AndroidJUnit4::class)
 class EmbeddedEngineSmokeTest {
-    @Test
+    @Test(timeout = 30_000)
     fun bundledPythonAndScrapersRunOnDeviceWithoutAServer(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         val settings = Settings(app)
@@ -56,7 +56,7 @@ class EmbeddedEngineSmokeTest {
         assertTrue(descriptors.isEmpty())
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun engineAndCatalogHelpersRunInKotlinFromPython(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
@@ -94,7 +94,7 @@ class EmbeddedEngineSmokeTest {
         assertEquals(listOf("animeflv:show", "1", "12"), result.map { it.toString() })
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun scraperQualityIsResolvedInKotlinFromPython(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
@@ -104,7 +104,7 @@ class EmbeddedEngineSmokeTest {
         assertTrue(helper.callAttr("guess_quality", "https://hd.example/player") == null)
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun hosterHelpersRunInKotlinFromPython(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
@@ -117,7 +117,7 @@ class EmbeddedEngineSmokeTest {
         assertEquals("https://cdn.example/master", hosters.callAttr("_okru", okru).asList()[0].toString())
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun animeParsersRunInKotlinFromPython(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
@@ -133,7 +133,7 @@ class EmbeddedEngineSmokeTest {
         assertEquals("100", anime.callAttr("match_score", "Street Fighter", hit).toString())
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun nativeProviderSchedulerCallsPythonAndReturnsPythonObjects(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
@@ -157,7 +157,7 @@ class EmbeddedEngineSmokeTest {
         }
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun engineUsesNativeDiskCacheFromPython(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
@@ -170,7 +170,7 @@ class EmbeddedEngineSmokeTest {
         cache.callAttr("clear")
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun movieParsersRunInKotlinFromPython(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
@@ -186,7 +186,7 @@ class EmbeddedEngineSmokeTest {
         assertEquals("720p", stream.entries.first { it.key.toString() == "quality" }.value.toString())
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun tmdbLookupIsInstalledWithoutRequiringAnApiKey(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
@@ -194,7 +194,7 @@ class EmbeddedEngineSmokeTest {
         assertEquals("{}", tmdb.get("_native_tmdb")!!.callAttr("searchJson", "Title", "", "movie", "", 1000).toString())
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun packedPlayersAreUnpackedInKotlinFromPython(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
@@ -203,7 +203,7 @@ class EmbeddedEngineSmokeTest {
         assertEquals("var file=\"https://cdn.example/v.m3u8\";", htmlkit.callAttr("unpack_js", packed).toString())
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun pythonHttpUsesNativeTransportHeadersAndAnOverallTimeout(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
