@@ -87,6 +87,20 @@ test('GET /stream/movie/:id.json returns ordered streams with request headers', 
     );
   }
   assert.equal(providers[0], 'demo-vod');
+
+  /* The per-provider outcome of this scrape travels with the response so the
+   * app can say *why* a title has no sources (provider down vs. title absent)
+   * instead of the generic "no reproducible source". */
+  assert.ok(Array.isArray(body.providers), 'the response should list each provider outcome');
+  assert.ok(body.providers.length >= 1);
+  for (const entry of body.providers) {
+    assert.equal(typeof entry.id, 'string');
+    assert.equal(typeof entry.status, 'string');
+    assert.ok(['ok', 'empty', 'error', 'timeout'].includes(entry.status) || entry.status.length > 0);
+    assert.equal(typeof entry.streams, 'number');
+  }
+  const okProviders = body.providers.filter((entry) => entry.status === 'ok');
+  assert.ok(okProviders.length >= 1, 'at least one provider should report ok when there are streams');
 });
 
 test('second request is served from the TTL cache in milliseconds', async () => {
