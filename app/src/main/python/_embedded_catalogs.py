@@ -11,6 +11,7 @@ MEJORAS:
 from __future__ import annotations
 
 import importlib
+import json
 import re
 import urllib.parse
 from html.parser import HTMLParser
@@ -30,6 +31,28 @@ MOVIES = frozenset(("gnula", "cuevana", "pelisplushd", "repelis", "peliculasflix
 
 MODULES = ANIME | MOVIES
 
+# NOVA se implementa en Kotlin en Android. El servidor de escritorio sigue
+# cargando el módulo Python y su configuración por entorno.
+_native_nova = False
+_native_engine_tools = None
+_native_document_factory = None
+
+
+def install_native_document_factory(factory) -> None:
+    global _native_document_factory
+    _native_document_factory = factory
+
+
+def install_native_engine_tools(tools) -> None:
+    global _native_engine_tools
+    _native_engine_tools = tools
+
+
+def install_native_nova(enabled: bool) -> None:
+    global _native_nova
+    _native_nova = enabled
+
+
 NON_TITLES = frozenset(("anime", "animes", "directorio", "buscar", "busqueda", "search", "browse",
                         "programacion", "horario", "calendario", "generos", "genero", "login",
                         "registro", "contacto", "politica", "privacidad", "terminos", "dmca",
@@ -43,6 +66,8 @@ def module_for(provider: str):
 
 
 def site_for(provider: str) -> Dict[str, Any]:
+    if provider == "novahd" and _native_nova:
+        return {"base": "https://novahd.cc", "search_hints": ()}
     module = module_for(provider)
     site = module.site_config() if provider == "gnula" else dict(getattr(module, "SITE", {}))
     if callable(getattr(module, "_bases", None)):
@@ -64,11 +89,37 @@ class Document(HTMLParser):
         self._h1 = False
         self._anchor: Optional[Dict[str, Any]] = None
         self._text: List[str] = []
+        self._native = None
+        self._native_failed = False
+        self._native_h1 = False
+        self._native_anchor = False
+        if (_native_document_factory is not None and isinstance(html, str) and isinstance(page, str)
+                and not any(0xD800 <= ord(ch) <= 0xDFFF for ch in html + page)):
+            self._native = _native_document_factory.create(page, urllib.parse.urljoin)
         self.feed(html)
         self.close()
+        if self._native is not None:
+            if self._native_failed:
+                # Unsupported Unicode: replay the exact same parser events in Python.
+                self._native = None
+                self.reset()
+                self.links, self.meta, self.heading = [], {}, []
+                self._h1, self._anchor, self._text = False, None, []
+                self.feed(html)
+                self.close()
+            else:
+                result = json.loads(str(self._native.snapshot()))
+                self.links, self.meta, self.heading = result["links"], result["meta"], result["heading"]
 
     def handle_starttag(self, tag: str, attrs):
         attrs = {key.lower(): value or "" for key, value in attrs}
+        if self._native is not None:
+            if not self._native_failed and tag in ("meta", "h1", "a", "img"):
+                if tag != "img" or self._native_anchor:
+                    self._native_failed = not bool(self._native.start(tag, json.dumps(attrs)))
+                if tag == "h1": self._native_h1 = True
+                if tag == "a": self._native_anchor = True
+            return
         if tag == "meta":
             key = attrs.get("property") or attrs.get("name")
             if key:
@@ -91,12 +142,25 @@ class Document(HTMLParser):
                 self._anchor["title"] = attrs.get("alt", "")
 
     def handle_data(self, data: str):
+        if self._native is not None:
+            if not self._native_failed and (self._native_anchor or self._native_h1):
+                if any(0xD800 <= ord(ch) <= 0xDFFF for ch in data):
+                    self._native_failed = True
+                else:
+                    self._native_failed = not bool(self._native.data(data))
+            return
         if self._anchor is not None:
             self._text.append(data)
         if self._h1:
             self.heading.append(data)
 
     def handle_endtag(self, tag: str):
+        if self._native is not None:
+            if not self._native_failed and tag in ("a", "h1"):
+                self._native.end(tag)
+                if tag == "a": self._native_anchor = False
+                if tag == "h1": self._native_h1 = False
+            return
         if tag == "a" and self._anchor is not None:
             self._anchor["title"] = self._anchor["title"] or " ".join(self._text)
             self.links.append(self._anchor)
@@ -111,6 +175,12 @@ def card_ref(provider: str, url: str, base: str, default_type: str = "movie") ->
     if parsed.scheme not in ("http", "https") or parsed.netloc.lower() != origin.netloc.lower():
         return None
     path = urllib.parse.unquote(parsed.path).strip("/")
+    if (_native_engine_tools is not None and isinstance(provider, str) and provider.isascii()
+            and path.isascii() and "\r" not in path and "\n" not in path
+            and isinstance(default_type, str) and default_type.isascii()):
+        native = str(_native_engine_tools.catalogCardRefJson(provider, path, default_type, provider in ANIME))
+        if native:
+            return json.loads(native)
     slug, episode, media_type = "", None, default_type
     if provider in ANIME:
         media_type = "anime"
@@ -179,7 +249,7 @@ def catalogue(provider: Dict[str, Any], media_type: str, query: str = "") -> Lis
     el slug correspondiente mediante el sitio si el módulo lo soporta.
     """
     name, label = provider["id"], provider["label"]
-    module = module_for(name)
+    module = module_for(name) if name in ANIME else None
     headers = default_headers(provider)
     deadline = Deadline(8000)
     site = site_for(name)
@@ -206,6 +276,13 @@ def catalogue(provider: Dict[str, Any], media_type: str, query: str = "") -> Lis
 
 
 def split_id(content_id: str, media_type: str) -> Tuple[str, Optional[int], Optional[int]]:
+    # Keep Python's arbitrary-size integers and Unicode digit semantics as fallback.
+    if (_native_engine_tools is not None and isinstance(content_id, str) and content_id.isascii()
+            and isinstance(media_type, str) and media_type.isascii()):
+        anime_provider = content_id.split(":", 1)[0] in ANIME
+        native = str(_native_engine_tools.splitCatalogIdJson(content_id, media_type, anime_provider))
+        if native:
+            return tuple(json.loads(native))
     parts = content_id.split(":")
     if len(parts) >= 3 and parts[-1].isdigit() and parts[-2].isdigit():
         return ":".join(parts[:-2]), int(parts[-2]), int(parts[-1])
@@ -216,7 +293,16 @@ def split_id(content_id: str, media_type: str) -> Tuple[str, Optional[int], Opti
 
 def episode_videos(provider: str, base_id: str, slug: str, html: str, page: str) -> List[Dict[str, Any]]:
     episodes: Dict[Tuple[int, int], str] = {}
-    for link in Document(html, page).links:
+    links = Document(html, page).links
+    native = ""
+    if _native_engine_tools is not None and isinstance(slug, str) and slug.isascii():
+        anime = provider in ANIME
+        refs = [card_ref(provider, link["url"], page, "anime") for link in links] if anime else []
+        native = str(_native_engine_tools.catalogEpisodeLinksJson(json.dumps(links), json.dumps(refs), slug, anime))
+        if native:
+            for season, episode, index in json.loads(native):
+                episodes[season, episode] = clean_title(links[index]["title"]) or f"Episodio {episode}"
+    for link in ([] if native else links):
         attrs, season, episode = link["attrs"], None, None
         if provider in ANIME:
             ref = card_ref(provider, link["url"], page, "anime")
@@ -236,12 +322,22 @@ def episode_videos(provider: str, base_id: str, slug: str, html: str, page: str)
                         break
         if season is not None and episode is not None and 0 <= season <= 100 and 0 <= episode <= 10000:
             episodes[season, episode] = clean_title(link["title"]) or f"Episodio {episode}"
-    module = module_for(provider)
     if provider in ("animeflv", "jkanime", "tioanime", "latanime"):
+        module = module_for(provider)
         numbers = module.parse_episodes(html) if provider in ("animeflv", "tioanime", "latanime") else module.parse_episodes(html, slug)
         for episode in numbers:
             if 0 <= episode <= 10000:
                 episodes.setdefault((1, episode), f"Episodio {episode}")
+    if (_native_engine_tools is not None and isinstance(base_id, str)
+            and not any(0xD800 <= ord(ch) <= 0xDFFF for ch in base_id)):
+        try:
+            encoded = json.dumps([[season, episode, title] for (season, episode), title in episodes.items()])
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            pass
+        else:
+            rendered = str(_native_engine_tools.catalogEpisodeVideosJson(encoded, base_id))
+            if rendered:
+                return json.loads(rendered)
     return [{"id": f"{base_id}:{season}:{episode}", "season": season, "episode": episode, "name": title}
             for (season, episode), title in sorted(episodes.items())]
 

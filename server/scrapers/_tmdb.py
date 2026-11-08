@@ -28,6 +28,12 @@ from _htmlkit import Deadline, http_get_json, normalize
 TMDB_BASE = "https://api.themoviedb.org/3"
 LANGUAGE = "es-MX"
 _TIMEOUT = 5.0
+_native_tmdb = None
+
+
+def install_native_tmdb(lookup) -> None:
+    global _native_tmdb
+    _native_tmdb = lookup
 
 
 def api_key(payload: Optional[Dict[str, Any]] = None) -> str:
@@ -74,6 +80,12 @@ def find_by_imdb(
     key = key or api_key()
     if not key or not imdb_id:
         return {}
+    if (_native_tmdb is not None and TMDB_BASE == "https://api.themoviedb.org/3" and LANGUAGE == "es-MX"
+            and all(isinstance(value, str) for value in (imdb_id, media_type, key))):
+        import json
+        native = str(_native_tmdb.findByImdbJson(imdb_id, media_type, key, int(_remaining(deadline) * 1000)))
+        if native:
+            return json.loads(native)
     query = urllib.parse.urlencode({"external_source": "imdb_id", "language": LANGUAGE})
     url = f"{TMDB_BASE}/find/{urllib.parse.quote(imdb_id)}?{query}&api_key={key}"
     try:
@@ -108,6 +120,13 @@ def search(
     key = key or api_key()
     if not key or not (title or "").strip():
         return {}
+    if (_native_tmdb is not None and TMDB_BASE == "https://api.themoviedb.org/3" and LANGUAGE == "es-MX"
+            and all(isinstance(value, str) for value in (title, media_type, key))
+            and (year is None or isinstance(year, (str, int)))):
+        import json
+        native = str(_native_tmdb.searchJson(title, str(year or ""), media_type, key, int(_remaining(deadline) * 1000)))
+        if native:
+            return json.loads(native)
     section = "tv" if str(media_type).lower() in ("tv", "series") else "movie"
     params = {"query": title, "language": LANGUAGE, "include_adult": "false"}
     if year and str(year)[:4].isdigit():

@@ -13,7 +13,20 @@ PROVIDERS = {
     "gnula", "cuevana", "pelisplushd", "repelis", "peliculasflix", "pelisjuanita",
     "novahd",
 }
-HELPERS = {"embedded_engine", "_embedded_cache", "_embedded_catalogs", "_android_http", "_base", "_htmlkit", "_hosters", "_animekit", "_peliskit", "_tmdb"}
+NATIVE_PROVIDERS = {"novahd": b"Lcom/tanasi/streamflix/data/local/scrapers/NovaScraper;"}
+PYTHON_PROVIDERS = PROVIDERS - NATIVE_PROVIDERS.keys()
+HELPERS = {"embedded_engine", "_embedded_catalogs", "_base", "_htmlkit", "_hosters", "_animekit", "_peliskit", "_tmdb"}
+NATIVE_HELPERS = {
+    "_embedded_cache": b"Lcom/tanasi/streamflix/data/local/NativeJsonCache;",
+    "_android_http": b"Lcom/tanasi/streamflix/data/local/NativeHttpAdapter;",
+}
+NATIVE_ENGINE_CLASSES = {
+    "engine tools": b"Lcom/tanasi/streamflix/data/local/NativeEngineTools;",
+    "provider scheduler": b"Lcom/tanasi/streamflix/data/local/NativeProviderScheduler;",
+    "provider ticket": b"Lcom/tanasi/streamflix/data/local/NativeProviderTicket;",
+    "catalog document factory": b"Lcom/tanasi/streamflix/data/local/NativeCatalogDocumentFactory;",
+    "catalog document": b"Lcom/tanasi/streamflix/data/local/NativeCatalogDocument;",
+}
 ABIS = {"armeabi-v7a", "arm64-v8a", "x86_64"}
 
 
@@ -27,11 +40,25 @@ def verify(path: Path):
             python_names = app.namelist()
             def bundled(module):
                 return any(re.search(rf"(^|/){re.escape(module)}(?:\.cpython-\d+)?\.pyc?$", name) for name in python_names)
-            missing = sorted(name for name in PROVIDERS | HELPERS if not bundled(name))
+            missing = sorted(name for name in PYTHON_PROVIDERS | HELPERS if not bundled(name))
             if missing:
                 raise ValueError(f"Python modules missing from APK: {missing}")
             if bundled("example_provider") or bundled("template_provider"):
                 raise ValueError("Demo/template providers must not ship in the autonomous APK")
+            if any(bundled(name) for name in NATIVE_PROVIDERS):
+                raise ValueError("Native providers must not also ship their Python scraper")
+            if any(bundled(name) for name in NATIVE_HELPERS):
+                raise ValueError("Native helpers must not also ship their Python module")
+        dex = [apk.read(name) for name in names if re.fullmatch(r"classes(?:\d+)?\.dex", name)]
+        for provider, descriptor in NATIVE_PROVIDERS.items():
+            if not any(descriptor in content for content in dex):
+                raise ValueError(f"Kotlin provider missing from APK: {provider}")
+        for helper, descriptor in NATIVE_HELPERS.items():
+            if not any(descriptor in content for content in dex):
+                raise ValueError(f"Kotlin helper missing from APK: {helper}")
+        for helper, descriptor in NATIVE_ENGINE_CLASSES.items():
+            if not any(descriptor in content for content in dex):
+                raise ValueError(f"Kotlin engine component missing from APK: {helper}")
         for abi in sorted(ABIS):
             for library in ("libpython3.11.so", "libchaquopy_java.so"):
                 if f"lib/{abi}/{library}" not in names:

@@ -124,8 +124,20 @@ MP4_FIELD_RE = re.compile(
 )
 
 
+# Android installs the Kotlin implementation; the optional Node backend keeps
+# the Python version while the migration proceeds.
+_native_hoster_tools = None
+
+
+def install_native_hoster_tools(tools) -> None:
+    global _native_hoster_tools
+    _native_hoster_tools = tools
+
+
 def hoster_label(url: str) -> str:
     """Nombre legible del servidor ("Streamwish", "VOE", …)."""
+    if _native_hoster_tools is not None:
+        return str(_native_hoster_tools.label(url))
     host = host_of(url)
     for hint, label in HOSTER_LABELS:
         if hint in host:
@@ -137,6 +149,8 @@ def hoster_label(url: str) -> str:
 
 
 def is_download_only(url: str) -> bool:
+    if _native_hoster_tools is not None:
+        return bool(_native_hoster_tools.isDownloadOnly(url))
     host = host_of(url)
     return any(hint in host for hint in DOWNLOAD_ONLY)
 
@@ -152,6 +166,8 @@ KNOWN_GOOD_HOSTS = (
 
 def is_known_good(url: str) -> bool:
     """¿Es de una familia de servidores que sabemos resolver?"""
+    if _native_hoster_tools is not None:
+        return bool(_native_hoster_tools.isKnownGood(url))
     host = host_of(url)
     return any(hint in host for hint in KNOWN_GOOD_HOSTS)
 
@@ -168,6 +184,8 @@ HLS_MAX_EMBED_PAGES = 2
 
 def media_type_of_response(content_type: str) -> str:
     """`Content-Type` de la respuesta → tipo de medio (o ``"html"``)."""
+    if _native_hoster_tools is not None:
+        return str(_native_hoster_tools.mediaTypeOfResponse(content_type or ""))
     text = (content_type or "").lower()
     if not text:
         return ""
@@ -195,6 +213,8 @@ def probe_media_kind(url: str, headers: Dict[str, str], deadline: Deadline) -> s
     head = http_peek(url, headers, deadline.remaining(cap=4.0), PROBE_SIZE)
     if not head:
         return ""
+    if _native_hoster_tools is not None:
+        return str(_native_hoster_tools.classifyProbe(head.hex()))
     stripped = head.lstrip(b"\xef\xbb\xbf \t\r\n")
     if stripped[:7].upper() == b"#EXTM3U":
         return "hls"
@@ -252,6 +272,9 @@ def hls_variants(url: str) -> List[str]:
     entregar HTML a ExoPlayer como si fuera HLS es peor que no ofrecer la
     fuente, así que van por `hls_embed_pages()` y se resuelven descargándolas.
     """
+    if _native_hoster_tools is not None:
+        import json
+        return json.loads(str(_native_hoster_tools.manifestVariantsJson(url)))
     return _rewrite_paths(url, HLS_MANIFEST_PREFIXES)
 
 
@@ -262,11 +285,19 @@ def hls_embed_pages(url: str) -> List[str]:
     con y sin prefijo en el id. Quien llama las mete en la cola de descarga y
     busca el video en el HTML; una que responda 404 sólo cuesta una petición.
     """
+    if _native_hoster_tools is not None:
+        import json
+        result = str(_native_hoster_tools.embedVariantsJson(url))
+        if result:
+            return json.loads(result)
     return _rewrite_paths(url, HLS_EMBED_PREFIXES)
 
 
 def _streamtape(html: str) -> List[str]:
     """Streamtape: el mp4 se arma con el texto de `ideoooolink` + el token."""
+    if _native_hoster_tools is not None:
+        import json
+        return json.loads(str(_native_hoster_tools.streamtapeJson(html or "")))
     found = []
     for match in STREAMTAPE_ID_RE.finditer(html):
         fragment = match.group(1).strip().strip("'\"")
@@ -284,6 +315,10 @@ def _okru(html: str) -> List[str]:
     """Okru: el manifiesto HLS viene en el JSON de `data-options`."""
     import json
 
+    if _native_hoster_tools is not None:
+        native = str(_native_hoster_tools.okruJson(html or ""))
+        if native:
+            return json.loads(native)
     found = []
     for match in OKRU_OPTIONS_RE.finditer(html):
         try:

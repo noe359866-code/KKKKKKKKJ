@@ -59,6 +59,16 @@ EPISODE_RE = re.compile(
 TRAILING_NUMBER_RE = re.compile(r"[-_/](\d{1,5})/?$")
 
 
+# En Android, las rutinas migradas se ejecutan en Kotlin. El servidor Node y
+# los tests de escritorio mantienen el parser Python durante la transición.
+_native_anime_tools = None
+
+
+def install_native_anime_tools(tools) -> None:
+    global _native_anime_tools
+    _native_anime_tools = tools
+
+
 # ---------------------------------------------------------------------------
 # Identificadores
 # ---------------------------------------------------------------------------
@@ -75,6 +85,10 @@ def parse_id(content_id: str, provider: str) -> Dict[str, Any]:
         https://www3.animeflv.net/ver/one-piece-1180
         one piece                        → slug normalizado (búsqueda después)
     """
+    if _native_anime_tools is not None:
+        raw_json = str(_native_anime_tools.parseIdJson(content_id or "", provider))
+        if raw_json:
+            return json.loads(raw_json)
     raw = (content_id or "").strip()
     result: Dict[str, Any] = {
         "raw": raw,
@@ -144,6 +158,12 @@ def apply_payload_episode(ref: Dict[str, Any], payload: Dict[str, Any]) -> Dict[
     """Si el id no traía episodio, se usan `season`/`episode` del payload."""
     if ref.get("explicit_episode"):
         return ref
+    if _native_anime_tools is not None:
+        result = str(_native_anime_tools.applyEpisodeJson(json.dumps(ref, ensure_ascii=False),
+                                                          json.dumps(payload, ensure_ascii=False)))
+        if result:
+            ref.update(json.loads(result))
+            return ref
     episode = payload.get("episode")
     season = payload.get("season")
     try:
@@ -276,6 +296,10 @@ def js_literal(html: str, name: str) -> Any:
     """Valor de ``var <name> = [...] / {...}`` (o ``<name> = [...]``)."""
     if not html or not name:
         return None
+    if _native_anime_tools is not None:
+        raw_json = str(_native_anime_tools.literalJson(html, name))
+        if raw_json:
+            return json.loads(raw_json)
     pattern = re.compile(
         rf"""(?:var\s+|let\s+|const\s+|window\.)?\b{re.escape(name)}\s*=\s*""",
         re.IGNORECASE,
@@ -326,6 +350,10 @@ def decode_maybe_base64(value: str) -> str:
     """Muchos sitios publican el embed en base64 (`code`, `remote`)."""
     if not value or not isinstance(value, str):
         return ""
+    if _native_anime_tools is not None:
+        decoded = _native_anime_tools.decodeMaybeBase64(value)
+        if decoded is not None:
+            return str(decoded)
     text = value.strip()
     if text.startswith(("http://", "https://", "//")):
         return text
@@ -370,9 +398,16 @@ def dedupe_servers(servers: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def iframe_servers(html: str, page_url: str, skip_hosts: Iterable[str] = ()) -> List[Dict[str, Any]]:
     """Servidores a partir de los `<iframe>` de la página (respaldo genérico)."""
+    text = unescape_markup(html or "")
+    if (_native_anime_tools is not None and isinstance(page_url, str)
+            and isinstance(skip_hosts, (tuple, list)) and all(isinstance(hint, str) for hint in skip_hosts)):
+        import json
+        native = str(_native_anime_tools.iframeServersJson(text, page_url, json.dumps(skip_hosts, ensure_ascii=False)))
+        if native:
+            return json.loads(native)
     servers: List[Dict[str, Any]] = []
     for match in re.finditer(
-        r"""<iframe[^>]+?src\s*=\s*["']([^"']+)["']""", unescape_markup(html or ""), re.IGNORECASE
+        r"""<iframe[^>]+?src\s*=\s*["']([^"']+)["']""", text, re.IGNORECASE
     ):
         url = urllib.parse.urljoin(page_url, match.group(1).strip())
         if not url.startswith(("http://", "https://")):
@@ -434,6 +469,8 @@ YEAR_RE = re.compile(r"^(?:19|20)\d{2}$")
 
 def match_tokens(value: str) -> List[str]:
     """Texto → tokens significativos (sin etiquetas de release ni año)."""
+    if _native_anime_tools is not None and (value is None or isinstance(value, str)):
+        return json.loads(str(_native_anime_tools.matchTokensJson(value or "")))
     tokens = [part for part in slugify(value or "").split("-") if part]
     keep = [
         token for token in tokens
@@ -450,6 +487,10 @@ def match_score(query: str, hit: Dict[str, str]) -> int:
     título idéntico; 80+ que el resultado empieza por lo pedido (la secuela o la
     temporada del título correcto); 55–75 una coincidencia parcial razonable.
     """
+    if _native_anime_tools is not None and all(
+        value is None or isinstance(value, str) for value in (query, hit.get("title"), hit.get("slug"))
+    ):
+        return int(_native_anime_tools.matchScore(query or "", hit.get("title") or "", hit.get("slug") or ""))
     wanted = match_tokens(query)
     if not wanted:
         return 0
@@ -487,6 +528,16 @@ def best_match(
     Desempate: a igual puntuación gana el título con menos palabras de más (el
     resultado "Dune" antes que "Dune: Parte Dos" cuando se pide "Dune").
     """
+    if _native_anime_tools is not None:
+        hits = list(hits or [])
+        if (query is None or isinstance(query, str)) and all(
+            isinstance(hit, dict) and all(value is None or isinstance(value, str)
+                                          for value in (hit.get("title"), hit.get("slug")))
+            for hit in hits
+        ):
+            simple = [{"title": hit.get("title") or "", "slug": hit.get("slug") or ""} for hit in hits]
+            result = json.loads(str(_native_anime_tools.bestMatchJson(query or "", json.dumps(simple, ensure_ascii=False))))
+            return result["score"], hits[result["index"]] if result["index"] >= 0 else None
     scored: List[Tuple[int, int, int, Dict[str, str]]] = []
     for index, hit in enumerate(hits or []):
         score = match_score(query, hit)
@@ -530,6 +581,17 @@ def build_streams(
     ``title`` "AnimeFLV · One Piece · Ep. 1180 · Streamwish"
     """
     episode_suffix = f" · Ep. {episode}" if episode else ""
+    if (_native_anime_tools is not None and isinstance(provider_label, str)
+            and isinstance(title, str) and isinstance(user_agent, str) and isinstance(signals, list)):
+        import json
+        try:
+            encoded = json.dumps(signals, ensure_ascii=False)
+        except (ValueError, TypeError, RecursionError, OverflowError):
+            pass
+        else:
+            native = str(_native_anime_tools.buildStreamsJson(provider_label, f"{title}{episode_suffix}", encoded, user_agent))
+            if native:
+                return json.loads(native)
     streams: List[Dict[str, Any]] = []
     for signal in signals:
         server = signal.get("server") or signal.get("label") or "Servidor"

@@ -21,6 +21,7 @@ import _animekit
 import _hosters
 import _htmlkit
 import _peliskit
+import _tmdb
 from _htmlkit import Deadline, guess_quality, is_media_url
 
 
@@ -145,6 +146,165 @@ class HttpLayerTest(unittest.TestCase):
         self.assertEqual(calls["n"], 1)
 
 
+class NativeTmdbBridgeTest(unittest.TestCase):
+    def test_tmdb_delegates_and_falls_back_without_exposing_keys(self):
+        class Lookup:
+            def findByImdbJson(self, imdb, kind, key, timeout):
+                self.assert_args = (imdb, kind, key, timeout)
+                return '{"title":"Nativo","year":"2024"}' if imdb != "fallback" else ""
+            def searchJson(self, title, year, kind, key, timeout):
+                return '{"title":"Búsqueda","year":"2025"}'
+
+        lookup = Lookup()
+        _tmdb.install_native_tmdb(lookup)
+        self.addCleanup(_tmdb.install_native_tmdb, None)
+        self.assertEqual("Nativo", _tmdb.find_by_imdb("tt1234567", "tv", "key")["title"])
+        self.assertEqual(("tt1234567", "tv", "key", 5000), lookup.assert_args)
+        self.assertEqual("Búsqueda", _tmdb.search("Nombre", 2025, "movie", "key")["title"])
+        with patch.object(_tmdb, "http_get_json", return_value={"movie_results": [{"title": "Anterior"}]}):
+            self.assertEqual("Anterior", _tmdb.find_by_imdb("fallback", "movie", "key")["title"])
+        with patch.object(_tmdb, "http_get_json", side_effect=AssertionError("must not call")):
+            with patch.dict(os.environ, {"TMDB_API_KEY": "", "TMDB_APIKEY": ""}):
+                self.assertEqual({}, _tmdb.find_by_imdb("tt1234567", key=""))
+
+
+class NativeJsUnpackerBridgeTest(unittest.TestCase):
+    def test_unpacker_is_used_and_can_fall_back(self):
+        class Unpacker:
+            def unpack(self, text, limit):
+                if "fallback" in text: return None
+                return "https://cdn.invalid/native.m3u8"
+
+        _htmlkit.install_js_unpacker(Unpacker())
+        self.addCleanup(_htmlkit.install_js_unpacker, None)
+        packed = "function(p,a,c,k,e,d){}('0',1,1,'fallback'.split('|'))"
+        self.assertEqual("https://cdn.invalid/native.m3u8", _htmlkit.unpack_js(packed.replace("fallback", "x")))
+        self.assertEqual("fallback", _htmlkit.unpack_js(packed))
+
+
+class NativeMovieBridgeTest(unittest.TestCase):
+    def test_movie_helpers_use_native_and_keep_fallbacks(self):
+        class Tools:
+            def titleFromSlug(self, slug): return "Título Kotlin"
+            def parseRefJson(self, value, provider):
+                return '{"slug":"native"}' if value != "fallback" else ""
+            def slugVariantsJson(self, title, year):
+                return '["native", "native-2"]' if year.isascii() else ""
+            def buildStreamsJson(self, provider, display, signals, agent): return '[{"url":"https://native/movie"}]'
+            def fallbackQueriesJson(self, query, limit): return '["native-query"]'
+            def fillTemplate(self, template, values): return "native-template" if template == "native" else ""
+            def directPagePlanJson(self, slugs, templates, fichas): return '[["native-slug","/ver/{slug}"]]'
+            def candidateEpisodeLinksJson(self, html, season, episode):
+                return '["/native-episode"]' if episode == "5" else ""
+
+        _peliskit.install_native_movie_tools(Tools())
+        self.addCleanup(_peliskit.install_native_movie_tools, None)
+        self.assertEqual("Título Kotlin", _peliskit.title_from_slug("test"))
+        self.assertEqual("native", _peliskit.parse_ref("gnula:test", "gnula")["slug"])
+        self.assertEqual("fallback", _peliskit.parse_ref("fallback", "gnula")["slug"])
+        self.assertEqual(["native", "native-2"], _peliskit.slug_variants("title", "2026"))
+        self.assertEqual(["title-٢٠٢٦", "title"], _peliskit.slug_variants("title", "٢٠٢٦"))
+        self.assertEqual([{"url": "https://native/movie"}], _peliskit.build_streams("p", "t", [], "ua"))
+        self.assertEqual(["native-query"], _peliskit.fallback_queries("query"))
+        self.assertEqual("native-template", _peliskit.fill("native", slug="x"))
+        self.assertEqual("/ver/x", _peliskit.fill("/ver/{slug}", slug="x"))
+        ref = {"slug": "original", "slug_candidates": []}
+        with patch.object(_peliskit, "fetch_html", return_value=("x" * 500, "https://site.invalid/ver/native-slug")):
+            self.assertEqual(("https://site.invalid/ver/native-slug", "direct"), _peliskit.page_for(ref, {"base": "https://site.invalid", "movie_paths": ["/ver/{slug}"]}, {}, Deadline(1000)))
+        self.assertEqual("native-slug", ref["slug"])
+        self.assertEqual(["/native-episode"], _peliskit.candidate_episode_links("", 1, 5))
+        self.assertEqual(["/show/1x03"], _peliskit.candidate_episode_links("<a href='/show/1x03'>Episode</a>", 1, 3))
+
+    def test_stream_builder_falls_back_for_unsupported_or_recursive_values(self):
+        class Tools:
+            def buildStreamsJson(self, *args): return ""
+        _peliskit.install_native_movie_tools(Tools())
+        self.addCleanup(_peliskit.install_native_movie_tools, None)
+        signals = [{"url": "https://cdn.invalid/x", "server": 7}]
+        self.assertEqual("P · T · 7", _peliskit.build_streams("P", "T", signals, "")[0]["title"])
+        signals[0]["unused"] = signals
+        self.assertEqual("P · T · 7", _peliskit.build_streams("P", "T", signals, "")[0]["title"])
+
+
+class NativeAnimeBridgeTest(unittest.TestCase):
+    def test_anime_scrapers_use_native_parsing_and_keep_fallback(self):
+        import json
+        class Tools:
+            def iframeServersJson(self, html, page, skip):
+                return '[{"name":"Native","url":"https://native.invalid/e"}]' if 'native' in html else ''
+            def buildStreamsJson(self, provider, display, signals, agent):
+                assert display == "Title · Ep. 5"
+                return '[{"url":"https://native/anime"}]'
+            def parseIdJson(self, content_id, provider):
+                if content_id == "fallback": return ""
+                return json.dumps({"slug": "native", "episode": None, "explicit_episode": False})
+            def applyEpisodeJson(self, ref, payload):
+                return json.dumps({**json.loads(ref), "episode": json.loads(payload)["episode"], "explicit_episode": True})
+            def literalJson(self, html, name): return '[{"server":"sw"}]'
+            def matchTokensJson(self, value): return '["native"]'
+            def matchScore(self, query, title, slug): return 75
+            def bestMatchJson(self, query, hits): return '{"score":75,"index":0}'
+            def decodeMaybeBase64(self, value):
+                return "https://native.invalid/embed" if value == "encoded" else None
+
+        _animekit.install_native_anime_tools(Tools())
+        self.addCleanup(_animekit.install_native_anime_tools, None)
+        self.assertEqual([{"url": "https://native/anime"}], _animekit.build_streams("p", "Title", 5, [], "ua"))
+        self.assertEqual([{"name": "Native", "url": "https://native.invalid/e"}], _animekit.iframe_servers("native", "https://site.invalid/"))
+        fallback = _animekit.iframe_servers("<iframe src='relative'></iframe>", "https://site.invalid/a/")
+        self.assertEqual("https://site.invalid/a/relative", fallback[0]["url"])
+        ref = _animekit.parse_id("animeflv:test", "animeflv")
+        self.assertEqual("native", ref["slug"])
+        self.assertIs(ref, _animekit.apply_payload_episode(ref, {"episode": 7}))
+        self.assertEqual(7, ref["episode"])
+        self.assertEqual("sw", _animekit.objects("var videos=[]", "videos")[0]["server"])
+        self.assertEqual(["native"], _animekit.match_tokens("query"))
+        hit = {"title": "Fixture", "slug": "fixture", "extra": {"id": 1}}
+        self.assertEqual(75, _animekit.match_score("query", hit))
+        score, chosen = _animekit.best_match("query", iter([hit]))
+        self.assertEqual(75, score)
+        self.assertIs(hit, chosen)
+        self.assertEqual("https://native.invalid/embed", _animekit.decode_maybe_base64("encoded"))
+        self.assertEqual("https://cdn.invalid/x", _animekit.decode_maybe_base64("aHR0cHM6Ly9jZG4uaW52YWxpZC94"))
+        self.assertEqual("fallback", _animekit.parse_id("fallback", "animeflv")["slug"])
+
+
+class NativeHosterBridgeTest(unittest.TestCase):
+    def test_hosters_use_native_helpers_when_installed(self):
+        class Tools:
+            def label(self, url): return "Kotlin"
+            def isDownloadOnly(self, url): return True
+            def isKnownGood(self, url): return False
+            def mediaTypeOfResponse(self, content_type): return "hls"
+            def classifyProbe(self, data):
+                assert bytes.fromhex(data) == b"#EXTM3U"
+                return "hls"
+            def manifestVariantsJson(self, url): return '["https://fx/m3u8/1"]'
+            def embedVariantsJson(self, url): return '["https://fx/e/1"]'
+            def streamtapeJson(self, html): return '["https://fx/video"]'
+            def okruJson(self, html): return '["https://fx/master"]'
+
+        _hosters.install_native_hoster_tools(Tools())
+        self.addCleanup(_hosters.install_native_hoster_tools, None)
+        self.assertEqual("Kotlin", _hosters.hoster_label("https://fx/play/1"))
+        self.assertTrue(_hosters.is_download_only("https://fx/play/1"))
+        self.assertFalse(_hosters.is_known_good("https://fx/play/1"))
+        self.assertEqual("hls", _hosters.media_type_of_response("test"))
+        with patch.object(_hosters, "http_peek", return_value=b"#EXTM3U"):
+            self.assertEqual("hls", _hosters.probe_media_kind("https://fx/video", {}, Deadline(1000)))
+        self.assertEqual(["https://fx/m3u8/1"], _hosters.hls_variants("https://fx/play/1"))
+        self.assertEqual(["https://fx/e/1"], _hosters.hls_embed_pages("https://fx/play/1"))
+        self.assertEqual(["https://fx/video"], _hosters._streamtape("html"))
+        self.assertEqual(["https://fx/master"], _hosters._okru("html"))
+
+    def test_okru_falls_back_for_unsupported_metadata(self):
+        class Tools:
+            def okruJson(self, html): return ""
+        _hosters.install_native_hoster_tools(Tools())
+        self.addCleanup(_hosters.install_native_hoster_tools, None)
+        self.assertEqual([], _hosters._okru("not an embed"))
+
+
 class MediaUrlTest(unittest.TestCase):
     def test_manifest_in_query_string_counts_as_media(self):
         self.assertTrue(is_media_url("https://cdn.example/player.php?id=7&file=master.m3u8"))
@@ -176,6 +336,19 @@ class QualityTest(unittest.TestCase):
         for values, expected in cases:
             with self.subTest(values=values):
                 self.assertEqual(guess_quality(*values), expected)
+
+    def test_android_quality_parser_is_called_for_scrapers(self):
+        class Parser:
+            def guessJson(self, values):
+                import json
+                self.values = json.loads(values)
+                return "1080p"
+
+        parser = Parser()
+        _htmlkit.install_quality_parser(parser)
+        self.addCleanup(_htmlkit.install_quality_parser, None)
+        self.assertEqual("1080p", guess_quality("FULLHD", "https://cdn.example/video"))
+        self.assertEqual(["fullhd", "https://cdn.example/video"], parser.values)
 
     def test_stream_builders_carry_the_quality(self):
         signal = {"url": "https://cdn.example/1080p/index.m3u8", "server": "Latino HD"}

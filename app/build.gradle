@@ -211,7 +211,8 @@ chaquopy {
         getByName('main') {
             srcDir rootProject.file('server/scrapers')
             include '**/*.py'
-            exclude '**/__pycache__/**', 'example_provider.py', 'template_provider.py'
+            // NOVA, la caché y el adaptador HTTP se ejecutan en Kotlin en Android.
+            exclude '**/__pycache__/**', 'example_provider.py', 'template_provider.py', 'novahd.py', '_embedded_cache.py', '_android_http.py'
         }
     }
 }

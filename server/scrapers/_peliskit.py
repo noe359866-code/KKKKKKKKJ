@@ -99,8 +99,19 @@ SMALL_WORDS = {
 }
 
 
+# La app instala las piezas migradas a Kotlin; el addon Node conserva Python.
+_native_movie_tools = None
+
+
+def install_native_movie_tools(tools) -> None:
+    global _native_movie_tools
+    _native_movie_tools = tools
+
+
 def title_from_slug(slug: str) -> str:
     """`spider-man-de-regreso-a-casa` → `Spider Man de Regreso a Casa`."""
+    if _native_movie_tools is not None and (slug is None or isinstance(slug, str)):
+        return str(_native_movie_tools.titleFromSlug(slug or ""))
     words = [word for word in str(slug or "").split("-") if word]
     out: List[str] = []
     for index, word in enumerate(words):
@@ -125,6 +136,11 @@ def parse_ref(content_id: str, provider: str) -> Dict[str, Any]:
         gnula:spider man                          (texto libre: se busca)
         https://ww3.gnulahd.nu/ver/street-fighter/
     """
+    if _native_movie_tools is not None:
+        import json
+        native = str(_native_movie_tools.parseRefJson(str(content_id or ""), str(provider or "")))
+        if native:
+            return json.loads(native)
     raw = str(content_id or "").strip()
     raw = re.sub(r"\.json$", "", raw, flags=re.IGNORECASE).strip().rstrip("/")
     ref: Dict[str, Any] = {
@@ -199,6 +215,11 @@ def is_series(ref: Dict[str, Any]) -> bool:
 
 def slug_variants(title: str, year: Optional[str] = None) -> List[str]:
     """Slugs candidatos a partir de un título ("Spider-Man: Un nuevo día", 2026)."""
+    if _native_movie_tools is not None and (title is None or isinstance(title, str)):
+        import json
+        native = str(_native_movie_tools.slugVariantsJson(title or "", str(year or "")))
+        if native:
+            return json.loads(native)
     base = slugify(title)
     if not base:
         return []
@@ -252,6 +273,20 @@ def fill(template: str, **values: Any) -> str:
     pueden usar `{season2}` / `{episode2}` cuando el sitio numera con dos
     dígitos (`/serie/x/1x03`).
     """
+    if _native_movie_tools is not None and isinstance(template, str):
+        import json
+        fields = {key: values.get(key, "") for key in ("slug", "season", "episode", "query")}
+        if all(value is None or isinstance(value, str) or type(value) is int for value in fields.values()):
+            if not any(0xD800 <= ord(char) <= 0xDFFF for value in (template, *fields.values())
+                       if isinstance(value, str) for char in value):
+                try:
+                    encoded = json.dumps(fields, ensure_ascii=False)
+                except (ValueError, OverflowError):
+                    pass
+                else:
+                    native = str(_native_movie_tools.fillTemplate(template, encoded))
+                    if native:
+                        return native
     try:
         return template.format(
             slug=values.get("slug", ""),
@@ -449,31 +484,35 @@ def page_for(
     # `/serie/<slug>`), sin gastar los primeros intentos en ellas.
     #   1-3: los capítulos más probables   4: la ficha del título
     #   5+:  las demás fichas y las variantes de capítulo que quedaban fuera
-    ordered = list(dict.fromkeys(
-        templates[:3]
-        + templates[-1:]
-        + list(site.get("ficha_paths") or [])
-        + templates[3:]
-    ))
-    # Presupuesto global de pedidos: el primer slug recorre las plantillas y,
-    # si el id traía variantes de slug (`slug-2024`, `slug-latino`), también se
-    # prueban (antes el tope se agotaba con el primer slug).
-    budget = 7
-    for candidate_slug in [value for value in slugs if value][:3]:
-        if budget <= 0 or deadline.expired():
+    ficha_paths = list(site.get("ficha_paths") or [])
+    plan = None
+    if (_native_movie_tools is not None and all(isinstance(value, str) for value in slugs)
+            and all(isinstance(value, str) for value in templates + ficha_paths)):
+        import json
+        native = str(_native_movie_tools.directPagePlanJson(
+            json.dumps(slugs, ensure_ascii=False), json.dumps(templates, ensure_ascii=False),
+            json.dumps(ficha_paths, ensure_ascii=False)))
+        if native:
+            plan = json.loads(native)
+    if plan is None:
+        from itertools import islice
+        ordered = list(dict.fromkeys(templates[:3] + templates[-1:] + ficha_paths + templates[3:]))
+        plan = list(islice(((candidate_slug, template)
+                            for candidate_slug in [value for value in slugs if value][:3]
+                            for template in ordered), 7))
+    # El orden y el presupuesto global de siete peticiones se calculan antes
+    # de abrir páginas; la comprobación del deadline sigue siendo por petición.
+    for candidate_slug, template in plan:
+        if deadline.expired():
             break
-        for template in ordered:
-            if budget <= 0 or deadline.expired():
-                break
-            budget -= 1
-            candidate = join(
-                site["base"],
-                fill(template, slug=candidate_slug, season=season, episode=episode),
-            )
-            html, final_url = fetch_html(candidate, headers, deadline)
-            if html and looks_like_page(html, site):
-                ref["slug"] = candidate_slug
-                return final_url or candidate, "direct"
+        candidate = join(
+            site["base"],
+            fill(template, slug=candidate_slug, season=season, episode=episode),
+        )
+        html, final_url = fetch_html(candidate, headers, deadline)
+        if html and looks_like_page(html, site):
+            ref["slug"] = candidate_slug
+            return final_url or candidate, "direct"
 
     query = ref.get("title_hint") or " ".join(slug.split("-"))
     found = find_by_search(site, query, headers, deadline)
@@ -688,6 +727,12 @@ def candidate_episode_links(html: str, season: int, episode: int) -> List[str]:
     Reconoce las formas habituales: `1x05`, `/1/5`, `temporada-1/capitulo-5`,
     `episodio-5`, `capitulo/5` y el texto "T1 E5".
     """
+    if (_native_movie_tools is not None and isinstance(html, (str, type(None)))
+            and type(season) is int and type(episode) is int):
+        import json
+        native = str(_native_movie_tools.candidateEpisodeLinksJson(html or "", str(season), str(episode)))
+        if native:
+            return json.loads(native)
     padded = f"{episode:02d}"
     variants = [
         f"{season}x{episode}",
@@ -790,6 +835,17 @@ def build_streams(
     ``name``  "Spider-Man: Un nuevo día (2026)"
     ``title`` "Gnula · Spider-Man: Un nuevo día (2026) · Streamwish"
     """
+    if (_native_movie_tools is not None and isinstance(provider_label, str)
+            and isinstance(display, str) and isinstance(user_agent, str) and isinstance(signals, list)):
+        import json
+        try:
+            encoded = json.dumps(signals, ensure_ascii=False)
+        except (ValueError, TypeError, RecursionError, OverflowError):
+            pass
+        else:
+            native = str(_native_movie_tools.buildStreamsJson(provider_label, display, encoded, user_agent))
+            if native:
+                return json.loads(native)
     streams: List[Dict[str, Any]] = []
     for signal in signals:
         server = signal.get("server") or signal.get("label") or "Servidor"
@@ -953,6 +1009,10 @@ def fallback_queries(query: str, limit: int = 2) -> List[str]:
     Muchos buscadores indexan "Spider-Man" pero no "Spider-Man: No Way Home
     (2021)": se prueban la versión sin año/paréntesis y las primeras palabras.
     """
+    if (_native_movie_tools is not None and (query is None or isinstance(query, str))
+            and type(limit) is int and -(2 ** 31) <= limit < 2 ** 31):
+        import json
+        return json.loads(str(_native_movie_tools.fallbackQueriesJson(query or "", limit)))
     original = " ".join((query or "").split())
     if not original:
         return []
