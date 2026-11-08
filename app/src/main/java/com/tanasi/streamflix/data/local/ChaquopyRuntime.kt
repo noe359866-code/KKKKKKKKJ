@@ -4,6 +4,13 @@ import android.content.Context
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import com.tanasi.streamflix.data.local.scrapers.AnimeScraperTools
+import com.tanasi.streamflix.data.local.scrapers.HosterTools
+import com.tanasi.streamflix.data.local.scrapers.JsUnpacker
+import com.tanasi.streamflix.data.local.scrapers.MovieScraperTools
+import com.tanasi.streamflix.data.local.scrapers.NovaScraper
+import com.tanasi.streamflix.data.local.scrapers.ScraperQuality
+import com.tanasi.streamflix.data.local.scrapers.TmdbLookup
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import java.io.IOException
@@ -40,10 +47,23 @@ class ChaquopyRuntime(context: Context) : EmbeddedRuntime {
         }
         Python.getInstance().getModule("embedded_engine").also { engine ->
             val cache = File(app.cacheDir, "embedded-engine").apply { mkdirs() }
+            val transport = ScraperHttpTransport()
             engine.callAttr(
                 "configure", cache.absolutePath,
                 app.assets.open("providers.json").bufferedReader().use { it.readText() },
-                ScraperHttpTransport(),
+                transport,
+                NovaScraper(),
+                ScraperQuality(),
+                HosterTools(),
+                AnimeScraperTools(),
+                MovieScraperTools(),
+                JsUnpacker(),
+                TmdbLookup(transport),
+                NativeJsonCache(File(cache, "responses").absolutePath),
+                NativeHttpAdapter(transport),
+                NativeEngineTools(),
+                NativeProviderScheduler(),
+                NativeCatalogDocumentFactory(),
             )
         }
     }

@@ -254,6 +254,14 @@ def unescape_markup(text: str) -> str:
     return text
 
 
+_native_js_unpacker = None
+
+
+def install_js_unpacker(unpacker) -> None:
+    global _native_js_unpacker
+    _native_js_unpacker = unpacker
+
+
 def unpack_js(text: str, limit: int = 12) -> str:
     """Desempaqueta los bloques `eval(function(p,a,c,k,e,d)…)` de un documento.
 
@@ -264,6 +272,10 @@ def unpack_js(text: str, limit: int = 12) -> str:
     """
     if not text or "function(p,a,c,k,e" not in text.lower():
         return ""
+    if _native_js_unpacker is not None and isinstance(limit, int) and 0 <= limit <= 2**31 - 1:
+        result = _native_js_unpacker.unpack(text, int(limit))
+        if result is not None:
+            return str(result)
 
     decoded: List[str] = []
     for match in list(PACKER_RE.finditer(text))[:limit]:
@@ -698,6 +710,16 @@ def sanitize_media(value: str) -> str:
     return ""
 
 
+# Android can migrate the shared quality parser without changing the Node
+# server or desktop fixtures. Installed once during embedded engine setup.
+_quality_parser = None
+
+
+def install_quality_parser(parser) -> None:
+    global _quality_parser
+    _quality_parser = parser
+
+
 def guess_quality(*values: Any) -> Optional[str]:
     """Deduce la calidad (`"1080p"`, `"720p"`, `"4K"`…) de etiquetas y URLs.
 
@@ -711,6 +733,9 @@ def guess_quality(*values: Any) -> Optional[str]:
     """
     texts = [normalize(str(value or "")).strip() for value in values]
     texts = [text for text in texts if text]
+    if _quality_parser is not None:
+        import json
+        return str(_quality_parser.guessJson(json.dumps(texts, ensure_ascii=False))) or None
     # 1. Pistas explícitas ("1080p", "4K") en cualquier texto: mandan siempre.
     for text in texts:
         for pattern, label in QUALITY_STRONG:

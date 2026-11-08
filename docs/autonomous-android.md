@@ -2,11 +2,42 @@
 
 ## Qué cambia
 
-El APK incluye el intérprete **Python 3.11** (Chaquopy 17.1.0), todos los
-scrapers reales de `server/scrapers/`, sus helpers y el registro de proveedores.
-No basta con copiar los `.py` como
-assets: `ChaquopyRuntime` inicia el intérprete y el motor importa cada módulo
-y llama a su función `scrape(payload)` dentro del proceso Android.
+El APK incluye el intérprete **Python 3.11** (Chaquopy 17.1.0), los
+scrapers de `server/scrapers/`, sus helpers y el registro de proveedores.
+La migración a Kotlin está en curso: **NOVA** resuelve streams con
+`NovaScraper.kt` en Android. La detección de calidad compartida usa
+`ScraperQuality.kt`, y `HosterTools.kt` clasifica servidores, tipos de vídeo y
+rutas HLS, y extrae las señales específicas de Streamtape y Okru.
+`AnimeScraperTools.kt` procesa IDs, episodios, base64, literales JS sin
+ejecutarlos, iframes comunes y coincidencias de títulos usadas también por cine.
+`MovieScraperTools.kt` convierte IDs de películas y series en referencias,
+construye variantes de sus slugs, rellena plantillas y planifica intentos de
+fichas y búsquedas alternativas, y busca enlaces del episodio en las fichas.
+`StreamBuilder.kt` arma los streams de las señales resueltas de anime y cine;
+`TmdbLookup.kt` consulta TMDB de forma opcional cuando se proporciona una clave.
+Los casos no soportados conservan el comportamiento Python. `JsUnpacker.kt`
+desempaqueta reproductores sin ejecutar JavaScript; los formatos no compatibles
+usan el respaldo anterior. La mayor parte de la extracción y resolución de embeds
+sigue en Python. El motor todavía coordina las peticiones y los otros proveedores
+siguen siendo Python. La caché de respuestas y el adaptador HTTP usan
+`NativeJsonCache.kt` y `NativeHttpAdapter.kt`; sus módulos Python anteriores no
+se empaquetan en Android. `NativeEngineTools.kt` procesa idiomas, formatos,
+normalización y orden de subtítulos, reglas de reproducción, cabeceras,
+caducidad y normalización de enlaces, metadatos, selección de proveedores y
+deduplicación de fuentes. El registro de proveedores y la validación de rutas
+de despacho también se procesan en Kotlin en los casos compatibles.
+`NativeProviderScheduler.kt` coordina la ejecución concurrente y las solicitudes
+compartidas; los proveedores aún se invocan en
+Python. Las herramientas del motor también generan descriptores, separan
+identificadores y analizan rutas y listas de episodios de catálogo. El estado
+del documento HTML también se procesa en Kotlin, usando el tokenizador y la
+resolución de URL de Python por compatibilidad. Los casos no compatibles
+conservan el fallback Python. Tanto
+`embedded_engine.py` como `_embedded_catalogs.py` aún se empaquetan y contienen
+lógica pendiente de migrar. El servidor opcional conserva su versión Python de
+NOVA, pero esa versión ya no se empaqueta en el APK. Chaquopy sigue siendo
+necesario para el motor y los demás scrapers.
+`ChaquopyRuntime` inicia el intérprete y conecta el scraper Kotlin al motor.
 Las sinopsis, fondos y datos extraídos al abrir una ficha actualizan la interfaz
 sin cambiar el identificador del proveedor ni borrar los datos de la tarjeta.
 
@@ -19,9 +50,9 @@ Home / búsqueda / detalles / episodios
               │
        EmbeddedContentClient → ChaquopyRuntime
               │
-       embedded_engine.py + caché local
+       embedded_engine.py + caché y adaptador HTTP Kotlin
               │
-       scrapers Python incluidos en el APK
+       NOVA Kotlin + otros scrapers Python
               │
        sitios de origen y servidores de video
               │
@@ -211,8 +242,9 @@ al elegir manualmente el modo servidor. Sin keystore, el release queda sin
 firmar y no será instalable hasta firmarlo; el debug se firma automáticamente.
 
 El verificador inspecciona el APK real: comprueba el archivo de módulos Python,
-todos los scrapers y sus helpers, las bibliotecas nativas de las tres ABIs y la
-exclusión de los scrapers de demostración. No considera «completo» un APK
+los scrapers Python y sus helpers, las clases Kotlin de NOVA, de la caché y del
+adaptador HTTP, las bibliotecas nativas de las tres ABIs y la exclusión de las
+copias Python migradas y de los scrapers de demostración. No considera «completo» un APK
 únicamente porque su ZIP contenga archivos `.py`.
 
 ## Pruebas

@@ -29,9 +29,18 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import _embedded_catalogs as providers
+from _animekit import install_native_anime_tools
+from _hosters import install_native_hoster_tools
+from _peliskit import install_native_movie_tools
+from _tmdb import install_native_tmdb
 from _base import DEFAULT_USER_AGENT, log
-from _embedded_cache import JsonCache
-from _htmlkit import http_get, http_get_json, install_url_opener, normalize, token_expiry
+try:
+    from _embedded_cache import JsonCache
+except ModuleNotFoundError as exc:
+    if exc.name != "_embedded_cache":
+        raise
+    JsonCache = None  # Android usa NativeJsonCache.
+from _htmlkit import http_get, http_get_json, install_js_unpacker, install_quality_parser, install_url_opener, normalize, token_expiry
 
 TYPES = frozenset(("movie", "series", "anime"))
 PLAYABLE = (".m3u8", ".mpd", ".mp4", ".m4v", ".webm", ".mkv", ".ts")
@@ -69,6 +78,19 @@ CINEMETA_CATALOGS = (
 
 
 def normalize_meta(raw: Dict[str, Any], media_type: str) -> Optional[Dict[str, Any]]:
+    if (_native_engine_tools is not None and isinstance(raw, dict) and isinstance(media_type, str) and _native_text(media_type)
+            and all(isinstance(key, str) for key in raw)
+            and (not isinstance(raw.get("videos"), list) or all(
+                not isinstance(video, dict) or all(isinstance(key, str) for key in video)
+                for video in raw["videos"]))):
+        try:
+            encoded = json.dumps(raw)
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            pass
+        else:
+            native = str(_native_engine_tools.normalizeMetadataJson(encoded, media_type))
+            if native:
+                return json.loads(native)
     content_id = str(raw.get("id") or raw.get("imdb_id") or "").strip()
     if not content_id:
         return None
@@ -113,6 +135,10 @@ def normalize_meta(raw: Dict[str, Any], media_type: str) -> Optional[Dict[str, A
 def declared_expiry(url: str) -> Optional[int]:
     values = [token_expiry(url)]
     query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+    if _native_engine_tools is not None:
+        native = str(_native_engine_tools.declaredExpiryJson(json.dumps(query), json.dumps(values[0])))
+        if native:
+            return json.loads(native)
     for key, entries in query.items():
         for value in entries:
             if key.lower() in ("e", "exp", "expires", "expire", "expiry") and re.fullmatch(r"\d{9,13}", value):
@@ -132,6 +158,15 @@ def is_playable_stream(url: str, hints: Optional[Dict[str, Any]] = None) -> bool
     if parsed.scheme not in ("https", "http") or not parsed.netloc:
         return False
     path = parsed.path.lower()
+    query = parsed.query or ""
+    # Python conserva el parseo de URL y la conversión de hints; las reglas
+    # se ejecutan en Kotlin salvo cadenas incompatibles con el puente Java.
+    if _native_engine_tools is not None and _native_text(path) and query.isascii():
+        if _native_engine_tools.playableDirect(path, query):
+            return True
+        hint = str((hints or {}).get("mediaType") or "").strip().lower()
+        if _native_text(hint):
+            return bool(_native_engine_tools.playablePage(path, hint))
     if path.endswith(PLAYABLE):
         return True
     if MEDIA_QUERY_RE.search(parsed.query or ""):
@@ -169,8 +204,21 @@ LANGUAGE_NAMES = {
     "it": "Italiano", "ja": "Japonés", "ko": "Coreano", "zh": "Chino", "ru": "Ruso",
 }
 
+_native_engine_tools = None
+
+
+def install_native_engine_tools(tools) -> None:
+    global _native_engine_tools
+    _native_engine_tools = tools
+
+
+def _native_text(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and not any(0xD800 <= ord(ch) <= 0xDFFF for ch in value))
+
 
 def normalize_language(value: Any) -> str:
+    if _native_engine_tools is not None and _native_text(value):
+        return str(_native_engine_tools.normalizeLanguage(value or ""))
     text = re.sub(r"[_\s]+", "-", str(value or "").strip().lower())
     if not text:
         return ""
@@ -182,6 +230,8 @@ def normalize_language(value: Any) -> str:
 
 
 def language_name(value: Any) -> str:
+    if _native_engine_tools is not None and _native_text(value):
+        return str(_native_engine_tools.languageName(value or ""))
     normalized = normalize_language(value)
     base, _, region = normalized.partition("-")
     name = LANGUAGE_NAMES.get(base, "")
@@ -197,6 +247,8 @@ def language_name(value: Any) -> str:
 
 
 def subtitle_format(url: str) -> Optional[str]:
+    if _native_engine_tools is not None and _native_text(url):
+        return str(_native_engine_tools.subtitleFormat(url or "")) or None
     clean = (url or "").split("#", 1)[0].split("?", 1)[0].lower()
     extension = clean.rsplit(".", 1)[-1] if "." in clean else ""
     return SUBTITLE_FORMATS.get(extension)
@@ -205,6 +257,15 @@ def subtitle_format(url: str) -> Optional[str]:
 def normalize_subtitle(raw: Any, provider: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not isinstance(raw, dict):
         return None
+    if _native_engine_tools is not None and isinstance(provider, dict):
+        try:
+            raw_json, provider_json = json.dumps(raw), json.dumps(provider)
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            pass
+        else:
+            native = str(_native_engine_tools.normalizeSubtitleJson(raw_json, provider_json))
+            if native:
+                return json.loads(native)
     url = str(raw.get("url") or raw.get("src") or "").strip()
     if not url or len(url) > 2048 or not re.match(r"^https?://", url, re.I):
         return None
@@ -226,6 +287,15 @@ def normalize_subtitle(raw: Any, provider: Dict[str, Any]) -> Optional[Dict[str,
 
 
 def merge_subtitles(collected: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if _native_engine_tools is not None and isinstance(collected, list):
+        try:
+            encoded = json.dumps(collected)
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            pass
+        else:
+            native = str(_native_engine_tools.mergeSubtitleIndicesJson(encoded))
+            if native:
+                return [collected[index] for index in json.loads(native)]
     seen, merged = set(), []
     for item in collected:
         if not item or item["url"] in seen:
@@ -236,6 +306,22 @@ def merge_subtitles(collected: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             break
     spanish = [item for item in merged if str(item.get("lang") or "").startswith("es")]
     return spanish + [item for item in merged if item not in spanish]
+
+
+def normalize_stream_headers(headers: Dict[str, Any]) -> Dict[str, str]:
+    if _native_engine_tools is not None and all(isinstance(key, str) for key in headers):
+        try:
+            encoded = json.dumps(headers)
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            pass
+        else:
+            native = str(_native_engine_tools.normalizeHeadersJson(encoded))
+            if native:
+                return json.loads(native)
+    canonical = {"referer": "Referer", "user-agent": "User-Agent", "origin": "Origin", "cookie": "Cookie"}
+    return {canonical.get(str(key).lower(), str(key)): str(value)
+            for key, value in headers.items() if value and re.fullmatch(r"[\w-]+", str(key))
+            and "\n" not in str(value) and "\r" not in str(value)}
 
 
 def normalize_stream(raw: Dict[str, Any], provider: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -249,11 +335,25 @@ def normalize_stream(raw: Dict[str, Any], provider: Dict[str, Any]) -> Optional[
     headers = {"Referer": raw.get("referer") or provider.get("referer") or "",
                "User-Agent": raw.get("userAgent") or provider.get("userAgent") or DEFAULT_USER_AGENT,
                **(hints.get("requestHeaders") or {})}
+    # Construir los campos habituales en Kotlin conservando los demás hints
+    # por identidad; el fallback acepta los tipos Python menos comunes.
+    if (_native_engine_tools is not None and all(isinstance(key, str) for key in raw)
+            and all(isinstance(key, str) for key in provider)
+            and all(isinstance(key, str) for key in headers)):
+        try:
+            encoded_raw, encoded_provider, encoded_headers = map(json.dumps, (raw, provider, headers))
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            pass
+        else:
+            native = str(_native_engine_tools.normalizeStreamPartsJson(encoded_raw, encoded_provider, encoded_headers))
+            if native:
+                parts = json.loads(native)
+                hints.update(requestHeaders=parts["headers"])
+                return {"url": url, "name": parts["name"], "title": parts["title"],
+                        "provider": parts["provider"], "behaviorHints": hints,
+                        **({"quality": parts["quality"]} if "quality" in parts else {})}
     # Rechazar cabeceras malformadas; retener Cookie/Origin
-    canonical = {"referer": "Referer", "user-agent": "User-Agent", "origin": "Origin", "cookie": "Cookie"}
-    headers = {canonical.get(str(key).lower(), str(key)): str(value)
-               for key, value in headers.items() if value and re.fullmatch(r"[\w-]+", str(key))
-               and "\n" not in str(value) and "\r" not in str(value)}
+    headers = normalize_stream_headers(headers)
     hints.update(requestHeaders=headers)
     return {"url": url, "name": str(raw.get("name") or provider["label"]),
             "title": str(raw.get("title") or raw.get("name") or provider["label"]),
@@ -261,15 +361,65 @@ def normalize_stream(raw: Dict[str, Any], provider: Dict[str, Any]) -> Optional[
             **({"quality": str(raw["quality"])} if raw.get("quality") else {})}
 
 
+class NativeCacheAdapter:
+    """Puente temporal: el almacenamiento y la expiración viven en Kotlin."""
+    def __init__(self, cache):
+        self.cache = cache
+
+    def get(self, key: str, stale_seconds: int = 0):
+        raw = self.cache.getJson(key, stale_seconds)
+        return None if raw is None else json.loads(str(raw))
+
+    def put(self, key: str, value: Any, ttl: int) -> None:
+        if ttl > 0:
+            self.cache.putJson(key, json.dumps(value, ensure_ascii=False), ttl)
+
+    def clear(self) -> None:
+        self.cache.clear()
+
+
+class NativeProviderFuture:
+    """Interfaz mínima de Future; la coordinación y los workers viven en Kotlin."""
+    def __init__(self, ticket):
+        self.ticket = ticket
+
+    def done(self): return bool(self.ticket.isDone())
+    def cancelled(self): return bool(self.ticket.isCancelled())
+    def cancel(self): return bool(self.ticket.cancelIfQueued())
+    def result(self): return self.ticket.result()
+
+
 class Engine:
-    def __init__(self, cache_dir: str, registry: Dict[str, Any], cinemeta_base: str = CINEMETA):
-        self.cache = JsonCache(str(Path(cache_dir) / "responses"))
+    def __init__(self, cache_dir: str, registry: Dict[str, Any], cinemeta_base: str = CINEMETA, native_nova=None, native_cache=None, native_scheduler=None):
+        self.native_nova = native_nova
+        self.native_scheduler = native_scheduler
+        if native_cache is not None:
+            self.cache = NativeCacheAdapter(native_cache)
+        elif JsonCache is not None:
+            self.cache = JsonCache(str(Path(cache_dir) / "responses"))
+        else:
+            raise RuntimeError("No cache implementation configured")
         self.cinemeta_base = cinemeta_base.rstrip("/")
         self.providers: Dict[str, Dict[str, Any]] = {}
-        for item in sorted(registry.get("providers") or [], key=lambda p: p.get("priority", 100)):
-            name = item.get("id")
-            if name in providers.MODULES and item.get("script") == f"{name}.py" and item.get("enabled", True):
-                self.providers[name] = item
+        registered = registry.get("providers") or []
+        native = ""
+        if _native_engine_tools is not None and type(registered) is list and all(type(item) is dict for item in registered):
+            rows = [{"id": item.get("id"), "script": item.get("script"), "priority": item.get("priority", 100),
+                     "enabled": item.get("enabled", True)} for item in registered]
+            if all((row["id"] is None or type(row["id"]) is str)
+                   and (row["script"] is None or type(row["script"]) is str)
+                   and type(row["priority"]) is int and -(2**63) <= row["priority"] < 2**63
+                   and type(row["enabled"]) is bool for row in rows):
+                native = str(_native_engine_tools.registryIndicesJson(json.dumps(rows), json.dumps(list(providers.MODULES))))
+        if native:
+            for index in json.loads(native):
+                item = registered[index]
+                self.providers[item["id"]] = item
+        else:
+            for item in sorted(registered, key=lambda p: p.get("priority", 100)):
+                name = item.get("id")
+                if name in providers.MODULES and item.get("script") == f"{name}.py" and item.get("enabled", True):
+                    self.providers[name] = item
         self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=3, thread_name_prefix="provider")
         self.lock = threading.RLock()
         self.known: OrderedDict[str, Dict[str, Any]] = OrderedDict()
@@ -277,11 +427,15 @@ class Engine:
 
     def close(self):
         self.pool.shutdown(wait=True, cancel_futures=True)
+        if self.native_scheduler is not None:
+            self.native_scheduler.shutdown()
 
     def catalogs(self, metadata_catalogs: bool = False) -> Dict[str, Any]:
         """Filas de la Home: sólo Cinemeta (activado de fábrica, apagable).
         Los scrapers de películas/series/anime quedan fuera a propósito: resuelven streams.
         """
+        if _native_engine_tools is not None:
+            return json.loads(str(_native_engine_tools.catalogDescriptorsJson(bool(metadata_catalogs))))
         rows: List[Dict[str, Any]] = []
         if metadata_catalogs:
             for order, (media_type, catalog_id, title) in enumerate(CINEMETA_CATALOGS):
@@ -381,7 +535,12 @@ class Engine:
         MEJORA: Timeout dinámico basado en el deadline restante del motor.
         """
         try:
-            result = providers.module_for(provider["id"]).scrape(payload)
+            if provider["id"] == "novahd" and self.native_nova is not None:
+                # Kotlin ejecuta NOVA en Android; el servidor y las pruebas de
+                # escritorio conservan el proveedor Python durante la migración.
+                result = json.loads(str(self.native_nova.scrape(json.dumps(payload, ensure_ascii=False))))
+            else:
+                result = providers.module_for(provider["id"]).scrape(payload)
             meta: Dict[str, Any] = {}
             if isinstance(result, tuple):
                 streams, meta = result[0], (result[1] if len(result) > 1 and isinstance(result[1], dict) else {})
@@ -409,9 +568,17 @@ class Engine:
 
         parts = base_id.split(":")
         explicit = parts[0]
-        selected = [self.providers[explicit]] if explicit in self.providers else [
-            p for name, p in self.providers.items()
-            if name in (providers.ANIME if media_type == "anime" else providers.MOVIES)]
+        allowed = providers.ANIME if media_type == "anime" else providers.MOVIES
+        native = ""
+        if _native_engine_tools is not None and _native_text(explicit):
+            names = list(self.providers)
+            if all(isinstance(name, str) for name in names):
+                native = str(_native_engine_tools.selectProviderIndicesJson(json.dumps(names), explicit, json.dumps(list(allowed))))
+        if native:
+            selected = [self.providers[names[index]] for index in json.loads(native)]
+        else:
+            selected = [self.providers[explicit]] if explicit in self.providers else [
+                p for name, p in self.providers.items() if name in allowed]
         
         # MEJORA: Si el ID es externo (tt... o tmdb:...) y no hay proveedor directo,
         # el motor intenta buscar por título usando el catálogo interno (que retorna vacío)
@@ -429,20 +596,26 @@ class Engine:
                 return {"streams": [], "subtitles": [], "cacheMaxAge": 0}
         
         futures = []
+        use_native_scheduler = (self.native_scheduler is not None and _native_text(key)
+                                and all(isinstance(p.get("id"), str) and _native_text(p["id"]) for p in selected))
         for provider in selected:
             provider_id = provider["id"]
             # Si el ID es externo, pasamos el título encontrado para que el scraper busque
             request_id = f"{provider_id}:{title}" if title else content_id
-            payload = {"type": media_type, "id": request_id, "season": season, "episode": episode,
+            payload = {**(provider.get("options") or {}),
+                       "type": media_type, "id": request_id, "season": season, "episode": episode,
                        "timeoutMs": 8000, "referer": provider.get("referer"),
                        "userAgent": provider.get("userAgent") or DEFAULT_USER_AGENT, "provider": provider_id}
             flight_key = provider_id + ":" + key
-            with self.lock:
-                future = self.inflight.get(flight_key)
-                if future is None or future.done():
-                    future = self.pool.submit(self._scrape, provider, payload)
-                    self.inflight[flight_key] = future
-                    future.add_done_callback(lambda task, key=flight_key: self._forget_flight(key, task))
+            if use_native_scheduler:
+                future = NativeProviderFuture(self.native_scheduler.submit(flight_key, self._scrape, provider, payload))
+            else:
+                with self.lock:
+                    future = self.inflight.get(flight_key)
+                    if future is None or future.done():
+                        future = self.pool.submit(self._scrape, provider, payload)
+                        self.inflight[flight_key] = future
+                        future.add_done_callback(lambda task, key=flight_key: self._forget_flight(key, task))
             futures.append((flight_key, future))
         
         if not futures:
@@ -450,7 +623,15 @@ class Engine:
         
         # MEJORA: Timeout dinámico basado en el deadline del motor (8s por defecto)
         timeout = min(9, max(3, payload.get("timeoutMs", 8000) / 1000.0)) if futures else 9
-        done, pending = concurrent.futures.wait([future for _, future in futures], timeout=timeout)
+        if not use_native_scheduler:
+            done, pending = concurrent.futures.wait([future for _, future in futures], timeout=timeout)
+        else:
+            deadline = time.monotonic() + timeout
+            for _, future in futures:
+                remaining_ms = max(0, math.ceil((deadline - time.monotonic()) * 1000))
+                future.ticket.awaitReady(remaining_ms)
+            done = {future for _, future in futures if future.done()}
+            pending = {future for _, future in futures if future not in done}
         for future in pending:
             future.cancel()
         
@@ -459,11 +640,23 @@ class Engine:
             if future in done and not future.cancelled():
                 try:
                     payload_out = future.result()
-                    for item in payload_out["streams"]:
-                        url_key = item["url"].split("#", 1)[0]
-                        if url_key not in seen:
+                    batch = payload_out["streams"]
+                    native_indices = ""
+                    if (_native_engine_tools is not None and isinstance(batch, list) and batch
+                            and all(type(item) is dict and type(item.get("url")) is str for item in batch)):
+                        native_indices = str(_native_engine_tools.uniqueStreamIndicesJson(
+                            json.dumps([item["url"] for item in batch]), json.dumps(list(seen))))
+                    if native_indices:
+                        for index in json.loads(native_indices):
+                            item = batch[index]
                             streams.append(item)
-                            seen.add(url_key)
+                            seen.add(item["url"].split("#", 1)[0])
+                    else:
+                        for item in batch:
+                            url_key = item["url"].split("#", 1)[0]
+                            if url_key not in seen:
+                                streams.append(item)
+                                seen.add(url_key)
                     subtitles.extend(payload_out.get("subtitles") or [])
                 except Exception:
                     pass
@@ -484,10 +677,37 @@ class Engine:
         return result
 
     def dispatch(self, operation: str, request: Dict[str, Any]) -> Dict[str, Any]:
+        if (_native_engine_tools is not None and type(operation) is str and _native_text(operation)
+                and type(request) is dict and all(isinstance(key, str) for key in request)):
+            try:
+                encoded = json.dumps(request, allow_nan=False)
+            except (TypeError, ValueError, OverflowError, RecursionError):
+                pass
+            else:
+                native = str(_native_engine_tools.dispatchPlanJson(operation, encoded))
+                if native:
+                    plan = json.loads(native)
+                    action = plan["action"]
+                    if action == "catalogs":
+                        return self.catalogs(plan["enabled"])
+                    if action == "invalid":
+                        raise ValueError("Invalid content request")
+                    if action == "unknown":
+                        raise ValueError("Unknown engine operation")
+                    if action == "catalog":
+                        return self.catalogue(plan["type"], plan["id"], plan["search"], plan["genre"], plan["skip"])
+                    if action == "meta":
+                        return self.meta(plan["type"], plan["id"])
+                    if action == "streams":
+                        return self.streams(plan["type"], plan["id"])
+                    if action == "subtitles":
+                        return {"subtitles": self.streams(plan["type"], plan["id"]).get("subtitles") or []}
+                    # health and clear_cache retain their existing side effects below.
         if operation == "catalogs":
             return self.catalogs(bool(request.get("metadataCatalogs", False)))
         if operation == "health":
-            imported = [name for name in self.providers if providers.module_for(name)]
+            imported = [name for name in self.providers
+                        if (name == "novahd" and self.native_nova is not None) or providers.module_for(name)]
             return {"mode": "embedded", "providers": imported, "python": os.sys.version.split()[0]}
         if operation == "clear_cache":
             self.cache.clear()
@@ -510,16 +730,38 @@ class Engine:
 _engine: Optional[Engine] = None
 
 
-def configure(cache_dir: str, registry_json: str, http_transport=None) -> None:
+def configure(cache_dir: str, registry_json: str, http_transport=None, native_nova=None, native_quality=None, native_hosters=None, native_anime=None, native_movies=None, native_js=None, native_tmdb=None, native_cache=None, native_http_adapter=None, native_engine_tools=None, native_scheduler=None, native_document_factory=None) -> None:
     global _engine
     Path(cache_dir).mkdir(parents=True, exist_ok=True)
     tempfile.tempdir = cache_dir
-    if http_transport is not None:
+    install_quality_parser(native_quality)
+    install_native_hoster_tools(native_hosters)
+    install_native_anime_tools(native_anime)
+    install_native_movie_tools(native_movies)
+    install_js_unpacker(native_js)
+    install_native_tmdb(native_tmdb)
+    install_native_engine_tools(native_engine_tools)
+    providers.install_native_engine_tools(native_engine_tools)
+    providers.install_native_document_factory(native_document_factory)
+    providers.install_native_nova(native_nova is not None)
+    if native_http_adapter is not None:
+        # urllib espera un callable Python y excepciones HTTPError/URLError;
+        # la conversión de petición y respuesta está en Kotlin.
+        def open_native(request, timeout=8):
+            import urllib.error
+            response = native_http_adapter.open(request, timeout)
+            if response is None:
+                raise urllib.error.URLError("Android HTTP request failed")
+            if response.code >= 400:
+                raise urllib.error.HTTPError(response.geturl(), response.code, "HTTP error", response.headers, response)
+            return response
+        install_url_opener(open_native)
+    elif http_transport is not None:
         from _android_http import AndroidUrlOpener
         install_url_opener(AndroidUrlOpener(http_transport))
     else:
         install_url_opener(None)
-    _engine = Engine(cache_dir, json.loads(registry_json))
+    _engine = Engine(cache_dir, json.loads(registry_json), native_nova=native_nova, native_cache=native_cache, native_scheduler=native_scheduler)
 
 
 def dispatch(operation: str, request_json: str) -> str:
