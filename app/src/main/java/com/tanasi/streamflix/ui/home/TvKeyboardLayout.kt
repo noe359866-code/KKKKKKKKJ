@@ -77,6 +77,23 @@ object TvKeyboardLayout {
     /** Quita el último carácter. Cadena vacía si no hay nada que borrar. */
     fun backspace(text: String): String = if (text.isEmpty()) text else text.dropLast(1)
 
+    /**
+     * Borra la última palabra.
+     *
+     * Escribir «el señor de los anillos» con el mando son 24 pulsaciones; con
+     * sólo `BORRAR`, equivocarse al principio cuesta otras 24. Esto quita de una
+     * vez el último bloque y el espacio que lo precede.
+     *
+     * Si el texto acaba en espacios, se quitan **sólo** los espacios: el usuario
+     * ya estaba borrando, y comerse además la palabra anterior a la que no había
+     * llegado a escribir sería demasiado.
+     */
+    fun deleteWord(text: String): String {
+        if (text.isEmpty()) return text
+        if (text.last().isWhitespace()) return text.trimEnd()
+        return text.trimEnd().substringBeforeLast(' ', missingDelimiterValue = "")
+    }
+
     /** Texto listo para buscar: sin espacios sobrantes en los extremos. */
     fun normalize(text: String): String = text.trim().replace(Regex("\\s+"), " ").take(MAX_QUERY)
 }

@@ -149,6 +149,9 @@ fun HomeScreen(
             onForgetSearches = {
                 recentSearches = ServiceLocator.searchHistory(context).clear()
             },
+            onForgetSearch = { query ->
+                recentSearches = ServiceLocator.searchHistory(context).forget(query)
+            },
             onSearch = {
                 recentSearches = ServiceLocator.searchHistory(context).remember(it)
                 showSearch = false

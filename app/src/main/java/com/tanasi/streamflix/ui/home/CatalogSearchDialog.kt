@@ -16,9 +16,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,10 +44,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.utf16CodePoint
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -75,22 +82,17 @@ private val KEY_GAP = 6.dp
 private val KEYBOARD_WIDTH = KEY_SIZE * 10 + KEY_GAP * 9
 
 /**
- * Letras y dígitos de un **teclado físico** (los TV box con dongle suelen
- * tenerlo). Se declaran tecla a tecla en lugar de leer el carácter del evento:
- * así no depende de APIs de plataforma y el mapeo es evidente.
+ * Teclas de navegación: mueven el foco y **no** se consumen.
+ *
+ * El texto ya no se mapea aquí. Antes había una tabla `tecla -> letra` que
+ * recorría la `'A'` a la `'Z'` en ASCII, así que **la `Ñ` no existía** y se
+ * perdían en silencio el espacio, los acentos y cualquier distribución que no
+ * fuera la inglesa. Ahora el carácter sale de `KeyEvent.utf16CodePoint` y la
+ * decisión vive en `PhysicalKeyboard`, que sí se puede probar en la JVM.
  */
-private val PHYSICAL_KEYS: Map<Key, String> = buildMap {
-    listOf(
-        Key.A, Key.B, Key.C, Key.D, Key.E, Key.F, Key.G, Key.H, Key.I,
-        Key.J, Key.K, Key.L, Key.M, Key.N, Key.O, Key.P, Key.Q, Key.R,
-        Key.S, Key.T, Key.U, Key.V, Key.W, Key.X, Key.Y, Key.Z,
-    ).forEachIndexed { index, key -> put(key, ('A' + index).toString()) }
-
-    listOf(
-        Key.Zero, Key.One, Key.Two, Key.Three, Key.Four,
-        Key.Five, Key.Six, Key.Seven, Key.Eight, Key.Nine,
-    ).forEachIndexed { index, key -> put(key, index.toString()) }
-}
+private fun isDirectional(key: Key): Boolean = key == Key.DirectionUp || key == Key.DirectionDown ||
+    key == Key.DirectionLeft || key == Key.DirectionRight ||
+    key == Key.MoveHome || key == Key.MoveEnd || key == Key.PageUp || key == Key.PageDown
 
 /**
  * Buscador del Home: **teclado propio** y, a la derecha, lo que hay que mirar
@@ -122,6 +124,7 @@ private val PHYSICAL_KEYS: Map<Key, String> = buildMap {
  * @param onPreview se llama con cada cambio del campo (el ViewModel aplica el retardo).
  * @param recentSearches historial, lo más reciente primero.
  * @param onForgetSearches borra el historial entero desde el panel.
+ * @param onForgetSearch olvida una sola búsqueda (la «×» de su fila).
  */
 @Composable
 fun CatalogSearchDialog(
@@ -135,6 +138,7 @@ fun CatalogSearchDialog(
     onClearPreview: () -> Unit = {},
     recentSearches: List<String> = emptyList(),
     onForgetSearches: () -> Unit = {},
+    onForgetSearch: (String) -> Unit = {},
 ) {
     var value by remember { mutableStateOf(initialQuery.take(TvKeyboardLayout.MAX_QUERY)) }
     var page by remember { mutableStateOf(TvKeyboardLayout.SymbolPage.DIGITS) }
@@ -189,18 +193,38 @@ fun CatalogSearchDialog(
                  * por las teclas: es gratis y evita tener que recorrer 27 nodos. */
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    if (event.key == Key.Backspace) {
-                        value = TvKeyboardLayout.backspace(value)
-                        return@onPreviewKeyEvent true
+                    /* `Ctrl` o `Alt` convierten Retroceso en «borra la palabra».
+                     * Se lee de los modificadores del propio evento: en un TV box
+                     * con dongle no hay forma de consultar el teclado global. */
+                    val wordModifier = event.isCtrlPressed || event.isAltPressed
+                    val action = PhysicalKeyboard.actionFor(
+                        codePoint = event.utf16CodePoint,
+                        isBackspace = event.key == Key.Backspace,
+                        isDelete = event.key == Key.Delete,
+                        isEnter = event.key == Key.Enter || event.key == Key.NumPadEnter,
+                        isDirectional = isDirectional(event.key),
+                        wordModifier = wordModifier,
+                    )
+                    when (action) {
+                        is PhysicalKeyboard.Action.Type -> {
+                            value = TvKeyboardLayout.type(value, action.text)
+                            true
+                        }
+                        PhysicalKeyboard.Action.Backspace -> {
+                            value = TvKeyboardLayout.backspace(value)
+                            true
+                        }
+                        PhysicalKeyboard.Action.DeleteWord -> {
+                            value = TvKeyboardLayout.deleteWord(value)
+                            true
+                        }
+                        PhysicalKeyboard.Action.Submit -> {
+                            submit()
+                            true
+                        }
+                        /* Las flechas no se consumen: el foco tiene que moverse. */
+                        PhysicalKeyboard.Action.Passthrough -> false
                     }
-                    /* Enter en un teclado físico busca sin bajar hasta `BUSCAR`. */
-                    if (event.key == Key.Enter || event.key == Key.NumPadEnter) {
-                        submit()
-                        return@onPreviewKeyEvent true
-                    }
-                    val typed = PHYSICAL_KEYS[event.key] ?: return@onPreviewKeyEvent false
-                    value = TvKeyboardLayout.type(value, typed)
-                    true
                 }
                 .focusable(),
         ) {
@@ -327,6 +351,7 @@ fun CatalogSearchDialog(
                         onOpenDetails = onOpenDetails,
                         onUseRecent = { query -> value = query; submit(query) },
                         onForgetSearches = onForgetSearches,
+                        onForgetSearch = onForgetSearch,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                     )
                 }
@@ -346,6 +371,7 @@ private fun ResultsPanel(
     onOpenDetails: (MediaEntry) -> Unit,
     onUseRecent: (String) -> Unit,
     onForgetSearches: () -> Unit,
+    onForgetSearch: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     /* El foco tiene que caer en la primera fila **pulsable**; los encabezados
@@ -382,6 +408,7 @@ private fun ResultsPanel(
                         query = item.query,
                         focusRequester = if (getsFocus) focusRequester else null,
                         onClick = { onUseRecent(item.query) },
+                        onForget = { onForgetSearch(item.query) },
                     )
                     SearchPanelItem.ForgetRecent -> ForgetRow(
                         focusRequester = if (getsFocus) focusRequester else null,
@@ -441,6 +468,7 @@ private fun RecentRow(
     query: String,
     focusRequester: FocusRequester?,
     onClick: () -> Unit,
+    onForget: () -> Unit,
 ) {
     val appearance = rememberRowAppearance(focusedRingLabel = "recentRing", focusedScaleLabel = "recentScale")
 
@@ -487,6 +515,46 @@ private fun RecentRow(
             text = "›",
             style = MaterialTheme.typography.titleLarge,
             color = if (appearance.focused) Color.White else StreamflixColors.OnSurfaceMuted.copy(alpha = 0.6f),
+        )
+        /* Olvidar **esta** búsqueda sin tirar las demás. Antes sólo existía
+         * «Borrar historial»: quien había escrito algo que no quería enseñar
+         * tenía que borrarlo todo. Es un nodo de foco propio, así que el mando
+         * llega con `▶` sin cambiar lo que hace el resto de la fila. */
+        Spacer(Modifier.width(6.dp))
+        ForgetOneButton(query = query, onForget = onForget)
+    }
+}
+
+/**
+ * La «×» de una fila del historial.
+ *
+ * Va dentro de la fila pero como nodo aparte: pulsar la fila repite la
+ * búsqueda (lo normal) y pulsar la «×» olvida esa consulta (lo excepcional).
+ * Se distingue por tamaño y color para que no se pulse sin querer, y lleva
+ * etiqueta de accesibilidad porque una «×» sola no dice qué borra.
+ */
+@Composable
+private fun ForgetOneButton(query: String, onForget: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .tvFocusGlow(progress = if (focused) 1f else 0f, cornerRadius = 18.dp)
+            .background(
+                if (focused) Color.White else Color.White.copy(alpha = 0.10f),
+                CircleShape,
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onForget)
+            .semantics { contentDescription = "Olvidar la búsqueda «$query»" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "×",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = if (focused) Color.Black else StreamflixColors.OnSurfaceMuted,
         )
     }
 }
