@@ -148,7 +148,7 @@ jobs:
             const { execSync } = require('child_process');
             let junit = '(sin informes XML de tests)';
             try {
-              const xmls = execSync("find app/build/test-results -name '*.xml' -type f", { encoding: 'utf8' })
+              const xmls = execSync("find app/build/test-results app/build/outputs/androidTest-results -name '*.xml' -type f 2>/dev/null || true", { encoding: 'utf8' })
                 .split('\n').filter(Boolean);
               const failures = [];
               for (const xml of xmls) {
@@ -158,7 +158,7 @@ jobs:
                   const name = (attrs.match(/name="([^"]*)"/) || [, '?'])[1];
                   const cls = (attrs.match(/classname="([^"]*)"/) || [, '?'])[1];
                   const msg = (body.match(/message="([^"]*)"/) || [, ''])[1];
-                  const trace = (body.match(/<failure[^>]*>([\s\S]*?)<\/failure>/) || [, ''])[1];
+                  const trace = (body.match(/<(?:failure|error)[^>]*>([\s\S]*?)<\/(?:failure|error)>/) || [, ''])[1];
                   failures.push(`${cls}.${name}\n  ${msg}\n  ${trace.split('\n').slice(0, 6).join('\n  ')}`);
                 }
               }

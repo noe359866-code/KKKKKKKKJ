@@ -27,7 +27,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class EmbeddedEngineSmokeTest {
     @Test
-    fun bundledPythonAndScrapersRunOnDeviceWithoutAServer() = runBlocking {
+    fun bundledPythonAndScrapersRunOnDeviceWithoutAServer(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         val settings = Settings(app)
         assertTrue("Fresh installations must be autonomous", settings.autonomous)
@@ -57,7 +57,7 @@ class EmbeddedEngineSmokeTest {
     }
 
     @Test
-    fun engineAndCatalogHelpersRunInKotlinFromPython() = runBlocking {
+    fun engineAndCatalogHelpersRunInKotlinFromPython(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
         val python = Python.getInstance()
@@ -95,7 +95,7 @@ class EmbeddedEngineSmokeTest {
     }
 
     @Test
-    fun scraperQualityIsResolvedInKotlinFromPython() = runBlocking {
+    fun scraperQualityIsResolvedInKotlinFromPython(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
         val helper = Python.getInstance().getModule("_htmlkit")
@@ -105,7 +105,7 @@ class EmbeddedEngineSmokeTest {
     }
 
     @Test
-    fun hosterHelpersRunInKotlinFromPython() = runBlocking {
+    fun hosterHelpersRunInKotlinFromPython(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
         val hosters = Python.getInstance().getModule("_hosters")
@@ -118,7 +118,7 @@ class EmbeddedEngineSmokeTest {
     }
 
     @Test
-    fun animeParsersRunInKotlinFromPython() = runBlocking {
+    fun animeParsersRunInKotlinFromPython(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
         val anime = Python.getInstance().getModule("_animekit")
@@ -134,7 +134,7 @@ class EmbeddedEngineSmokeTest {
     }
 
     @Test
-    fun nativeProviderSchedulerCallsPythonAndReturnsPythonObjects() = runBlocking {
+    fun nativeProviderSchedulerCallsPythonAndReturnsPythonObjects(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
         val python = Python.getInstance()
@@ -158,7 +158,7 @@ class EmbeddedEngineSmokeTest {
     }
 
     @Test
-    fun engineUsesNativeDiskCacheFromPython() = runBlocking {
+    fun engineUsesNativeDiskCacheFromPython(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
         val python = Python.getInstance()
@@ -171,7 +171,7 @@ class EmbeddedEngineSmokeTest {
     }
 
     @Test
-    fun movieParsersRunInKotlinFromPython() = runBlocking {
+    fun movieParsersRunInKotlinFromPython(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
         val movies = Python.getInstance().getModule("_peliskit")
@@ -187,7 +187,7 @@ class EmbeddedEngineSmokeTest {
     }
 
     @Test
-    fun tmdbLookupIsInstalledWithoutRequiringAnApiKey() = runBlocking {
+    fun tmdbLookupIsInstalledWithoutRequiringAnApiKey(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
         val tmdb = Python.getInstance().getModule("_tmdb")
@@ -195,7 +195,7 @@ class EmbeddedEngineSmokeTest {
     }
 
     @Test
-    fun packedPlayersAreUnpackedInKotlinFromPython() = runBlocking {
+    fun packedPlayersAreUnpackedInKotlinFromPython(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
         val htmlkit = Python.getInstance().getModule("_htmlkit")
@@ -204,7 +204,7 @@ class EmbeddedEngineSmokeTest {
     }
 
     @Test
-    fun pythonHttpUsesNativeTransportHeadersAndAnOverallTimeout() = runBlocking {
+    fun pythonHttpUsesNativeTransportHeadersAndAnOverallTimeout(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         ChaquopyRuntime(app).call("health", "{}")
         val python = Python.getInstance()
