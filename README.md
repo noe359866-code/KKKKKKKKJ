@@ -669,7 +669,7 @@ This application is provided "as is" for educational purposes. The developers:
 
 ## License
 
-This project is licensed under the `Apache-2.0` License - see the [LICENSE](LICENSE) file for details
+This project is licensed under the `EPL-2.0` (Eclipse Public License 2.0) - see the [LICENSE](LICENSE) file for details
 
 ### Original Project
 <p align="center">

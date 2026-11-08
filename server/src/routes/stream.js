@@ -86,6 +86,12 @@ async function handleStream(req, res) {
     /* Extra field (ignored by Stremio clients): the same list the `subtitles`
      * resource serves, already resolved by this scrape. */
     subtitles: result.subtitles || [],
+    /* Extra field: per-provider outcome of this scrape
+     * (`{ id, label, status, streams, ms }`). `streamService` already computed
+     * it for the logs and threw it away; without it the app can only say "no
+     * sources", which does not tell the user whether a provider is down, was
+     * blocked, or simply has nothing for this title. */
+    providers: result.providers || [],
     cacheMaxAge,
     /* Client-side hints from the Stremio SDK: how long stale data is still
      * acceptable while the addon refreshes in the background. */

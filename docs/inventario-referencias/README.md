@@ -13,8 +13,10 @@
 Adicionalmente, Nuvio tiene una referencia de submódulo `libmpv-android` al commit `f48aa82b2677428f756a689a44c2477c3f37be51`: el contenido de ese repositorio no forma parte de los 1.684 archivos ni se ha inventariado. Los árboles recursivos de GitHub respondieron `truncated: false`.
 
 > **Licencia (comprobada el 2026-11-07).** Nuvio TV es **GPL-3.0**; Streamflix es
-> **Apache-2.0**. Copiar código de Nuvio —aunque sea un archivo suelto— obligaría
-> a relicenciar la app entera bajo GPL-3.0. Por eso de aquí sólo se toman
+> **EPL-2.0** (lo dice el archivo `LICENSE`; el README llegó a decir Apache-2.0,
+> y era falso). Copiar código de Nuvio —aunque sea un archivo suelto— metería
+> código GPL-3.0 en un programa EPL-2.0, que son incompatibles entre sí. Por eso
+> de aquí sólo se toman
 > **ideas**: la lógica y los umbrales no son copyrightables, la expresión
 > concreta sí. Todo lo implementado a partir de este inventario se escribió de
 > cero, con decisiones y pruebas propias. Mantener esa línea es una condición

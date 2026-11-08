@@ -50,6 +50,27 @@ class TvKeyboardLayoutTest {
     }
 
     @Test
+    fun `deleteWord borra la ultima palabra`() {
+        assertEquals("EL SEÑOR DE LOS", TvKeyboardLayout.deleteWord("EL SEÑOR DE LOS ANILLOS"))
+        assertEquals("HOLA", TvKeyboardLayout.deleteWord("HOLA MUNDO"))
+        /* Una sola palabra se va entera: no hay nada antes que conservar. */
+        assertEquals("", TvKeyboardLayout.deleteWord("ANILLOS"))
+    }
+
+    @Test
+    fun `deleteWord quita el espacio colgando sin comerse la palabra anterior`() {
+        assertEquals("EL SEÑOR", TvKeyboardLayout.deleteWord("EL SEÑOR "))
+        /* Sólo espacios: se van los espacios, no hay palabra que borrar. */
+        assertEquals("", TvKeyboardLayout.deleteWord("   "))
+    }
+
+    @Test
+    fun `deleteWord no falla con el campo vacio ni se come los acentos`() {
+        assertEquals("", TvKeyboardLayout.deleteWord(""))
+        assertEquals("¿QUÉ", TvKeyboardLayout.deleteWord("¿QUÉ PASA?"))
+    }
+
+    @Test
     fun `todas las filas tienen teclas y no se repiten`() {
         val keys = TvKeyboardLayout.rows.flatten() + TvKeyboardLayout.digitRow
         assertEquals(keys.size, keys.toSet().size)

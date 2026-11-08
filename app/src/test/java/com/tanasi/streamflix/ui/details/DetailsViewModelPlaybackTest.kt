@@ -66,6 +66,34 @@ class DetailsViewModelPlaybackTest {
         assertEquals("tt1:1:1", vm.playbackRequest().id)
     }
 
+    @Test fun `una tarjeta de seguir viendo conserva episodio y segundo`() = runTest(dispatcher) {
+        /* Esta prueba existe porque el bug "la ficha abre el E1" parecía real
+         * y no lo era. `needsEpisodeChoice` ya detecta el id con número de
+         * episodio (`tt1:1:2`), así que la ficha no pide la lista de
+         * capítulos: `requestedId` se queda en el id guardado y
+         * `base.startPositionMs` (que es la posición del capítulo) sobrevive.
+         *
+         * Si alguien cambia `needsEpisodeChoice` o el reparto de la posición,
+         * esto se rompe y avisa. */
+        val card = MediaEntry(
+            id = "tt1:1:2",
+            type = "series",
+            title = "Serie · T1 E2",
+            resumePositionMs = 1_230_000L,
+        )
+        val vm = DetailsViewModel(entry = card, client = client, settings = settings)
+        advanceUntilIdle()
+
+        val request = vm.playbackRequest()
+
+        assertEquals("tt1:1:2", request.id)
+        assertEquals(1_230_000L, request.startPositionMs)
+        assertTrue(
+            "una tarjeta con episodio no ofrece la lista de capítulos",
+            vm.episodes.value is EpisodesUiState.Hidden,
+        )
+    }
+
     @Test fun `pelicula conserva su id aunque los metadatos incluyan videos`() = runTest(dispatcher) {
         val vm = DetailsViewModel(MediaEntry(id = "tt1", type = "movie", title = "Película"), client, settings)
         assertTrue(vm.episodes.value is EpisodesUiState.Hidden)

@@ -2,6 +2,7 @@ package com.tanasi.streamflix.player
 
 import android.content.Context
 import android.net.Uri
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -134,14 +135,41 @@ object MediaSources {
      * - `setWakeMode(WAKE_MODE_NETWORK)`: en Android TV el dispositivo no debe
      *   suspender la red a mitad de una película.
      * - `setHandleAudioBecomingNoisy(true)`: pausa al desconectar los auriculares.
+     * - `setAudioAttributes(..., handleAudioFocus = true)`: sin esto Media3 no
+     *   pide el foco de audio y el comportamiento ante una interrupción lo
+     *   decide cada fabricante. Ver el comentario del bloque.
      * - `LoadControl` por defecto de Media3: el buffer de fábrica ya aguanta un
      *   cambio de CDN; tocarlo hacia arriba sólo retrasa el primer frame.
      * - incrementos de salto de ±10 s (ver `buildPlayer`).
      */
     fun buildPlayer(context: Context): ExoPlayer =
         ExoPlayer.Builder(context)
+            /* Subtítulos mal decodificados: la fábrica envuelve el `TextOutput`
+             * del `TextRenderer`, que es el único punto por el que pasan los
+             * cues antes de llegar al `PlayerView`. */
+            .setRenderersFactory(SanitizingRenderersFactory(context))
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
+            /* Foco de audio. Con `handleAudioFocus = true` Media3 pide
+             * AUDIOFOCUS_GAIN al sistema y reacciona a lo que ocurra: pausa si
+             * otra app toma el foco entero, y **no** reanuda sola lo que el
+             * usuario había pausado (gestiona ese pestillo por dentro).
+             *
+             * `MOVIE` y no `SPEECH` a propósito. Media3 decide si atenuar o
+             * pausar según el tipo de contenido, y `SPEECH` lo obliga a pausar
+             * —es lo correcto para un audiolibro, donde bajar el volumen deja
+             * la narración ininteligible—. Aquí el contenido es una película:
+             * un aviso del sistema que baja el volumen dos segundos molesta
+             * menos que un parón con su reanudación. Además `SPEECH` sería
+             * mentir sobre lo que reproducimos, y el tipo afecta a otras
+             * reglas del sistema (políticas de volumen, atenuación). */
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build(),
+                /* handleAudioFocus = */ true,
+            )
             .apply {
                 /* ±10 s por pulsación del mando: los CDN entregan pocos
                  * keyframes y el incremento por defecto (5 s) deja el salto a

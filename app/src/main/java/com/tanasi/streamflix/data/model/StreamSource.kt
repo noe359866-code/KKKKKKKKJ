@@ -126,6 +126,11 @@ data class StreamsResponse(
      * la lista llega vacía y el reproductor se queda como estaba.
      */
     @SerialName("subtitles") val subtitles: List<SubtitleDto> = emptyList(),
+    /**
+     * Resultado de cada proveedor en este scrape (campo extra del servidor).
+     * Un addon de terceros no lo manda y llega vacío.
+     */
+    @SerialName("providers") val providers: List<ProviderStatus> = emptyList(),
 )
 
 @Serializable

@@ -2,6 +2,7 @@ package com.tanasi.streamflix.ui.player
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tanasi.streamflix.data.model.NoSourceDiagnosis
 import com.tanasi.streamflix.data.model.PlaybackRequest
 import com.tanasi.streamflix.data.model.StreamSource
 import com.tanasi.streamflix.data.model.SubtitleTrack
@@ -79,8 +80,8 @@ class PlayerViewModel(
             if (ticket != loadTicket) return@launch
             mutableState.value = when (result) {
                 is StreamsResult.Ready -> PlayerUiState.Ready(result.sources, subtitles = result.subtitles, generation = ticket)
-                StreamsResult.Empty -> PlayerUiState.Unavailable(
-                    "Ningún proveedor devolvió una fuente reproducible.",
+                is StreamsResult.Empty -> PlayerUiState.Unavailable(
+                    NoSourceDiagnosis.explain(result.providers),
                 )
                 is StreamsResult.Failure -> PlayerUiState.Unavailable(result.message)
             }

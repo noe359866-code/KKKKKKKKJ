@@ -214,6 +214,54 @@ implementado, escrito de cero:
   con puntos suspensivos como antes. Margen de 1 px para que medir y pintar no
   coincidan y el texto tiemble. `FocusMarqueeTest` (4 casos).
 
+## Hecho — foco de audio y autoavance de episodio (§29)
+
+Los dos huecos que quedaban tras revisar los lotes del inventario.
+
+- ✅ **Foco de audio** (`player/MediaSources.kt`). `buildPlayer` no llamaba a
+  `setAudioAttributes`, así que Media3 **no pedía el foco** y la reacción ante
+  una interrupción dependía del fabricante. Ahora declara
+  `USAGE_MEDIA` + `AUDIO_CONTENT_TYPE_MOVIE` con `handleAudioFocus = true`.
+  - **`MOVIE` y no `SPEECH`**: Media3 decide si atenuar o pausar según el tipo,
+    y trata `SPEECH` como contenido que no se puede atenuar (correcto en un
+    audiolibro, donde bajar el volumen deja la narración ininteligible). Aquí
+    un aviso que baja el volumen dos segundos molesta menos que un parón.
+  - **Sin gestor propio.** VortX (lote 08) implementa un `AudioFocusPolicy`
+    con pestillo; Media3 ya trae el suyo y **no reanuda lo que pausó el
+    usuario**. Añadir otro dejaría dos gestores compitiendo por el mismo foco.
+
+- ✅ **Autoavance de episodio** (`data/model/NextEpisode.kt`,
+  `ui/player/NextEpisodePrompt.kt`). No existía nada: `grep nextEpisode` daba
+  cero resultados. Lo que se decidió, y por qué:
+  - **El siguiente se resuelve por posición en la lista ordenada**, nunca con
+    `episodio + 1`: las temporadas reales tienen huecos (falta el E5, el
+    especial va como E0) y sumar uno produce un id que el proveedor no conoce,
+    que acaba en «sin fuentes» en vez de en el capítulo bueno.
+  - **Al terminar la temporada no hay siguiente.** Saltar a la siguiente es una
+    decisión de producto, no una consecuencia automática.
+  - **Ventana**: arranca en los créditos cuando `SkipSegment` los conoce, para
+    no tapar el gag post-créditos; sin ellos, los últimos 40 s.
+    `positionMs > durationMs` no oferta nada: al cambiar de fuente la posición
+    puede quedar por encima un instante y aparecería el aviso en el segundo uno.
+  - **Sin cuenta atrás.** Muchos reproductores avanzan solos a los diez
+    segundos; con un mando y a tres metros, que algo cambie sin pedirlo es peor
+    que pedir una pulsación.
+  - **ATRÁS descarta el prompt**, no sale del reproductor: con una decisión en
+    pantalla, salir no es lo que espera nadie.
+  - **Un episodio sin emitir no se ofrece** (`isEpisodeNotAiredYet`). Hoy la
+    fecha llega siempre `null` porque `RemoteVideo` no la publica; el punto de
+    enganche queda hecho en `DetailsViewModel.nextEpisodeAirDate`.
+  - **`PlaybackRequest` lleva el siguiente** con valor por defecto, así que
+    `PlaybackRestore` sigue leyendo los `Bundle` de versiones anteriores.
+
+  15 pruebas nuevas: `NextEpisodeTest` (12) y dos de compatibilidad de
+  restauración en `PlaybackRestoreTest`.
+
+- ✅ **README corregido**: declaraba `Apache-2.0` cuando el archivo `LICENSE`
+  es **EPL-2.0**. Lo arrastraba desde antes; el `LICENSE` es el que manda.
+
+---
+
 ## Hecho — saltar intro, resumen y créditos (§28)
 
 Con las dos bases públicas ya conectadas:

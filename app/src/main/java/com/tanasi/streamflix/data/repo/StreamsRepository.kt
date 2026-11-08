@@ -1,5 +1,6 @@
 package com.tanasi.streamflix.data.repo
 
+import com.tanasi.streamflix.data.model.ProviderStatus
 import com.tanasi.streamflix.data.model.StreamSource
 import com.tanasi.streamflix.data.model.SubtitleTrack
 import com.tanasi.streamflix.data.model.StreamsResponse
@@ -16,7 +17,13 @@ sealed interface StreamsResult {
         /** Pistas de texto que resolvió el mismo scrape (puede ser vacío). */
         val subtitles: List<SubtitleTrack> = emptyList(),
     ) : StreamsResult
-    data object Empty : StreamsResult
+    /**
+     * Ningún proveedor dio una fuente reproducible.
+     *
+     * Lleva el estado de cada uno para poder decir **por qué**: no es lo mismo
+     * que el título no exista a que las nueve webs estén caídas.
+     */
+    data class Empty(val providers: List<ProviderStatus> = emptyList()) : StreamsResult
     data class Failure(val message: String) : StreamsResult
 }
 
@@ -39,7 +46,7 @@ class StreamsRepository(
         return try {
             val response = client.streams(baseUrl, type, id)
             val sources = normalize(response)
-            if (sources.isEmpty()) StreamsResult.Empty
+            if (sources.isEmpty()) StreamsResult.Empty(response.providers)
             else StreamsResult.Ready(sources, response.cacheMaxAge, normalizeSubtitles(response))
         } catch (error: CancellationException) {
             throw error

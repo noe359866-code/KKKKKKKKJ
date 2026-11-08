@@ -129,7 +129,7 @@ class StreamsRepositoryTest {
 
         val result = repository().streamsFor("movie", "x")
 
-        assertEquals(StreamsResult.Empty, result)
+        assertTrue("una respuesta vacía se reporta como Empty", result is StreamsResult.Empty)
     }
 
     @Test
