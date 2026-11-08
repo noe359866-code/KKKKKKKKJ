@@ -109,7 +109,10 @@ class MkvChaptersTest {
 
         val segments = MkvChapters.segmentsFrom(chapters, durationMs = 2_700_000L)
 
-        val credits = segments.first { it.type == SkipSegmentType.Credits }
+        /* `last` y no `first`: «Opening Credits» también es un tramo de
+         * créditos, y está en el segundo cero. El que interesa aquí es el del
+         * final del archivo. */
+        val credits = segments.last { it.type == SkipSegmentType.Credits }
         assertEquals(2_400_000L, credits.startMs)
         assertEquals("sin capítulo después, los créditos van hasta el final", 2_700_000L, credits.endMs)
         val recap = segments.first { it.type == SkipSegmentType.Recap }
@@ -122,9 +125,14 @@ class MkvChaptersTest {
 
         val segments = MkvChapters.segmentsFrom(chapters, durationMs = 0L)
 
-        /* Los créditos son el último capítulo y sin duración no se sabe dónde
-         * acaban: un tramo sin final no se puede ofrecer como salto. */
-        assertTrue(segments.none { it.type == SkipSegmentType.Credits })
+        /* Los créditos del **final** son el último capítulo y sin duración no
+         * se sabe dónde acaban: un tramo sin final no se puede ofrecer como
+         * salto. Los del principio ("Opening Credits") sí tienen final, así
+         * que siguen ofreciéndose. */
+        assertTrue(
+            "no debe haber tramo que empiece en el último capítulo",
+            segments.none { it.startMs == 2_400_000L },
+        )
     }
 
     @Test

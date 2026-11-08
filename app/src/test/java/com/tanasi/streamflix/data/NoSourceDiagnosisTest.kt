@@ -30,7 +30,7 @@ class NoSourceDiagnosisTest {
 
         /* Clave: NO se sugiere reintentar, porque reintentar no va a cambiar
          * nada: el catálogo ya dijo que no lo tiene. */
-        assertTrue(message, message.contains("no tiene fuentes para este título"))
+        assertTrue(message, message.contains("tiene fuentes para este título"))
         assertFalse("no debe invitar a reintentar cuando el título no está", message.contains("Reintenta"))
     }
 

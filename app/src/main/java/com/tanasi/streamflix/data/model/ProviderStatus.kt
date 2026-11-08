@@ -25,8 +25,18 @@ data class ProviderStatus(
     /** `null` cuando el scraper se agotó por tiempo: el servidor no lo midió. */
     @SerialName("ms") val ms: Long? = null,
 ) {
-    /** Nombre para el usuario: la etiqueta legible o, si no vino, el id. */
-    val name: String get() = label.ifBlank { id }.ifBlank { "Proveedor" }
+    /**
+     * Nombre para el usuario: la etiqueta legible o, si no vino, el id.
+     *
+     * El id se capitaliza porque es un identificador (`gnula`), no un nombre
+     * de marca: «Fallaron: gnula» en pantalla se lee como un descuido.
+     */
+    val name: String
+        get() = when {
+            label.isNotBlank() -> label
+            id.isNotBlank() -> id.replaceFirstChar { char -> char.uppercase() }
+            else -> "Proveedor"
+        }
 }
 
 /**
