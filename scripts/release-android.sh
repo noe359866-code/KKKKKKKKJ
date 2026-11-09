@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# APK + AAB autónomos. No requiere ADDON_BASE_URL ni Node.js.
+# APK + AAB cliente para TV. No empaqueta providers web ni requiere backend propio.
 # Requisitos: JDK 17, Python 3.11 y Android SDK 36.
 # Configura keystore.properties / RELEASE_* para firmar el APK de producción.
 set -euo pipefail
@@ -10,7 +10,7 @@ if ! command -v java >/dev/null 2>&1; then
     exit 1
 fi
 
-echo "→ Compilando APK + AAB con Python y scrapers integrados (modo autónomo)"
+echo "→ Compilando APK + AAB TV client (sin scrapers; fuentes por addons Stremio)"
 ./gradlew :app:assembleRelease :app:bundleRelease "$@"
 
 APK=$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)

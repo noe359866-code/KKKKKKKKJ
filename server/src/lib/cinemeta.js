@@ -25,7 +25,7 @@
  *   - `releaseInfo` es "2010" pero también "2019–2023" (serie en emisión);
  *   - `imdbRating` viene como string;
  *   - los episodios están en `videos[]` con `season`/`episode` numéricos y un
- *     `id` ya listo para `/stream/series/<id con :S:E>`.
+ *     `id` con temporada/episodio conservado para clientes Stremio compatibles.
  * Se dejan tal cual los campos que ya son estándar y se añaden dos derivados
  * propios (`year`, `rating`) que la app Android consume directamente.
  */
@@ -154,8 +154,8 @@ export function normalizeMetas(metas, fallback = {}) {
 /**
  * Normaliza los episodios de una serie.
  *
- * El `id` que trae Cinemeta (`tt0944947:1:2`) es exactamente lo que hay que
- * pedir a `/stream/series/…`, así que se conserva sin recomponerlo.
+ * El `id` que trae Cinemeta (`tt0944947:1:2`) identifica el episodio y se
+ * conserva tal cual para que los clientes mantengan la identidad Stremio.
  */
 export function normalizeVideos(videos) {
   if (!Array.isArray(videos)) return [];
@@ -207,9 +207,8 @@ function toStringArray(value) {
 /**
  * GET + JSON con timeout, compartido por catálogos y fichas.
  *
- * No usa `fetchWithTimeout` de lib/http.js porque aquél inyecta el
- * `Referer`/`User-Agent` de los proveedores de vídeo: a Cinemeta hay que
- * hablarle como un cliente Stremio más, sin cabeceras de hotlink.
+ * Se mantiene independiente del proxy de medios: Cinemeta recibe una
+ * petición estándar de cliente Stremio, sin cabeceras de hotlink.
  *
  * @param {string} path - ruta relativa devuelta por build*Path()
  * @param {object} [options]

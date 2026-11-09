@@ -2,11 +2,11 @@
  * src/cache/TtlCache.js
  * ---------------------------------------------------------------------------
  * In-memory TTL cache with:
- *   - per-entry TTL (live streams: 2h, VOD: 6h)
+ *   - configurable per-entry TTL for catalog and metadata responses
  *   - LRU eviction when maxEntries is exceeded
  *   - stale-while-revalidate (serve stale data while refreshing in background)
  *   - request coalescing ("single flight") so 50 concurrent viewers of the same
- *     live channel trigger exactly ONE Python scrape
+ *     concurrent identical catalog requests share exactly ONE upstream fetch
  *   - metrics (hits, misses, stale hits, evictions) for /health
  *
  * Why not node-cache? This module needs single-flight, negative caching and
@@ -29,7 +29,7 @@ class Entry {
     this.ttlMs = ttlMs;
     this.createdAt = now;
     this.expiresAt = this.createdAt + ttlMs;
-    this.meta = meta; // { kind: 'live'|'vod'|'miss', providerCount, ... }
+    this.meta = meta; // optional resource metadata (catalog, meta, ... )
     this.hits = 0;
   }
 
@@ -75,7 +75,7 @@ export class TtlCache {
     this.staleFactor = staleFactor;
     this.now = now;
 
-    /** @type {Map<string, Promise<any>>} in-flight scrapes per key. */
+    /** @type {Map<string, Promise<any>>} in-flight upstream requests per key. */
     this.inflight = new Map();
 
     this.metrics = {
@@ -192,7 +192,7 @@ export class TtlCache {
    * Registers/reads a promise for a given key.
    *
    * This is the "single flight" primitive: the first caller performs the work
-   * (a Python scrape); concurrent callers with the same key receive the same
+   * (an upstream fetch); concurrent callers with the same key receive the same
    * promise instead of spawning a second process.
    *
    * @template T
@@ -217,7 +217,7 @@ export class TtlCache {
       this.metrics.errors += 1;
       throw error;
     } finally {
-      /* Always release the slot, even on error, otherwise a failed scrape
+      /* Always release the slot, even on error, otherwise a failed request
        * would poison the key forever. */
       this.inflight.delete(key);
     }
@@ -271,7 +271,7 @@ export class TtlCache {
 
   /**
    * Caches a known-bad result for a short period (negative cache) so an
-   * outage of every provider is not re-scraped on every client retry.
+   * repeated upstream misses are not refetched on every client retry.
    */
   setMiss(key, ttlMs = config.cache.ttlMissMs) {
     this.set(key, [], ttlMs, { kind: 'miss', negative: true });

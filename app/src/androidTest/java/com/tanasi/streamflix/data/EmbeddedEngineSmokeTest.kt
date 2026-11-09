@@ -23,31 +23,26 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Sin backend y sin Internet: prueba que el Python nativo y los scrapers cargan en el dispositivo. */
+/** Sin backend: el APK conserva el catálogo local, pero no empaqueta resolvers de sitios. */
 @RunWith(AndroidJUnit4::class)
 class EmbeddedEngineSmokeTest {
     @Test(timeout = 30_000)
-    fun bundledPythonAndScrapersRunOnDeviceWithoutAServer(): Unit = runBlocking {
+    fun bundledCatalogRuntimeRunsWithoutBundledScrapers(): Unit = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         val settings = Settings(app)
         assertTrue("Fresh installations must be autonomous", settings.autonomous)
         val runtime = ChaquopyRuntime(app)
         val health = Json.parseToJsonElement(runtime.call("health", "{}")).jsonObject
         assertEquals("embedded", health["mode"]?.jsonPrimitive?.content)
-        // La lista sale del registro empaquetado: añadir un proveedor no debe
-        // obligar a tocar el test, pero sí tiene que llegar al APK.
+        // El APK no empaqueta código de proveedores. Todo stream debe llegar
+        // desde addons Stremio elegidos por la persona usuaria.
         val registry = Json.parseToJsonElement(
             app.assets.open("providers.json").bufferedReader().use { it.readText() }
         ).jsonObject
-        val expected = registry["providers"]!!.jsonArray
-            .map { it.jsonObject }
-            .filter { it["enabled"]?.jsonPrimitive?.content != "false" }
-            .map { it["id"]!!.jsonPrimitive.content }
-            .filterNot { it.startsWith("demo") }
-            .toSet()
+        val packaged = registry["providers"]!!.jsonArray
         val shipped = health["providers"]!!.jsonArray.map { it.jsonPrimitive.content }.toSet()
-        assertEquals(expected, shipped)
-        assertTrue(expected.containsAll(setOf("pelisplushd", "novahd", "gnula")))
+        assertTrue("No scrapers should be bundled", packaged.isEmpty())
+        assertTrue("No scraper runtime should be active", shipped.isEmpty())
         assertTrue(health["python"]!!.jsonPrimitive.content.startsWith("3.11."))
         val client = EmbeddedContentClient(runtime)
         val descriptors = client.catalogs("")

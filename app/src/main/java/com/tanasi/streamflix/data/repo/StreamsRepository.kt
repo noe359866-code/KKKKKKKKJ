@@ -39,8 +39,8 @@ class StreamsRepository(
 
     suspend fun streamsFor(type: String, id: String): StreamsResult {
         val baseUrl = settings.baseUrl
-        if (!settings.autonomous && baseUrl.isBlank()) {
-            return StreamsResult.Failure("Configura la URL del servidor en Ajustes")
+        if (!settings.autonomous && baseUrl.isBlank() && !client.hasIndependentStreams()) {
+            return StreamsResult.Failure("Configura la URL del servidor en Ajustes o instala un addon/plugin independiente")
         }
 
         return try {

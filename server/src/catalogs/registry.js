@@ -3,8 +3,8 @@
  * ---------------------------------------------------------------------------
  * Registro de catálogos del addon.
  *
- * Un catálogo se declara en `config/catalogs.json` (mismo espíritu que
- * `config/providers.json`: añadir una fila no debería requerir tocar código) y
+ * Los catálogos se declaran en `config/catalogs.json`; añadir una fila no
+ * requiere cambiar este código, y
  * se publica en `/manifest.json` para que **cualquier** cliente Stremio lo vea,
  * no sólo nuestra app Android.
  *

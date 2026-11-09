@@ -15,18 +15,17 @@ import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.core.LocalDeviceProfile
 
 /**
- * Paleta de la app, calcada del lenguaje visual de la app Apple TV (tvOS).
+ * Sistema visual propio de Streamflix TV: alto contraste, foco inequívoco y
+ * superficies discretas para que el arte y las acciones se lean desde el sofá.
+ * No depende de marcas ni de una plataforma de TV específica.
  *
  * Reglas que se siguen en todas las pantallas:
  *
- *  1. **Negro puro de fondo.** No es "tema oscuro": es una sala a oscuras. Un
- *     `#0B0B12` con tinte azulado se nota en un OLED y ensucia las fotos.
- *  2. **El acento es el blanco.** Apple TV no usa un color de marca para los
- *     botones: el primario es una cápsula blanca con texto negro y el resto es
- *     vidrio translúcido. El color queda para el arte, no para la interfaz.
- *  3. **Un solo rojo, sólo para "en directo".** Si el rojo también fuese el
- *     foco o el acento, una fila de tarjetas sería ilegible.
- *  4. **Grises neutros** (`#8E8E93`), sin tinte, como los del sistema de Apple.
+ *  1. **Fondo negro neutro**, que no compite con pósteres ni vídeo.
+ *  2. **Acento blanco** para la acción primaria y el foco; el arte aporta color.
+ *  3. **Rojo reservado para peligro o contenido en directo**, nunca como foco.
+ *  4. **Grises neutros** para información secundaria; su tamaño y contraste se
+ *     deben comprobar a distancia en televisores reales.
  */
 object StreamflixColors {
     /** Fondo: negro puro. */
@@ -46,7 +45,7 @@ object StreamflixColors {
     val OnSurface = Color(0xFFFFFFFF)
     val OnSurfaceMuted = Color(0xFFAAAAAF)
 
-    /** Foco del D-Pad: anillo blanco fino, como el de tvOS. */
+    /** Foco del D-Pad: anillo blanco fino, visible sobre el arte. */
     /** Rojo de peligro (borrar perfil, error). No es el rojo de un directo. */
     val Live = Color(0xFFFF453A)
     val FocusRing = Color(0xFFFFFFFF)
@@ -91,10 +90,10 @@ private val StreamflixColorScheme = darkColorScheme(
  *    va en 17 sp y los títulos de fila en 22 sp.
  *  - **Interletraje negativo en los títulos** (`-0.4 sp`): es lo que hace que
  *    un titular se lea como "de plataforma" y no como un formulario.
- *  - **Pesos contenidos.** Apple usa semibold, no black: el texto compite con
- *    la foto del hero, no al revés.
+ *  - **Pesos contenidos.** Los encabezados usan semibold para no competir con
+ *    la imagen destacada.
  */
-private fun appleTvTypography(): Typography = Typography(
+private fun streamflixTvTypography(): Typography = Typography(
     displayLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
@@ -199,7 +198,7 @@ fun StreamflixTheme(
     CompositionLocalProvider(LocalDeviceProfile provides deviceProfile) {
         MaterialTheme(
             colorScheme = StreamflixColorScheme,
-            typography = appleTvTypography(),
+            typography = streamflixTvTypography(),
             content = content,
         )
     }
@@ -207,10 +206,10 @@ fun StreamflixTheme(
 
 /** Medidas comunes de la UI (evita números mágicos repartidos). */
 object Dimens {
-    /** Aire entre filas: en tvOS es generoso, casi una fila de texto. */
+    /** Aire entre filas para distinguir secciones a distancia. */
     val rowSpacing = 34.dp
 
-    /** Radio de tarjeta de tvOS: 10 dp, ni cuadrado ni pompa. */
+    /** Radio de tarjeta de Streamflix TV: suave sin parecer una cápsula. */
     val cardCornerRadius = 10.dp
 
     /** Anillo de foco: fino y blanco. */

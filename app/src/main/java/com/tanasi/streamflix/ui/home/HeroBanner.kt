@@ -49,14 +49,13 @@ import com.tanasi.streamflix.ui.theme.StreamflixColors
 import com.tanasi.streamflix.ui.theme.tvFocusGlow
 
 /**
- * Hero cinematográfico (inspiración Apple TV+).
+ * Hero cinematográfico de Streamflix TV.
  *
  * Tres cosas lo hacen parecer "de plataforma":
  *
  *  1. **Backdrop que sigue al foco.** No hay carrusel automático: la imagen es
- *     la de la tarjeta que el usuario está mirando. Con un mando eso se siente
- *     como si la app leyera la intención; con el dedo se queda en el destacado
- *     inicial hasta que se toca otra tarjeta.
+ *     la de la tarjeta que el usuario está mirando. Así se puede explorar el
+ *     catálogo con el mando sin abrir cada ficha.
  *  2. **Fondo estático.** Evita animaciones continuas de pantalla completa en
  *     dispositivos TV de recursos limitados.
  *  3. **Doble velo.** Un degradado horizontal protege el texto a la izquierda y
@@ -67,8 +66,8 @@ import com.tanasi.streamflix.ui.theme.tvFocusGlow
  *   hace el failover, así que aquí no se elige servidor.
  * @param onDetails abre la ficha con sinopsis y episodios.
  * @param upFocus destino del D-Pad al pulsar ARRIBA (la barra superior).
- * @param ctaDownFocus destino al pulsar ABAJO desde cualquier botón: la primera
- *   tarjeta de la primera fila, que es donde el usuario quiere volver.
+ * @param ctaDownFocus destino al pulsar ABAJO desde cualquier botón: la shelf
+ *   de plataformas cuando está disponible; si no, la primera tarjeta del catálogo.
  * @param contentBottomPadding aire entre los botones y el borde inferior de la
  *   caja del hero. En TV el backdrop se prolonga por debajo (las filas se
  *   deslizan encima) y el texto tiene que quedar más arriba, a la altura a la

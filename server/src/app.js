@@ -19,8 +19,6 @@ import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { createRateLimiter } from './middleware/rateLimit.js';
 
 import { manifestRouter } from './routes/manifest.js';
-import { streamRouter } from './routes/stream.js';
-import { subtitlesRouter } from './routes/subtitles.js';
 import { healthRouter } from './routes/health.js';
 import { adminRouter } from './routes/admin.js';
 import { proxyRouter } from './routes/proxy.js';
@@ -60,14 +58,14 @@ export function createApp(options = {}) {
 
   app.use(requestContext);
 
-  /* Only the admin API needs a body. 64kb is enough for a warm-up list. */
+  /* Admin endpoints accept JSON; this API only needs a small request body. */
   app.use(express.json({ limit: '64kb' }));
 
   /* Rate limiting applies to the heavy endpoints, never to probes. */
   app.use(
     createRateLimiter({
       max: options.rateLimit === undefined ? config.http.rateLimitMax : options.rateLimit,
-      pathPrefixes: options.rateLimit === 0 ? null : ['/stream', '/subtitles', '/proxy', '/catalog', '/meta'],
+      pathPrefixes: options.rateLimit === 0 ? null : ['/proxy', '/catalog', '/meta'],
     }),
   );
 
@@ -76,8 +74,6 @@ export function createApp(options = {}) {
   /* ------------------------------------------------------------------ */
   app.use(manifestRouter);
   app.use(catalogRouter);
-  app.use(streamRouter);
-  app.use(subtitlesRouter);
   app.use(healthRouter);
   app.use(adminRouter);
   app.use(proxyRouter);

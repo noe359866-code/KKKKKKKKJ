@@ -67,13 +67,14 @@ class StremioAddonTest {
               "name": "stream",
               "types": ["movie", "series"],
               "idPrefixes": ["tt"]
-            }
+            },
+            {"name": "subtitles", "types": ["movie"]}
           ]
         }
         """.trimIndent()
 
         val manifest = json.decodeFromString(StremioManifest.serializer(), jsonPayload)
-        assertEquals(2, manifest.resources.size)
+        assertEquals(3, manifest.resources.size)
         assertEquals("catalog", manifest.resources[0].name)
         assertTrue(manifest.resources[0].types.isEmpty())
 
@@ -92,6 +93,7 @@ class StremioAddonTest {
 
         assertTrue(addon.supportsResource("catalog", "movie", "tt123"))
         assertTrue(addon.supportsResource("stream", "movie", "tt123"))
+        assertTrue(addon.supportsResource("subtitles", "movie", "tt123"))
         assertFalse(addon.supportsResource("stream", "anime", "tt123"))
         assertFalse(addon.supportsResource("stream", "movie", "custom:123"))
         assertFalse(addon.supportsResource("meta", "movie", "tt123"))
@@ -122,6 +124,10 @@ class StremioAddonTest {
         assertEquals(
             "https://addon.example.com/stream/movie/tt0133093.json",
             StremioUrls.stream("https://addon.example.com", "movie", "tt0133093"),
+        )
+        assertEquals(
+            "https://addon.example.com/subtitles/movie/tt0133093.json",
+            StremioUrls.subtitles("https://addon.example.com", "movie", "tt0133093"),
         )
     }
 
@@ -192,7 +198,7 @@ class StremioAddonTest {
                     path.endsWith("/manifest.json") -> MockResponse()
                         .setHeader("Content-Type", "application/json")
                         .setBody(
-                            """{"id":"test_addon","name":"Test Addon","resources":["catalog","stream"],"types":["movie"],"catalogs":[{"type":"movie","id":"popular","name":"Populares"}]}""",
+                            """{"id":"test_addon","name":"Test Addon","resources":["catalog","stream","subtitles"],"types":["movie"],"catalogs":[{"type":"movie","id":"popular","name":"Populares"}]}""",
                         )
                     path.startsWith("/catalog/movie/popular") -> MockResponse()
                         .setHeader("Content-Type", "application/json")
@@ -203,6 +209,11 @@ class StremioAddonTest {
                         .setHeader("Content-Type", "application/json")
                         .setBody(
                             """{"streams":[{"name":"Stream Addon","title":"1080p","url":"https://stream.invalid/1080.m3u8","provider":"Test Addon"}]}""",
+                        )
+                    path.startsWith("/subtitles/movie/tt0001") -> MockResponse()
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                            """{"subtitles":[{"url":"https://subs.invalid/movie.es.vtt","lang":"es","label":"Español"}]}""",
                         )
                     else -> MockResponse().setResponseCode(404)
                 }
@@ -251,6 +262,9 @@ class StremioAddonTest {
         assertEquals("Local Scraper", streamsResp.streams[0].name)
         assertEquals("Stream Addon", streamsResp.streams[1].name)
         assertEquals("Test Addon", streamsResp.streams[1].provider)
+        assertEquals(1, streamsResp.subtitles.size)
+        assertEquals("Español", streamsResp.subtitles.single().label)
+        assertEquals("Test Addon", streamsResp.subtitles.single().provider)
 
         // Normalización en StreamsRepository
         val normalized = StreamsRepository.normalize(streamsResp)

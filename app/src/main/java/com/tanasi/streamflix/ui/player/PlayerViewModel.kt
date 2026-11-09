@@ -38,8 +38,8 @@ sealed interface PlayerUiState {
 /**
  * Carga las fuentes del título antes de crear el `ExoPlayer`.
  *
- * Se separa del composable para que rotar el móvil (o cambiar de resolución en
- * TV) no vuelva a pedir el array al servidor: el `ViewModel` sobrevive al
+ * Se separa del composable para que un cambio de resolución o densidad en la
+ * TV no vuelva a pedir las fuentes al servidor: el `ViewModel` sobrevive al
  * cambio de configuración.
  *
  * [current] es la fuente de verdad de *qué* se está viendo, no el `Intent`.

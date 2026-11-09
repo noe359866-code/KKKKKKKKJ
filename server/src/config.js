@@ -60,16 +60,6 @@ function envList(name, fallback) {
 
 const HOUR = 60 * 60 * 1000;
 
-/*
- * TTL contract (enforced at boot and again when the cache is written):
- *  - VOD (movies / series / anime): 2h – 6h. Links are stable for longer.
- */
-const TTL_MIN_MS = 2 * HOUR;
-const TTL_MAX_MS = 6 * HOUR;
-
-/* Out of range => throw at boot instead of silently caching stale links. */
-const ttlVodMs = envInt('CACHE_TTL_VOD_HOURS', 6, { min: 2, max: 6 }) * HOUR;
-
 /* -------------------------------------------------------------------------- */
 /* Exported config                                                            */
 /* -------------------------------------------------------------------------- */
@@ -101,7 +91,7 @@ export const config = {
     name: process.env.ADDON_NAME || 'Streamflix Reborn',
     description:
       process.env.ADDON_DESCRIPTION ||
-      'Movies, series and anime aggregated from multiple providers with automatic failover.',
+      'Catalogs and metadata for movies, series and anime from Cinemeta and selected Stremio addons.',
     logo: process.env.ADDON_LOGO || '',
     /* Base URL used to build the public manifest "id"/links preview.
      * Left empty in dev: it is derived from the incoming request headers. */
@@ -109,17 +99,11 @@ export const config = {
     /* Types declared by the manifest. "anime" is a custom type on this addon;
      * Stremio/ExoPlayer clients treat it as an extra row in the catalog. */
     types: envList('ADDON_TYPES', ['movie', 'series', 'anime']),
-    resources: ['stream'],
+    resources: ['catalog', 'meta'],
   },
 
   cache: {
-    /* Hard contract: 2h <= TTL <= 6h. */
-    ttlMinMs: TTL_MIN_MS,
-    ttlMaxMs: TTL_MAX_MS,
-    /* VOD / movies / series / anime. */
-    ttlVodMs,
-    /* Ephemeral cache for negative results (no working source found).
-     * Kept short so a provider outage does not poison the cache for hours. */
+    /* Short fallback for generic negative cache entries. */
     ttlMissMs: envInt('CACHE_TTL_MISS_SECONDS', 120, { min: 5, max: 3600 }) * 1000,
     /* Maximum number of keys before LRU eviction kicks in. */
     maxEntries: envInt('CACHE_MAX_ENTRIES', 5_000, { min: 10, max: 1_000_000 }),
@@ -142,8 +126,7 @@ export const config = {
     ttlMs: envInt('CATALOG_TTL_MINUTES', 30, { min: 1, max: 1440 }) * 60_000,
     /* Searches are user driven and change constantly: cache them briefly. */
     searchTtlMs: envInt('CATALOG_SEARCH_TTL_MINUTES', 5, { min: 1, max: 1440 }) * 60_000,
-    /* Metadata for one title (title + year + episodes) is stable for a day,
-     * and it is what turns an IMDb id into a provider search. */
+    /* Metadata for one title (title + year + episodes) is stable for a day. */
     metaTtlMs: envInt('CATALOG_META_TTL_HOURS', 24, { min: 1, max: 720 }) * HOUR,
     /* Empty/failed upstream responses are cached for a minute, not for 30. */
     missTtlMs: envInt('CATALOG_MISS_SECONDS', 60, { min: 5, max: 3600 }) * 1000,
@@ -160,42 +143,14 @@ export const config = {
     remoteCachePath: process.env.CATALOG_REMOTE_CACHE || path.join(ROOT, '.cache', 'remote-catalogs.json'),
   },
 
-  scrapers: {
-    /* Python interpreter: prefers a virtualenv if SCRAPER_PYTHON is set. */
-    python: process.env.SCRAPER_PYTHON || 'python3',
-    /* Directory that contains the .py scrapers. */
-    dir: process.env.SCRAPER_DIR || path.join(ROOT, 'scrapers'),
-    /* Default hard timeout per scraper process. A hung child process is
-     * SIGKILLed so it can never block the event loop or leak sockets. */
-    timeoutMs: envInt('SCRAPER_TIMEOUT_MS', 15_000, { min: 500, max: 120_000 }),
-    /* Concurrent child processes cap (protects small Android TV boxes
-     * acting as a server, or a cheap VPS). */
-    maxConcurrency: envInt('SCRAPER_MAX_CONCURRENCY', 4, { min: 1, max: 32 }),
-    /* Extra env vars passed to the child (PATH is inherited automatically). */
-    extraEnv: {
-      PYTHONUNBUFFERED: '1',
-      PYTHONIOENCODING: 'utf-8',
-    },
-  },
-
-  streams: {
-    /* Per-provider budget (8 s). A slower script is killed by the bridge and
-     * its slot is filled by the secondary sources that did answer, so one dead
-     * site never delays the playable response. */
-    providerTimeoutMs: envInt('PROVIDER_TIMEOUT_MS', 8_000, { min: 500, max: 60_000 }),
-    /* Give up when this many providers returned at least one stream, so the
-     * response is fast even if the last provider is slow. */
-    minProvidersForFastReturn: envInt('MIN_PROVIDERS_FOR_FAST_RETURN', 2, { min: 1, max: 10 }),
-    /* Once enough providers answered, wait this extra window for the others
-     * so higher-priority sources are not dropped from the failover list. */
-    fastReturnGraceMs: envInt('FAST_RETURN_GRACE_MS', 1_500, { min: 0, max: 10_000 }),
-    /* Placeholder UA/Referer for providers that do not declare their own. */
+  /* Optional generic proxy for media URLs supplied by compatible Stremio addons.
+   * It does not discover or scrape sources itself. */
+  proxy: {
+    timeoutMs: envInt('PROXY_TIMEOUT_MS', 15_000, { min: 500, max: 120_000 }),
     defaultUserAgent:
-      process.env.STREAM_USER_AGENT ||
+      process.env.PROXY_USER_AGENT ||
       'Mozilla/5.0 (Linux; Android 12; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    defaultReferer: process.env.STREAM_REFERER || '',
-    /* If true, streams without a resolvable URL are never returned. */
-    requireUrl: envBool('STREAM_REQUIRE_URL', true),
+    defaultReferer: process.env.PROXY_REFERER || '',
   },
 
   logging: {

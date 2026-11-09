@@ -8,9 +8,9 @@
  * (`pw.ers.netflix-catalog`, el addon que publica las filas de Netflix, Disney+,
  * Prime Video, HBO Max…). Su manifest trae 42 catálogos (`nfx`, `dnp`, `amp`,
  * `hbm`, `hlu`, `pmp`, `pcp`, `atp`, `cru`, …) y sólo el recurso `catalog`: no
- * sirve `/meta`, pero sus metas llevan ids de IMDb (`tt…`), así que la ficha y
- * los episodios los sigue resolviendo Cinemeta y las fuentes las sigue
- * resolviendo nuestro propio `/stream`.
+ * sirve `/meta`, pero sus metas llevan ids de IMDb (`tt…`), así que las fichas
+ * y episodios los resuelve Cinemeta. La reproducción queda en addons instalados
+ * en el cliente; este backend no publica streams.
  *
  * Cómo se publica
  * ---------------

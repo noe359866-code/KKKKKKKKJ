@@ -59,9 +59,13 @@ object Urls {
             .ifBlank { normalized }
     }
 
-    /** `{base}/stream/{type}/{id}.json` — el endpoint que usa Stremio. */
+    /** `{base}/stream/{type}/{id}.json` — endpoint de streams Stremio. */
     fun stream(baseUrl: String, type: String, id: String): String =
         "${normalizeBase(baseUrl)}/stream/${encodeSegment(type)}/${encodeSegment(id)}.json"
+
+    /** `{base}/subtitles/{type}/{id}.json` — endpoint opcional de subtítulos Stremio. */
+    fun subtitles(baseUrl: String, type: String, id: String): String =
+        "${normalizeBase(baseUrl)}/subtitles/${encodeSegment(type)}/${encodeSegment(id)}.json"
 
     fun manifest(baseUrl: String): String = "${normalizeBase(baseUrl)}/manifest.json"
 

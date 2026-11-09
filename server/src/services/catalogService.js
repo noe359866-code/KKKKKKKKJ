@@ -37,7 +37,7 @@ import { createLogger } from '../lib/logger.js';
 
 const log = createLogger('catalogs');
 
-/* Prefijos de caché: permiten invalidar catálogos sin tocar los streams. */
+/* Prefijos de caché para invalidar catálogos y metadatos por separado. */
 const CATALOG_PREFIX = 'catalog:';
 const META_PREFIX = 'meta:';
 
@@ -220,8 +220,8 @@ async function cinemetaMetas(definition, extra, options) {
   const metas = normalizeMetas(rawMetas, { type: definition.source.type });
 
   /* El tipo publicado manda: un anime sigue siendo un catálogo de anime en la
-   * URL, aunque Cinemeta lo haya servido como serie. Se conserva `type` real en
-   * `sourceType` para que el cliente sepa a qué endpoint de stream preguntar. */
+   * URL, aunque Cinemeta lo haya servido como serie. Se conserva `sourceType`
+   * para que los clientes puedan interpretar el tipo original de los metadatos. */
   return metas.map((meta) => ({
     ...meta,
     type: definition.type,
@@ -249,9 +249,9 @@ function publicCatalog(definition) {
 /**
  * Ficha completa de un título.
  *
- * Es la pieza que convierte un id de Cinemeta (`tt0133093`) en algo que los
- * scrapers entienden: título y año. También devuelve la lista de episodios, que
- * es lo que permite pedir `/stream/series/tt0944947:1:2`.
+ * Es la pieza que convierte un id de Cinemeta (`tt0133093`) en metadatos
+ * completos. También devuelve la lista de episodios para clientes compatibles
+ * con el protocolo Stremio; este backend no publica el recurso `stream`.
  *
  * @param {object} request
  * @param {string} request.type - movie|series|anime|tv
@@ -315,32 +315,11 @@ export async function getMeta({ type, id }, options = {}) {
   };
 }
 
-/**
- * Atajo que usa `streamService`: título y año de un id, para poder buscar en
- * los sitios cuando el cliente sólo manda un IMDb id.
- *
- * @param {object} request
- * @param {string} request.type
- * @param {string} request.id
- * @returns {Promise<{ title: string, year: number|null, imdbId: string|null }|null>}
- */
-export async function resolveTitle({ type, id }) {
-  const result = await getMeta({ type, id });
-  if (!result?.meta) return null;
-
-  const meta = result.meta;
-  return {
-    title: meta.name || '',
-    year: Number.isFinite(meta.year) ? meta.year : null,
-    imdbId: meta.imdb_id || (String(meta.id).startsWith('tt') ? meta.id : null),
-  };
-}
-
 /* -------------------------------------------------------------------------- */
 /* Utilidades                                                                 */
 /* -------------------------------------------------------------------------- */
 
-/** Invalida catálogos y fichas (los streams se invalidan por su cuenta). */
+/** Invalida todas las entradas de catálogo y metadatos. */
 export function invalidateCatalogs() {
   let removed = 0;
   for (const key of cache.keys(Infinity)) {
@@ -368,7 +347,6 @@ function elapsedMs(startedAt) {
 export default {
   getCatalog,
   getMeta,
-  resolveTitle,
   catalogCacheKey,
   metaCacheKey,
   invalidateCatalogs,

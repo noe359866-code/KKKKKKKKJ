@@ -234,14 +234,14 @@ test('el registro descarta catálogos inválidos y respeta el orden', () => {
 /* Integración HTTP                                                           */
 /* -------------------------------------------------------------------------- */
 
-test('GET /manifest.json publica catálogos y los recursos catalog/meta/subtitles', async () => {
+test('GET /manifest.json publica catálogos y recursos sólo de catálogo/metadatos', async () => {
   const res = await fetch(`${baseUrl}/manifest.json`);
   const manifest = await res.json();
 
   assert.equal(res.status, 200);
   assert.deepEqual(
     manifest.resources.map((resource) => resource.name),
-    ['stream', 'catalog', 'meta', 'subtitles'],
+    ['catalog', 'meta'],
   );
   assert.ok(manifest.catalogs.length >= 3);
   assert.equal(manifest.catalogs[0].type, 'movie');
@@ -280,7 +280,7 @@ test('el catálogo anime se sirve desde series + genre=Animation y conserva su t
   );
   assert.deepEqual(body.metas.map((meta) => meta.id), ['tt0944947', 'tt0409591']);
   assert.ok(body.metas.every((meta) => meta.type === 'anime'), 'el tipo publicado manda');
-  assert.ok(body.metas.every((meta) => meta.sourceType === 'series'), 'el cliente sabe a qué recurso pedir streams');
+  assert.ok(body.metas.every((meta) => meta.sourceType === 'series'), 'se conserva el tipo original de Cinemeta');
   assert.equal(body.metas.find((meta) => meta.id === 'tt0944947').rating, undefined, '"N/A" no es una nota');
 });
 
@@ -385,7 +385,7 @@ test('GET /catalogs.json da a Android las filas con su forma y su feed', async (
   assert.equal(body.catalogs[0].posterShape, 'poster');
 });
 
-test('invalidateCatalogs limpia catálogos y fichas pero no los streams', async () => {
+test('invalidateCatalogs limpia catálogos y fichas', async () => {
   await fetch(`${baseUrl}/catalog/movie/top.json`);
   const removed = invalidateCatalogs();
 

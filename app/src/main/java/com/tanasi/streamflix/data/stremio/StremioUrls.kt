@@ -44,6 +44,10 @@ object StremioUrls {
     fun stream(baseUrl: String, type: String, id: String): String =
         Urls.stream(baseUrl, type, id)
 
+    /** Endpoint opcional de subtítulos Stremio. */
+    fun subtitles(baseUrl: String, type: String, id: String): String =
+        Urls.subtitles(baseUrl, type, id)
+
     /** Endpoint de meta Stremio. */
     fun meta(baseUrl: String, type: String, id: String): String =
         Urls.meta(baseUrl, type, id)

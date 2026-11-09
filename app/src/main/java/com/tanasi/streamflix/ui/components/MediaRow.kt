@@ -30,7 +30,7 @@ import com.tanasi.streamflix.data.model.RowAspect
 import com.tanasi.streamflix.ui.theme.StreamflixColors
 
 /**
- * Un carrusel del Home (inspiración Netflix).
+ * Un carrusel editorial del Home, optimizado para mando y pantalla de sala.
  *
  * Misma pieza para todas las filas: sólo cambia la proporción de las tarjetas,
  * que la decide la fila (`aspect` en el catálogo), no la pantalla. Así
@@ -42,7 +42,7 @@ import com.tanasi.streamflix.ui.theme.StreamflixColors
  *  - el sangrado lateral es el mismo que el resto de la pantalla para que la
  *    primera tarjeta quede alineada con el título del hero;
  *  - se reserva `contentPadding` vertical para que la tarjeta enfocada
- *    (escala 1.08 + halo) **no** se recorte contra el borde de la fila. El
+ *    (escala 1.05 + halo) **no** se recorte contra el borde de la fila. El
  *    `LazyRow` no recorta a sus hijos: crecen por encima y por debajo sin
  *    empujar al vecino, y ese margen es el que deja ver el halo entero.
  *
@@ -60,6 +60,7 @@ fun MediaRow(
     onEntryClick: (MediaEntry, List<MediaEntry>, String, Int) -> Unit,
     onEntryFocused: (rowId: String, entry: MediaEntry) -> Unit,
     modifier: Modifier = Modifier,
+    onOpenNavigation: (() -> Unit)? = null,
     firstCardFocusRequester: FocusRequester? = null,
     focusUp: FocusRequester? = null,
     restoreIndex: Int? = null,
@@ -136,6 +137,7 @@ fun MediaRow(
                         deviceProfile = deviceProfile,
                         onClick = { onEntryClick(entry, row.items, itemKeys[index], index) },
                         onFocused = onFocus,
+                        onOpenNavigation = if (index == 0) onOpenNavigation else null,
                         focusUp = up,
                         focusRequester = focusRequester,
                     )
@@ -145,6 +147,7 @@ fun MediaRow(
                         deviceProfile = deviceProfile,
                         onClick = { onEntryClick(entry, row.items, itemKeys[index], index) },
                         onFocused = onFocus,
+                        onOpenNavigation = if (index == 0) onOpenNavigation else null,
                         focusUp = up,
                         focusRequester = focusRequester,
                     )

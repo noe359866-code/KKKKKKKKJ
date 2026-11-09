@@ -61,26 +61,23 @@ if (storeFilePath != null && !hasReleaseKeystore) {
 def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '2').toInteger()
 def versionNameValue = resolve(['VERSION_NAME', 'versionName']) ?: '1.1.0'
 
-// AGP no aplica de forma fiable assets.exclude a directorios externos. Generar
-// una carpeta con lista blanca evita empaquetar catalogs.json y sus addons.
+// El APK sólo conserva el manifiesto de runtime vacío; no copia los índices
+// ni el código de resolvers del backend heredado.
 def embeddedAssetsDir = layout.buildDirectory.dir('generated/embeddedAssets')
 def generateEmbeddedAssets = tasks.register('generateEmbeddedAssets', Sync) {
     from(rootProject.file('server/config')) {
         include 'providers.json'
     }
     into embeddedAssetsDir
-    /* El servidor conserva los proveedores de demostración para sus pruebas,
-     * pero el APK no debe llevarlos: se filtra la copia empaquetada. */
+    /* Esta app es sólo un cliente de catálogos/addons. Los resolvers web del
+     * backend no se empaquetan ni se ejecutan en Android; streams provienen de
+     * addons Stremio configurados por el usuario. */
     doLast {
         def packaged = new File(embeddedAssetsDir.get().asFile, 'providers.json')
         if (packaged.exists()) {
             def root = new groovy.json.JsonSlurper().parse(packaged)
-            def all = root.providers ?: []
-            def kept = all.findAll { !String.valueOf(it.id).startsWith('demo-') }
-            if (kept.size() != all.size()) {
-                root.providers = kept
-                packaged.text = groovy.json.JsonOutput.toJson(root)
-            }
+            root.providers = []
+            packaged.text = groovy.json.JsonOutput.toJson(root)
         }
     }
 }
@@ -209,7 +206,7 @@ chaquopy {
     }
     sourceSets {
         getByName('main') {
-            srcDir rootProject.file('server/scrapers')
+            // No se añade server/scrapers: el APK cliente no incluye código de resolvers.
             include '**/*.py'
             // NOVA, la caché y el adaptador HTTP se ejecutan en Kotlin en Android.
             exclude '**/__pycache__/**', 'example_provider.py', 'template_provider.py', 'novahd.py', '_embedded_cache.py', '_android_http.py'
@@ -245,6 +242,21 @@ dependencies {
     implementation libs.kotlinx.serialization.json
     implementation libs.kotlinx.coroutines.android
     implementation libs.coil.compose
+    implementation libs.nanohttpd
+    implementation libs.zxing.core
+
+    /* Nuvio JavaScript provider runtime and its bounded HTML/crypto host APIs. */
+    implementation libs.quickjs.kt
+    implementation(libs.cloudstream.library) {
+        exclude group: 'org.mozilla', module: 'rhino'
+        exclude group: 'com.github.AmarullisVFX', module: 'newpipeextractor'
+        exclude group: 'com.github.AmaryllisVFX', module: 'newpipeextractor'
+        exclude group: 'com.github.AmaryllisVFX.newpipeextractor'
+        exclude group: 'info.debatty', module: 'java-string-similarity'
+    }
+    implementation libs.jsoup
+    implementation libs.gson
+    implementation libs.crypto.js
 
     androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.junit

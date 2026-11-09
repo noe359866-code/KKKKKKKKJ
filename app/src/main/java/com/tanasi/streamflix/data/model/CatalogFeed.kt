@@ -1,7 +1,19 @@
 package com.tanasi.streamflix.data.model
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.nullable
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * DTOs compartidos por el motor Python embebido y el addon Stremio opcional.
@@ -80,6 +92,22 @@ data class MetaResponse(
     @SerialName("meta") val meta: RemoteMeta? = null,
 )
 
+/** TMDB IDs arrive as JSON strings in Stremio sources and numbers in some embedded metadata. */
+object StringOrNumberSerializer : KSerializer<String?> {
+    override val descriptor: SerialDescriptor = String.serializer().nullable.descriptor
+
+    override fun deserialize(decoder: Decoder): String? {
+        if (decoder !is JsonDecoder) return decoder.decodeNullableSerializableValue(String.serializer())
+        val element = decoder.decodeJsonElement()
+        return if (element == JsonNull) null else (element as? JsonPrimitive)?.content
+    }
+
+    override fun serialize(encoder: Encoder, value: String?) {
+        if (encoder is JsonEncoder) encoder.encodeJsonElement(value?.let { JsonPrimitive(it) } ?: JsonNull)
+        else encoder.encodeNullableSerializableValue(String.serializer(), value)
+    }
+}
+
 /**
  * Una meta Stremio ya normalizada por el servidor.
  *
@@ -107,6 +135,9 @@ data class RemoteMeta(
      */
     @SerialName("sourceType") val sourceType: String? = null,
     @SerialName("imdb_id") val imdbId: String? = null,
+    /** TMDB ID when the content source exposes it (needed by Nuvio provider APIs). */
+    @Serializable(with = StringOrNumberSerializer::class)
+    @SerialName("tmdb_id") val tmdbId: String? = null,
     /**
      * Nombre del catálogo de origen cuando la meta viene de un addon de
      * terceros (`"Streaming Catalogs"`). El servidor lo añade sólo en esas

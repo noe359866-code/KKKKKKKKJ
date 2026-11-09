@@ -26,6 +26,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -52,16 +57,16 @@ import com.tanasi.streamflix.ui.theme.tvFocusGlow
  * │ ▓▓▓▓▓░░░░░░░░░░░ │  ← progreso (sólo "Continuar viendo")
  * │ PelisPlus        │  ← proveedor / servidor previsto
  * └──────────────────┘
- *   Título            ← aparece al enfocar (TV) o siempre (móvil)
+ *   Título            ← aparece al enfocar con el mando
  *   T1 E3 · 62 %
  * ```
  *
- * En TV la tarjeta enfocada escala **1.08x**, se eleva y dibuja el anillo neón;
- * en móvil se queda quieta y responde con ripple.
+ * La tarjeta enfocada escala **1.05x**, se eleva y dibuja el anillo de foco.
  *
  * @param onFocused se llama al entrar en foco; el Home lo usa para cambiar el
- *   backdrop del hero (Apple TV+). Sólo se dispara al *entrar*, no en cada
- *   recomposición.
+ *   backdrop del hero. Sólo se dispara al *entrar*, no en cada recomposición.
+ * @param onOpenNavigation abre el menú global al pulsar LEFT sobre la primera
+ *   tarjeta de una fila; null conserva el comportamiento horizontal normal.
  * @param focusUp petición de foco al pulsar ARRIBA: la usa la primera fila para
  *   saltar a los botones del hero.
  */
@@ -72,6 +77,7 @@ fun PosterCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onFocused: (MediaEntry) -> Unit = {},
+    onOpenNavigation: (() -> Unit)? = null,
     focusUp: FocusRequester? = null,
     focusRequester: FocusRequester? = null,
 ) {
@@ -81,6 +87,7 @@ fun PosterCard(
         onClick = onClick,
         modifier = modifier,
         onFocused = onFocused,
+        onOpenNavigation = onOpenNavigation,
         focusUp = focusUp,
         focusRequester = focusRequester,
         widthDp = deviceProfile.posterWidthDp,
@@ -103,6 +110,7 @@ fun LandscapeCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onFocused: (MediaEntry) -> Unit = {},
+    onOpenNavigation: (() -> Unit)? = null,
     focusUp: FocusRequester? = null,
     focusRequester: FocusRequester? = null,
 ) {
@@ -112,6 +120,7 @@ fun LandscapeCard(
         onClick = onClick,
         modifier = modifier,
         onFocused = onFocused,
+        onOpenNavigation = onOpenNavigation,
         focusUp = focusUp,
         focusRequester = focusRequester,
         widthDp = deviceProfile.landscapeWidthDp,
@@ -138,6 +147,7 @@ private fun ContentCard(
     onClick: () -> Unit,
     modifier: Modifier,
     onFocused: (MediaEntry) -> Unit,
+    onOpenNavigation: (() -> Unit)?,
     focusUp: FocusRequester?,
     focusRequester: FocusRequester?,
     widthDp: Int,
@@ -145,16 +155,14 @@ private fun ContentCard(
     artwork: @Composable () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val isTv = deviceProfile.requiresDpadFocus
-
     val focusProgress by animateFloatAsState(
         targetValue = if (focused) 1f else 0f,
         animationSpec = tween(durationMillis = 140),
         label = "cardFocus",
     )
-    /* tvOS crece poco (5 %) y levanta el borde: la foto no debe bailar. */
+    /* El foco crece poco (5 %) y levanta el borde: la foto no debe bailar. */
     val scale by animateFloatAsState(
-        targetValue = if (isTv && focused) 1.05f else 1f,
+        targetValue = if (focused) 1.05f else 1f,
         animationSpec = tween(durationMillis = 140),
         label = "cardScale",
     )
@@ -166,6 +174,20 @@ private fun ContentCard(
             .width(widthDp.dp)
             /* El foco se pide antes que el clic para envolver al nodo enfocable. */
             .then(if (focusUp != null) Modifier.focusProperties { up = focusUp } else Modifier)
+            .then(
+                if (onOpenNavigation != null) {
+                    Modifier.onPreviewKeyEvent { event ->
+                        if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionLeft) {
+                            onOpenNavigation()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            )
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { state ->
                 val nowFocused = state.isFocused
@@ -182,7 +204,7 @@ private fun ContentCard(
                     scaleX = scale
                     scaleY = scale
                     /* Elevación real: la tarjeta enfocada "flota" sobre la fila. */
-                    shadowElevation = if (isTv && focused) 12.dp.toPx() else 0f
+                    shadowElevation = if (focused) 12.dp.toPx() else 0f
                     this.shape = shape
                 }
                 .tvFocusGlow(progress = focusProgress, cornerRadius = Dimens.cardCornerRadius)
@@ -231,7 +253,7 @@ private fun ContentCard(
         }
 
         /* Título bajo la tarjeta: siempre legible, pero atenuado hasta que la
-         * tarjeta recibe el foco (tvOS). Que aparezca de la nada obligaba a
+         * tarjeta recibe el foco. Que aparezca de la nada obligaba a
          * mover el mando para saber qué era cada cosa. */
         FocusMarqueeText(
             text = entry.title,
@@ -240,7 +262,7 @@ private fun ContentCard(
             color = StreamflixColors.OnSurface,
             modifier = Modifier
                 .padding(top = 8.dp, start = 2.dp, end = 2.dp)
-                .graphicsLayer { alpha = if (isTv) 0.80f + 0.20f * focusProgress else 1f },
+                .graphicsLayer { alpha = 0.80f + 0.20f * focusProgress },
         )
         Text(
             text = entry.subtitle?.takeIf { it.isNotBlank() }
@@ -252,7 +274,7 @@ private fun ContentCard(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .padding(start = 2.dp, end = 2.dp)
-                .graphicsLayer { alpha = if (isTv) 0.85f + 0.15f * focusProgress else 1f },
+                .graphicsLayer { alpha = 0.85f + 0.15f * focusProgress },
         )
     }
 }

@@ -104,11 +104,11 @@ proxyRouter.get(
       return res.status(400).json({ err: 'invalid or blocked url', code: 'BAD_REQUEST' });
     }
 
-    const referer = typeof req.query.referer === 'string' ? req.query.referer : config.streams.defaultReferer;
-    const userAgent = typeof req.query.ua === 'string' ? req.query.ua : config.streams.defaultUserAgent;
+    const referer = typeof req.query.referer === 'string' ? req.query.referer : config.proxy.defaultReferer;
+    const userAgent = typeof req.query.ua === 'string' ? req.query.ua : config.proxy.defaultUserAgent;
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), config.streams.providerTimeoutMs);
+    const timer = setTimeout(() => controller.abort(), config.proxy.timeoutMs);
     /* res 'close' fires when the client disconnects mid-download; req 'close'
      * would fire as soon as the (empty) request body is done. */
     res.on('close', () => {

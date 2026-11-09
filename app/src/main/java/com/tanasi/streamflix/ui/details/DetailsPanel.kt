@@ -80,7 +80,8 @@ import com.tanasi.streamflix.ui.theme.StreamflixColors
 import com.tanasi.streamflix.ui.theme.tvFocusGlow
 
 /**
- * Ficha del título, con la página de película/serie de Apple TV.
+ * Ficha inmersiva inspirada en páginas de streaming: arte editorial, datos
+ * escaneables, acción principal y temporadas/episodios cuando existan.
  *
  * ```
  * ┌──────────────────────────────────────────────────────────────────────┐
@@ -260,10 +261,27 @@ private fun DetailsHero(
                 ),
         )
 
+        // TV ficha inspirada en páginas de streaming: gran arte de fondo,
+        // póster vertical y datos del título en una composición editorial.
+        if (isTv && !entry.poster.isNullOrBlank()) {
+            AsyncImage(
+                model = entry.poster,
+                contentDescription = "Póster de ${entry.title}",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 48.dp, top = 24.dp)
+                    .width((height * 0.40f).coerceIn(150.dp, 210.dp))
+                    .aspectRatio(2f / 3f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(16.dp)),
+            )
+        }
+
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .fillMaxWidth()
+                .fillMaxWidth(if (isTv && !entry.poster.isNullOrBlank()) 0.70f else 1f)
                 .padding(
                     start = if (isTv) 48.dp else 20.dp,
                     end = if (isTv) 48.dp else 20.dp,
@@ -285,9 +303,24 @@ private fun DetailsHero(
             Spacer(Modifier.height(if (isTv) 14.dp else 8.dp))
             DetailTitle(title = entry.title, logoUrl = logoUrl)
 
-            val meta = entry.metaLine.takeIf { it.isNotBlank() }
+            val genres = entry.genres.filter { it.isNotBlank() }.distinct().take(4)
+            if (genres.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    genres.forEach { genre -> GlassBadge(text = genre) }
+                }
+            }
+
+            val meta = buildList {
+                entry.year?.let { add(it.toString()) }
+                entry.runtime?.takeIf { it.isNotBlank() }?.let { add(it) }
+                if (isEmpty()) entry.subtitle?.takeIf { it.isNotBlank() }?.let { add(it) }
+            }.joinToString(" · ").takeIf { it.isNotBlank() }
             if (meta != null) {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(7.dp))
                 Text(
                     text = meta,
                     style = MaterialTheme.typography.labelLarge,
@@ -422,6 +455,12 @@ private fun EpisodesPanel(
             )
             Spacer(Modifier.weight(1f))
             (state as? EpisodesUiState.Ready)?.let { ready ->
+                Text(
+                    text = "${ready.episodes.size} episodios",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = StreamflixColors.OnSurfaceMuted,
+                )
+                Spacer(Modifier.width(10.dp))
                 if (ready.seasons.size > 1) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(ready.seasons, key = { season -> "season:${season.season}" }) { season ->

@@ -35,8 +35,8 @@ async function printOnce() {
       `  hits ${cache.hits} · stale ${cache.staleHits} · misses ${cache.misses} · coalesced ${cache.coalesced}`,
       `  evictions ${cache.evictions} · expired ${cache.expired} · errors ${cache.errors}`,
       `  in flight     : ${cache.inflight}`,
-      `  TTL live/VOD  : ${health.addon.liveTtlHours}h / ${health.addon.vodTtlHours}h`,
-      `  providers     : ${health.providers.enabled.map((p) => `${p.id}(${p.priority})`).join(', ') || 'none'}`,
+      `  catalogs      : ${health.catalogs.count} published`,
+      `  resources     : ${health.addon.resources.join(', ')}`,
       '',
     ];
     console.log(lines.join('\n'));
