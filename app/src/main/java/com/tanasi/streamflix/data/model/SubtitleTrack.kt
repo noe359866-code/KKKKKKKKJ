@@ -10,10 +10,10 @@ import kotlinx.serialization.Serializable
  * `{ id, url, lang, label }`. Aquí se le añade lo que Media3 necesita para
  * cargarla como pista de texto: el MIME.
  *
- * Los subtítulos viajan **en la misma respuesta que las fuentes** (campo extra
- * `subtitles`), así que abrir un título sigue siendo una sola petición y las
- * pistas están listas antes de crear el `MediaItem`. Cargarlas después
- * obligaría a reconstruir la fuente y el vídeo volvería a empezar.
+ * El motor local puede devolverlos en la misma respuesta de streams; addons
+ * Stremio también pueden publicarlos en su recurso `subtitles`, consultado en
+ * paralelo al cargar las fuentes. Ambos resultados se combinan antes de crear
+ * el `MediaItem`, sin reiniciar el vídeo.
  *
  * @property url  `.vtt`, `.srt`, `.ass` o `.ttml` por HTTP(S).
  * @property lang BCP-47 (`es`, `es-419`, `en`); vacío si el proveedor no lo dice.
@@ -118,6 +118,11 @@ data class SubtitleTrack(
  * DTO del protocolo Stremio. `label` es opcional en el estándar (algunos
  * addons sólo mandan `lang`), por eso se cae al nombre del idioma.
  */
+@Serializable
+data class SubtitlesResponse(
+    @SerialName("subtitles") val subtitles: List<SubtitleDto> = emptyList(),
+)
+
 @Serializable
 data class SubtitleDto(
     @SerialName("id") val id: String = "",

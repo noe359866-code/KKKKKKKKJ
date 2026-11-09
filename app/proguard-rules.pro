@@ -86,6 +86,16 @@
 -dontwarn org.openjsse.**
 
 # ---------------------------------------------------------------------------
+# ABI pública para extensiones Cloudstream cargadas dinámicamente
+# ---------------------------------------------------------------------------
+# El bytecode .cs3 se compila contra nombres JVM de Cloudstream y se carga después
+# del build. R8 no puede ver esas referencias al optimizar el APK, por lo que se
+# preserva el API del host y los stubs app-only con sus nombres y miembros.
+-keep class com.lagradost.cloudstream3.** { *; }
+-keep class com.lagradost.api.** { *; }
+-keep class com.lagradost.cloudstream3.network.CloudflareKillerKt { *; }
+
+# ---------------------------------------------------------------------------
 # Componentes del manifest
 # ---------------------------------------------------------------------------
 # El framework instancia estas clases **por nombre** y llama al constructor sin

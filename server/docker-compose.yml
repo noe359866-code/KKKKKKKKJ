@@ -14,7 +14,6 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 7000
-      SCRAPER_DIR: /app/scrapers
     healthcheck:
       test:
         - CMD

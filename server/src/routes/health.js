@@ -1,27 +1,18 @@
-/**
- * routes/health.js
- * ---------------------------------------------------------------------------
- * GET /health  (alias /healthz)
- *
- * Liveness/readiness probe + live observability for the cache. Exposes no
- * secrets and no stream URLs, only counters and configuration that is safe to
- * show publicly.
- */
+/** Liveness/readiness probe plus safe catalog/cache diagnostics. */
 
 import { Router } from 'express';
 import config from '../config.js';
 import { cache } from '../cache/TtlCache.js';
-import { getProvidersMeta, getProviders } from '../providers/index.js';
-import { ttlPolicy } from '../services/streamService.js';
 import { getCatalogs } from '../catalogs/registry.js';
 
 export const healthRouter = Router();
 
 function healthPayload() {
   const memory = process.memoryUsage();
+  const catalogs = getCatalogs();
   return {
     status: 'ok',
-    service: 'streamflix-stremio-addon',
+    service: 'streamflix-catalog-addon',
     version: config.addon.version,
     env: config.env,
     uptimeSeconds: Math.round(process.uptime()),
@@ -30,11 +21,10 @@ function healthPayload() {
       id: config.addon.id,
       types: config.addon.types,
       resources: config.addon.resources,
-      liveTtlHours: Number((ttlPolicy().liveMs / 3_600_000).toFixed(2)),
-      vodTtlHours: Number((ttlPolicy().vodMs / 3_600_000).toFixed(2)),
     },
     catalogs: {
-      published: getCatalogs().map((catalog) => ({
+      count: catalogs.length,
+      published: catalogs.map((catalog) => ({
         type: catalog.type,
         id: catalog.id,
         name: catalog.name,
@@ -44,16 +34,6 @@ function healthPayload() {
       cinemetaBase: config.catalogs.cinemetaBase,
     },
     cache: cache.stats(),
-    providers: {
-      ...getProvidersMeta(),
-      enabled: getProviders().map((provider) => ({
-        id: provider.id,
-        label: provider.label,
-        priority: provider.priority,
-        kind: provider.kind,
-        script: provider.script,
-      })),
-    },
     memory: {
       rssMb: Number((memory.rss / 1024 / 1024).toFixed(1)),
       heapUsedMb: Number((memory.heapUsed / 1024 / 1024).toFixed(1)),

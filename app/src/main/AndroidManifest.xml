@@ -4,6 +4,7 @@
     <!-- The addon (and the media CDNs) are reached over the network. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- Instalación de actualizaciones autónomas del APK sin tienda. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -44,8 +45,8 @@
 
         <!--
           Single activity for the catalogue. `configChanges` avoids a full
-          recomposition (and a re-fetch) when a TV box switches resolution or a
-          phone rotates; the UI is already responsive.
+          recreation and redundant catalogue fetch when a TV box changes display
+          configuration; Compose recomputes the layout from the new dimensions.
         -->
         <activity
             android:name=".MainActivity"

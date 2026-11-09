@@ -78,8 +78,8 @@
       <header>
         <div class="logo">🎬</div>
         <div>
-          <h1>Streamflix Reborn · Stremio Addon</h1>
-          <p class="sub">API ligera bajo el protocolo oficial de Stremio Addons</p>
+          <h1>Streamflix · Catálogos Stremio</h1>
+          <p class="sub">Catálogos y metadatos; no resuelve ni publica fuentes de reproducción.</p>
         </div>
         <span class="badge" id="status"><span class="dot"></span> comprobando…</span>
       </header>
@@ -88,8 +88,8 @@
         <div class="card">
           <h2>Manifest URL</h2>
           <div class="value" id="manifest-url">/manifest.json</div>
-          <div class="hint">Añade esta URL en Stremio → Addons → Instalar desde URL.</div>
-          <a class="install" id="install-link" href="#">Instalar en Stremio</a>
+          <div class="hint">Añade esta URL en Stremio o úsala como backend de catálogos.</div>
+          <a class="install" id="install-link" href="#">Abrir en Stremio</a>
         </div>
 
         <div class="card">
@@ -98,28 +98,27 @@
           <div class="hint">hit rate</div>
           <div class="row"><span>entradas</span><span id="cache-size">—</span></div>
           <div class="row"><span>hits / misses</span><span id="cache-counts">—</span></div>
-          <div class="row"><span>TTL live / VOD</span><span id="cache-ttl">—</span></div>
+          <div class="row"><span>catálogos publicados</span><span id="catalog-count">—</span></div>
         </div>
 
         <div class="card">
           <h2>Tipos soportados</h2>
           <div class="row"><span>contenido</span><span id="types">—</span></div>
           <div class="row"><span>catálogos</span><span id="catalogs">—</span></div>
-          <div class="row"><span>proveedores</span><span id="providers">—</span></div>
+          <div class="row"><span>recursos</span><span id="resources">—</span></div>
           <div class="row"><span>uptime</span><span id="uptime">—</span></div>
         </div>
       </div>
 
       <div class="card" style="margin-top: 16px">
-        <h2>Prueba rápida</h2>
-        <div class="hint">Endpoint de streams (devuelve las fuentes ordenadas por prioridad para el failover de ExoPlayer):</div>
-        <div class="snippet" id="snippet">curl -s "$BASE/stream/tv/demo-live.json" | jq</div>
-        <div class="snippet" id="snippet-catalog">curl -s "$BASE/catalog/tv/live.json" | jq '.metas[].name'</div>
+        <h2>Comprobar catálogos</h2>
+        <div class="hint">El backend sólo responde catálogo y metadatos; las fuentes se obtienen de addons Stremio configurados en Streamflix.</div>
+        <div class="snippet" id="snippet-catalog">curl -s "$BASE/catalog/movie/top.json" | jq '.metas[].name'</div>
         <div class="hint" id="last-result">—</div>
       </div>
 
       <footer>
-        <span class="warn">Uso educativo.</span> Este servidor no aloja contenido: agrega fuentes públicas de terceros.
+        <span class="warn">Uso informativo.</span> Este servidor no aloja contenido: agrega catálogos y metadatos de terceros.
         Cada cliente es responsable de cumplir las leyes de su jurisdicción.
       </footer>
     </div>
@@ -130,8 +129,7 @@
 
       $('manifest-url').textContent = `${base}/manifest.json`;
       $('install-link').href = `stremio://${base.replace(/^https?:\/\//, '')}/manifest.json`;
-      $('snippet').textContent = `curl -s "${base}/stream/tv/demo-live.json" | jq`;
-      $('snippet-catalog').textContent = `curl -s "${base}/catalog/tv/live.json" | jq '.metas[].name'`;
+      $('snippet-catalog').textContent = `curl -s "${base}/catalog/movie/top.json" | jq '.metas[].name'`;
 
       async function load() {
         try {
@@ -149,13 +147,13 @@
           $('hit-rate').textContent = `${(health.cache.hitRate * 100).toFixed(1)}%`;
           $('cache-size').textContent = health.cache.size;
           $('cache-counts').textContent = `${health.cache.hits} / ${health.cache.misses}`;
-          $('cache-ttl').textContent = `${health.addon.liveTtlHours}h / ${health.addon.vodTtlHours}h`;
+          $('catalog-count').textContent = health.catalogs.count;
           $('types').textContent = manifest.types.join(', ');
+          $('resources').textContent = manifest.resources.map((resource) => resource.name).join(', ');
           /* Filas publicadas (config/catalogs.json → manifest.catalogs). */
           $('catalogs').textContent = (manifest.catalogs || []).length
             ? manifest.catalogs.map((catalog) => `${catalog.type}/${catalog.id}`).join(', ')
             : '—';
-          $('providers').textContent = health.providers.enabled.length;
           $('uptime').textContent = `${Math.floor(health.uptimeSeconds / 60)}m`;
         } catch (error) {
           $('status').innerHTML = '<span class="dot"></span> offline';
@@ -168,14 +166,11 @@
       async function probe() {
         const started = performance.now();
         try {
-          const res = await fetch('/stream/tv/demo-live.json');
+          const res = await fetch('/catalog/movie/top.json');
           const data = await res.json();
           const ms = Math.round(performance.now() - started);
           const cache = res.headers.get('x-cache') || '?';
-          const first = data.streams?.[0];
-          $('last-result').innerHTML = first
-            ? `Primera fuente: <code>${first.name}</code> · ${cache} · ${ms} ms · ${data.streams.length} fuentes`
-            : `Sin fuentes · ${cache} · ${ms} ms`;
+          $('last-result').textContent = `${data.metas?.length || 0} títulos · ${cache} · ${ms} ms`;
         } catch (error) {
           $('last-result').textContent = `Error: ${error.message}`;
         }

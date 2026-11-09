@@ -3,12 +3,20 @@ package com.tanasi.streamflix.di
 import android.content.Context
 import com.tanasi.streamflix.data.ContentClient
 import com.tanasi.streamflix.data.RoutingContentClient
+import com.tanasi.streamflix.data.extension.nuvio.NuvioPluginEngine
+import com.tanasi.streamflix.data.extension.cloudstream.CloudstreamPluginEngine
 import com.tanasi.streamflix.data.local.ChaquopyRuntime
 import com.tanasi.streamflix.data.local.ProfileStore
 import com.tanasi.streamflix.data.local.EmbeddedContentClient
 import com.tanasi.streamflix.data.local.SearchHistoryStore
 import com.tanasi.streamflix.data.local.WatchProgressStore
 import com.tanasi.streamflix.data.remote.AddonClient
+import com.tanasi.streamflix.data.remote.ExternalExtensionPackageInstaller
+import com.tanasi.streamflix.data.remote.ExternalExtensionPackageManager
+import com.tanasi.streamflix.data.remote.FileExtensionPackageStorage
+import com.tanasi.streamflix.data.remote.SharedPreferencesExternalExtensionPackageManagerStorage
+import com.tanasi.streamflix.data.remote.ExternalExtensionRepositoryManager
+import com.tanasi.streamflix.data.remote.SharedPreferencesExtensionRepositoryStorage
 import com.tanasi.streamflix.data.repo.CatalogRepository
 import com.tanasi.streamflix.data.repo.SkipSegmentsRepository
 import com.tanasi.streamflix.data.repo.StreamsRepository
@@ -37,6 +45,12 @@ object ServiceLocator {
 
     @Volatile
     private var stremioClientInstance: StremioAddonClient? = null
+
+    @Volatile
+    private var extensionRepositoryManagerInstance: ExternalExtensionRepositoryManager? = null
+
+    @Volatile
+    private var extensionPackageManagerInstance: ExternalExtensionPackageManager? = null
 
     @Volatile
     private var addonManagerInstance: StremioAddonManager? = null
@@ -82,6 +96,25 @@ object ServiceLocator {
                 .also { stremioClientInstance = it }
         }
 
+    fun extensionRepositoryManager(context: Context): ExternalExtensionRepositoryManager =
+        extensionRepositoryManagerInstance ?: synchronized(this) {
+            extensionRepositoryManagerInstance ?: ExternalExtensionRepositoryManager(
+                storage = SharedPreferencesExtensionRepositoryStorage(context),
+            ).also { extensionRepositoryManagerInstance = it }
+        }
+
+    fun extensionPackageManager(context: Context): ExternalExtensionPackageManager =
+        extensionPackageManagerInstance ?: synchronized(this) {
+            extensionPackageManagerInstance ?: ExternalExtensionPackageManager(
+                storage = SharedPreferencesExternalExtensionPackageManagerStorage(context),
+                installer = ExternalExtensionPackageInstaller(
+                    storage = FileExtensionPackageStorage(context),
+                ),
+                packageRoot = java.io.File(context.filesDir, "extension_packages"),
+                json = json,
+            ).also { extensionPackageManagerInstance = it }
+        }
+
     fun stremioAddonManager(context: Context): StremioAddonManager =
         addonManagerInstance ?: synchronized(this) {
             addonManagerInstance ?: StremioAddonManager(
@@ -99,6 +132,9 @@ object ServiceLocator {
                 remote = addonClient(),
                 addonManager = stremioAddonManager(context),
                 stremioClient = stremioAddonClient(),
+                extensionPackageManager = extensionPackageManager(context),
+                nuvioPluginEngine = NuvioPluginEngine(),
+                cloudstreamPluginEngine = CloudstreamPluginEngine(context.applicationContext),
             ).also { contentInstance = it }
         }
 
@@ -156,6 +192,7 @@ object ServiceLocator {
             settingsInstance = null
             addonManagerInstance = null
             stremioClientInstance = null
+            extensionRepositoryManagerInstance = null
             profileStoreInstance = null
             progressStoreInstance = null
             searchHistoryInstance = null

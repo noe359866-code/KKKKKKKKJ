@@ -7,6 +7,8 @@ import coil.ImageLoaderFactory
 import com.tanasi.streamflix.core.DeviceDetector
 import com.tanasi.streamflix.core.DeviceProfile
 import com.tanasi.streamflix.di.ServiceLocator
+import com.lagradost.cloudstream3.AcraApplication
+import com.lagradost.cloudstream3.CommonActivity
 import com.tanasi.streamflix.util.AppLog
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -30,6 +32,27 @@ class StreamflixApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        AcraApplication.context = this
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) {
+                AcraApplication.setActivity(activity)
+                CommonActivity.activity = activity
+            }
+            override fun onActivityResumed(activity: android.app.Activity) {
+                AcraApplication.setActivity(activity)
+                CommonActivity.activity = activity
+            }
+            override fun onActivityDestroyed(activity: android.app.Activity) {
+                if (AcraApplication.getActivity() === activity) {
+                    AcraApplication.setActivity(null)
+                    CommonActivity.activity = null
+                }
+            }
+            override fun onActivityStarted(activity: android.app.Activity) = Unit
+            override fun onActivityPaused(activity: android.app.Activity) = Unit
+            override fun onActivityStopped(activity: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) = Unit
+        })
         deviceProfile = DeviceDetector.detect(this)
         /* Toca el contenedor para que el cliente HTTP se cree con la app ya
          * arrancada y no en el primer frame del Home. */

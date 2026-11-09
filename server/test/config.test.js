@@ -1,59 +1,21 @@
-/**
- * test/config.test.js
- * ---------------------------------------------------------------------------
- * Guards the two numbers the whole addon is tuned around:
- *
- *   - per-provider budget: 8 s (a slower scraper is killed and the secondary
- *     sources answer instead);
- *   - cache TTL: VOD 2 h – 6 h, and an out-of-range
- *     override must fail at boot instead of silently caching stale .m3u8 links.
- *
- * The boot checks run in a child Node process because `config.js` validates the
- * environment when it is first imported.
- */
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import path from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-
-const HOUR = 60 * 60 * 1000;
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SERVER_DIR = path.resolve(__dirname, '..');
 
 process.env.LOG_LEVEL = 'error';
-
 const { default: config } = await import('../src/config.js');
-const { ttlFor } = await import('../src/services/streamService.js');
 
-/** Boots `config.js` in a child process with a given environment. */
-function bootWith(env) {
-  return spawnSync(
-    process.execPath,
-    ['--input-type=module', '-e', "await import('./src/config.js');"],
-    {
-      cwd: SERVER_DIR,
-      env: { ...process.env, ...env },
-      encoding: 'utf8',
-      timeout: 20_000,
-    },
-  );
-}
-
-test('el presupuesto por proveedor es de 8 segundos', () => {
-  assert.equal(config.streams.providerTimeoutMs, 8_000);
-  assert.ok(config.streams.providerTimeoutMs < config.scrapers.timeoutMs,
-    'el presupuesto del proveedor corta antes que el kill de seguridad del puente');
+test('backend declares catalog and metadata resources only', () => {
+  assert.deepEqual(config.addon.resources, ['catalog', 'meta']);
+  assert.equal('scrapers' in config, false);
+  assert.equal('streams' in config, false);
 });
 
-test('el TTL de películas, series y anime se queda en la ventana de 2 a 6 horas', () => {
-  const vod = ttlFor(false);
-
-  assert.ok(vod >= 2 * HOUR && vod <= 6 * HOUR, `vod entre 2h y 6h (es ${vod})`);
+test('catalog cache windows are configured independently', () => {
+  assert.ok(config.catalogs.ttlMs > config.catalogs.searchTtlMs);
+  assert.ok(config.catalogs.metaTtlMs > config.catalogs.ttlMs);
 });
 
-test('los tipos de contenido y los recursos del manifest son los esperados', () => {
-  assert.deepEqual([...config.addon.types].sort(), ['anime', 'movie', 'series']);
-  assert.deepEqual(config.addon.resources, ['stream']);
+test('optional media proxy has its own timeout and defaults', () => {
+  assert.equal(config.proxy.timeoutMs, 15_000);
+  assert.ok(config.proxy.defaultUserAgent.includes('Android TV'));
 });

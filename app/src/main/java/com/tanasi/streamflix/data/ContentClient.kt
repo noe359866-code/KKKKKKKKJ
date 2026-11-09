@@ -4,6 +4,10 @@ import com.tanasi.streamflix.data.model.CatalogDescriptor
 import com.tanasi.streamflix.data.model.RemoteCatalogResponse
 import com.tanasi.streamflix.data.model.RemoteMeta
 import com.tanasi.streamflix.data.model.StreamsResponse
+import com.tanasi.streamflix.data.extension.nuvio.NuvioPlaybackContext
+import com.tanasi.streamflix.data.extension.nuvio.NuvioPluginEngine
+import com.tanasi.streamflix.data.extension.cloudstream.CloudstreamPluginEngine
+import com.tanasi.streamflix.data.remote.ExternalExtensionPackageManager
 import com.tanasi.streamflix.data.stremio.StremioAddonClient
 import com.tanasi.streamflix.data.stremio.StremioAddonManager
 import com.tanasi.streamflix.util.AddonSettings
@@ -24,6 +28,7 @@ interface ContentClient {
     ): RemoteCatalogResponse?
     suspend fun meta(baseUrl: String, type: String, id: String): RemoteMeta?
     suspend fun streams(baseUrl: String, type: String, id: String): StreamsResponse
+    fun hasIndependentStreams(): Boolean = false
 }
 
 /**
@@ -36,8 +41,15 @@ class RoutingContentClient(
     private val remote: ContentClient,
     private val addonManager: StremioAddonManager? = null,
     private val stremioClient: StremioAddonClient? = null,
+    private val extensionPackageManager: ExternalExtensionPackageManager? = null,
+    private val nuvioPluginEngine: NuvioPluginEngine? = null,
+    private val cloudstreamPluginEngine: CloudstreamPluginEngine? = null,
 ) : ContentClient {
     private fun current(): ContentClient = if (settings.autonomous) embedded else remote
+
+    override fun hasIndependentStreams(): Boolean =
+        addonManager?.getEnabledAddons()?.isNotEmpty() == true ||
+            extensionPackageManager?.installed?.value?.any { it.enabled } == true
 
     override suspend fun catalogs(baseUrl: String): List<CatalogDescriptor> {
         /* Un motor caído no debe dejar el Home vacío si hay addons de Stremio
@@ -91,7 +103,13 @@ class RoutingContentClient(
     }
 
     override suspend fun meta(baseUrl: String, type: String, id: String): RemoteMeta? {
-        val baseMeta = current().meta(baseUrl, type, id)
+        val baseMeta = try {
+            current().meta(baseUrl, type, id)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
         if (baseMeta != null && (baseMeta.videos.isNotEmpty() || type == "movie")) {
             return baseMeta
         }
@@ -113,14 +131,24 @@ class RoutingContentClient(
     }
 
     override suspend fun streams(baseUrl: String, type: String, id: String): StreamsResponse = coroutineScope {
-        val addons = addonManager?.getEnabledAddons().orEmpty().filter {
-            it.supportsResource("stream", type, id)
-        }
+        val addons = addonManager?.getEnabledAddons().orEmpty()
+        val nuvioScripts = extensionPackageManager?.enabledNuvioScripts().orEmpty()
+        val cloudstreamPackages = extensionPackageManager?.enabledCloudstreamPackages().orEmpty()
+        cloudstreamPluginEngine?.retainEnabledPackages(cloudstreamPackages)
+        val hasStremio = stremioClient != null && addons.isNotEmpty()
+        val hasNuvio = nuvioPluginEngine != null && nuvioScripts.isNotEmpty()
+        val hasCloudstream = cloudstreamPluginEngine != null && cloudstreamPackages.isNotEmpty()
+        if (!hasStremio && !hasNuvio && !hasCloudstream) return@coroutineScope current().streams(baseUrl, type, id)
 
-        if (stremioClient == null || addons.isEmpty()) {
-            return@coroutineScope current().streams(baseUrl, type, id)
-        }
-
+        val streamAddons = addons.filter { it.supportsResource("stream", type, id) }
+        val parsedEpisode = Regex("^(.*):(\\d+):(\\d+)$").matchEntire(id)
+        val contentId = parsedEpisode?.groupValues?.get(1) ?: id
+        val nuvioContext = if (hasNuvio) resolveNuvioContext(baseUrl, type, id) else null
+        val cloudstreamMeta = if (hasCloudstream) {
+            loadContentMeta(baseUrl, type, contentId) ?: contentId.removePrefix("tmdb:")
+                .takeIf { it.matches(Regex("\\d{1,10}")) }
+                ?.let { tmdbId -> RemoteMeta(id = contentId, type = type, tmdbId = tmdbId) }
+        } else null
         val baseDeferred = async {
             try {
                 current().streams(baseUrl, type, id)
@@ -130,28 +158,90 @@ class RoutingContentClient(
                 StreamsResponse()
             }
         }
-
-        val addonDeferred = async {
+        val addonStreamsDeferred = async {
             try {
-                stremioClient.getStreams(addons, type, id)
+                if (stremioClient == null) emptyList() else stremioClient.getStreams(streamAddons, type, id)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 emptyList()
             }
         }
+        val addonSubtitlesDeferred = async {
+            try {
+                if (stremioClient == null) emptyList() else stremioClient.getSubtitles(addons, type, id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+        val nuvioDeferred = async {
+            try {
+                if (nuvioPluginEngine == null || nuvioScripts.isEmpty() || nuvioContext == null) StreamsResponse()
+                else nuvioPluginEngine.streams(nuvioScripts, nuvioContext)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                StreamsResponse()
+            }
+        }
+        val cloudstreamDeferred = async {
+            try {
+                if (cloudstreamPluginEngine == null || cloudstreamPackages.isEmpty() || cloudstreamMeta == null) StreamsResponse()
+                else cloudstreamPluginEngine.streams(
+                    packages = cloudstreamPackages,
+                    meta = cloudstreamMeta,
+                    mediaType = type,
+                    season = parsedEpisode?.groupValues?.get(2)?.toIntOrNull(),
+                    episode = parsedEpisode?.groupValues?.get(3)?.toIntOrNull(),
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                StreamsResponse()
+            }
+        }
 
         val baseResponse = baseDeferred.await()
-        val addonStreams = addonDeferred.await()
-
-        val merged = baseResponse.streams + addonStreams
+        val nuvioResponse = nuvioDeferred.await()
+        val cloudstreamResponse = cloudstreamDeferred.await()
         StreamsResponse(
-            streams = merged,
+            streams = baseResponse.streams + addonStreamsDeferred.await() + nuvioResponse.streams + cloudstreamResponse.streams,
             cacheMaxAge = baseResponse.cacheMaxAge,
-            /* Los subtítulos son del addon propio (los de terceros se piden al
-             * recurso `subtitles`, que no usamos aquí): se conservan al fusionar
-             * o el reproductor se quedaría sin pistas al activar un addon. */
-            subtitles = baseResponse.subtitles,
+            subtitles = baseResponse.subtitles + addonSubtitlesDeferred.await() + nuvioResponse.subtitles + cloudstreamResponse.subtitles,
+            providers = baseResponse.providers + nuvioResponse.providers + cloudstreamResponse.providers,
+        )
+    }
+
+    private suspend fun loadContentMeta(baseUrl: String, type: String, id: String): RemoteMeta? = try {
+        meta(baseUrl, type, id)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
+    }
+
+    private suspend fun resolveNuvioContext(baseUrl: String, type: String, id: String): NuvioPlaybackContext? {
+        val episode = Regex("^(.*):(\\d+):(\\d+)$").matchEntire(id)
+        val contentId = episode?.groupValues?.get(1) ?: id
+        val directTmdbId = contentId.removePrefix("tmdb:").takeIf { it.matches(Regex("\\d{1,10}")) }
+        val metadataTmdbId = if (directTmdbId == null) {
+            val candidate = try {
+                meta(baseUrl, type, contentId)?.tmdbId
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            candidate?.removePrefix("tmdb:")?.takeIf { it.matches(Regex("\\d{1,10}")) }
+        } else null
+        val tmdbId = directTmdbId ?: metadataTmdbId ?: return null
+        return NuvioPlaybackContext(
+            tmdbId = tmdbId,
+            mediaType = type,
+            season = episode?.groupValues?.get(2)?.toIntOrNull(),
+            episode = episode?.groupValues?.get(3)?.toIntOrNull(),
         )
     }
 }

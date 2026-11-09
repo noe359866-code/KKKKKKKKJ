@@ -3,9 +3,8 @@
  * ---------------------------------------------------------------------------
  * Minimal fixed-window rate limiter (no dependency).
  *
- * Android TV boxes and ExoPlayer retry aggressively when a stream fails, so an
- * unlimited /stream endpoint can start a Python stampede. The cache already
- * coalesces identical keys; this limiter protects the whole process.
+ * Catalog and metadata requests can be repeated by TV clients; this limiter
+ * protects upstream services and the backend from excessive request bursts.
  *
  * Default: 120 requests per minute per IP. Disable with RATE_LIMIT_MAX=0.
  */

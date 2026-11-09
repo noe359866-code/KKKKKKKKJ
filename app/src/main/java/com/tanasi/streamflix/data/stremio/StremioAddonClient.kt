@@ -6,6 +6,8 @@ import com.tanasi.streamflix.data.model.RemoteMeta
 import com.tanasi.streamflix.data.model.MetaResponse
 import com.tanasi.streamflix.data.model.StreamDto
 import com.tanasi.streamflix.data.model.StreamsResponse
+import com.tanasi.streamflix.data.model.SubtitleDto
+import com.tanasi.streamflix.data.model.SubtitlesResponse
 import com.tanasi.streamflix.data.model.StremioAddon
 import com.tanasi.streamflix.data.model.StremioManifest
 import com.tanasi.streamflix.data.remote.AddonException
@@ -47,8 +49,9 @@ class StremioAddonClient(
      * Un addon como *Streaming Catalogs* declara decenas de catálogos (una fila
      * por plataforma y por tipo). Publicarlas todas convertiría el Home en una
      * lista interminable y multiplicaría las peticiones, así que se ordenan por
-     * popularidad conocida y se recortan a [MAX_CATALOGS_PER_ADDON]: el resto
-     * sigue accesible desde la búsqueda del addon.
+     * popularidad conocida y se recortan a [MAX_CATALOGS_PER_ADDON]. Las
+     * plataformas reconocidas también se consultan bajo demanda desde sus
+     * manifests; no se pide el resto de catálogos al abrir Home.
      */
     fun getCatalogs(addons: List<StremioAddon>): List<CatalogDescriptor> {
         val result = mutableListOf<CatalogDescriptor>()
@@ -133,6 +136,37 @@ class StremioAddonClient(
                                 provider = stream.provider?.takeIf { it.isNotBlank() } ?: addon.name,
                                 name = stream.name.ifBlank { addon.name },
                             )
+                        }
+                    } ?: emptyList()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            }
+        }.awaitAll().flatten()
+    }
+
+    /**
+     * Consulta subtítulos en paralelo a los addons que declaren ese recurso.
+     * Un addon de streams no queda excluido si no ofrece subtítulos.
+     */
+    suspend fun getSubtitles(
+        addons: List<StremioAddon>,
+        type: String,
+        id: String,
+    ): List<SubtitleDto> = coroutineScope {
+        val activeAddons = addons.filter { it.supportsResource("subtitles", type, id) }
+        if (activeAddons.isEmpty()) return@coroutineScope emptyList()
+
+        activeAddons.map { addon ->
+            async(Dispatchers.IO) {
+                try {
+                    withTimeoutOrNull(ADDON_STREAM_TIMEOUT_MS) {
+                        val url = StremioUrls.subtitles(addon.baseUrl, type, id)
+                        val response = json.decodeFromString(SubtitlesResponse.serializer(), get(url))
+                        response.subtitles.map { subtitle ->
+                            subtitle.copy(provider = subtitle.provider?.takeIf { it.isNotBlank() } ?: addon.name)
                         }
                     } ?: emptyList()
                 } catch (e: CancellationException) {

@@ -6,7 +6,7 @@ name: Android release
 #   - manual (workflow_dispatch): URL del backend opcional;
 #   - tag v*: usa la variable de repositorio PRODUCTION_ADDON_BASE_URL.
 #
-# Todos los APK incluyen Python y los scrapers y arrancan en modo autónomo.
+# APK cliente para TV: los providers web no se empaquetan; playback usa addons Stremio.
 # La URL sólo se utiliza si se elige explícitamente el modo servidor en Ajustes.
 #
 # Firma:
@@ -177,7 +177,7 @@ jobs:
             echo ""
             echo "| | |"
             echo "| --- | --- |"
-            echo "| Motor | Python + 10 scrapers dentro del APK |"
+            echo "| Fuentes | Addons Stremio; sin scrapers empaquetados |"
             echo "| Backend opcional | \`${{ steps.url.outputs.value }}\` |"
             echo "| Firma | \`${{ steps.signing.outputs.kind }}\` |"
             echo "| APK | \`$(basename "$APK")\` ($(du -h "$APK" | cut -f1)) |"
@@ -276,11 +276,11 @@ jobs:
           {
             echo "## Streamflix $VERSION"
             echo
-            echo "APK firmada **solo para Android TV / Google TV** (Android 6.0 o posterior)."
+            echo "APK **solo para Android TV / Google TV / Fire TV compatibles** (Android 7.0 / API 24 o posterior)."
             echo "Descarga \`streamflix-$VERSION.apk\` e instálala en el televisor o TV box."
             echo
             echo "- Versión visible: $VERSION; código interno: ${VERSION_CODE:-2}."
-            echo "- **Autónoma**: scrapers Python, catálogo, fichas y reproductor integrados en la APK."
+            echo "- Addons Stremio para catálogo y streams; sin proveedores web incluidos. Los índices Nuvio/Cloudstream solo se muestran, no se ejecuta su código."
             echo "- Leanback obligatorio, sin launcher móvil y con navegación por mando (D-Pad)."
             echo "- Pruebas unitarias, lint, manifiesto TV, paquete embebido y firma comprobados por GitHub Actions."
             echo "- No necesita servidor Node externo; opcionalmente se puede configurar uno en Ajustes."

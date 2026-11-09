@@ -2,7 +2,7 @@
   "name": "streamflix-stremio-addon",
   "version": "0.1.0",
   "private": true,
-  "description": "Lightweight Stremio Addon backend for Android TV / ExoPlayer with TTL cache, Python scrapers bridge and priority-based failover.",
+  "description": "Catalog and metadata Stremio addon backend; playback sources come from addons configured by the client.",
   "type": "module",
   "main": "src/server.js",
   "engines": {
@@ -13,18 +13,7 @@
     "dev": "node --watch src/server.js",
     "preview": "HOST=0.0.0.0 PORT=8899 node src/server.js",
     "test": "LOG_LEVEL=error NODE_ENV=test node --test",
-    "cache:stats": "node scripts/cache-stats.js",
-    "bridge:demo": "node scripts/bridge-demo.js",
-    "anime:animeflv": "python3 scrapers/animeflv.py --list",
-    "anime:jkanime": "python3 scrapers/jkanime.py --list",
-    "anime:monoschinos": "python3 scrapers/monoschinos.py --list",
-    "movies:gnula": "python3 scrapers/gnula.py --list --query",
-    "movies:cuevana": "python3 scrapers/cuevana.py --list --query",
-    "movies:pelisplushd": "python3 scrapers/pelisplushd.py --list --query",
-    "movies:repelis": "python3 scrapers/repelis.py --list --query",
-    "movies:peliculasflix": "python3 scrapers/peliculasflix.py --list --query",
-    "movies:pelisjuanita": "python3 scrapers/pelisjuanita.py --list --query",
-    "movies:novahd": "python3 scrapers/novahd.py --list --query"
+    "cache:stats": "node scripts/cache-stats.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -34,10 +23,8 @@
     "stremio",
     "stremio-addon",
     "android-tv",
-    "exoplayer",
-    "iptv",
-    "hls",
-    "m3u8"
+    "catalogs",
+    "metadata"
   ],
   "license": "Apache-2.0"
 }

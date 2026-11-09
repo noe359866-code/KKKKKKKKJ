@@ -1,14 +1,13 @@
 /**
  * src/server.js
  * ---------------------------------------------------------------------------
- * Process entrypoint: loads providers, starts HTTP, handles graceful shutdown.
+ * Process entrypoint: prepares catalog metadata, starts HTTP, handles graceful shutdown.
  */
 
 import os from 'node:os';
 
 import config from './config.js';
 import { createApp } from './app.js';
-import { loadProviders } from './providers/index.js';
 import { ensureCatalogs } from './catalogs/registry.js';
 import { cache } from './cache/TtlCache.js';
 import { createLogger } from './lib/logger.js';
@@ -31,7 +30,7 @@ async function main() {
    * alguien reinicie. Se usa `ensureCatalogs()` (memoizado) y no `loadCatalogs()`
    * para que la primera petición no vuelva a resolver los addons remotos.
    * Nunca lanza: si el JSON falta se usan los defaults. */
-  await Promise.all([loadProviders(), ensureCatalogs()]);
+  await ensureCatalogs();
 
   const app = createApp();
   const server = app.listen(config.http.port, config.http.host, () => {
@@ -44,10 +43,7 @@ async function main() {
       ...(ip ? { lan: `http://${ip}:${config.http.port}/manifest.json` } : {}),
       publicUrl: config.addon.publicUrl || '(derived from request host)',
     });
-    log.info('install in Stremio with the manifest URL above; live TTL', {
-      hours: config.cache.ttlLiveMs / 3_600_000,
-      vodHours: config.cache.ttlVodMs / 3_600_000,
-    });
+    log.info('install in Stremio with the manifest URL above');
   });
 
   /* Keep-alive slightly longer than typical load balancers (65s default). */

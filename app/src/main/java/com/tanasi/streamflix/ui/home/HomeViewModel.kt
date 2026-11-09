@@ -4,14 +4,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tanasi.streamflix.data.ContentClient
 import com.tanasi.streamflix.data.model.CinemetaSuggestions
+import com.tanasi.streamflix.data.model.CatalogDescriptor
 import com.tanasi.streamflix.data.model.CatalogRow
 import com.tanasi.streamflix.data.model.HomeCatalog
 import com.tanasi.streamflix.data.model.MediaEntry
 import com.tanasi.streamflix.data.model.Spotlight
 import com.tanasi.streamflix.data.repo.CatalogRepository
 import com.tanasi.streamflix.data.repo.CatalogResult
+import com.tanasi.streamflix.data.stremio.StremioAddonClient
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +57,13 @@ sealed interface HomeUiState {
     data class Error(val message: String, val needsSetup: Boolean = false) : HomeUiState
 }
 
+internal data class PlatformBrowseState(
+    val platform: AvailableStreamingPlatform? = null,
+    val isLoading: Boolean = false,
+    val rows: List<CatalogRow> = emptyList(),
+    val error: String? = null,
+)
+
 /**
  * Estado del Home: filas + el título que ocupa el hero.
  *
@@ -76,6 +90,10 @@ class HomeViewModel(
     val hero: StateFlow<Spotlight?> = mutableHero.asStateFlow()
 
     private var loadJob: Job? = null
+    private var platformLoadJob: Job? = null
+    private val mutablePlatformBrowse = MutableStateFlow(PlatformBrowseState())
+    internal val platformBrowse: StateFlow<PlatformBrowseState> = mutablePlatformBrowse.asStateFlow()
+
     private var heroJob: Job? = null
 
     /** Título cuya ficha ya está en camino: evita reiniciar el debounce. */
@@ -154,6 +172,79 @@ class HomeViewModel(
     fun clearPreview() {
         previewJob?.cancel()
         mutablePreview.value = SearchPreview.Idle
+    }
+
+    /** Abre bajo demanda los catálogos declarados para una plataforma concreta. */
+    internal fun browsePlatform(available: AvailableStreamingPlatform) {
+        platformLoadJob?.cancel()
+        mutablePlatformBrowse.value = PlatformBrowseState(platform = available, isLoading = true)
+        val contentClient = client
+        if (contentClient == null) {
+            mutablePlatformBrowse.value = PlatformBrowseState(
+                platform = available,
+                error = "No hay un cliente de catálogos disponible.",
+            )
+            return
+        }
+        platformLoadJob = viewModelScope.launch {
+            try {
+                val rows = coroutineScope {
+                    available.catalogs.map { ref ->
+                        async(Dispatchers.IO) {
+                            val catalogId = StremioAddonClient.encodeCatalogId(ref.addonId, ref.catalogId)
+                            val descriptor = CatalogDescriptor(
+                                type = ref.type,
+                                id = catalogId,
+                                name = "${available.platform.label} · ${ref.catalogName}",
+                                order = 0,
+                                source = "stremio_addon",
+                                provider = ref.addonName,
+                            )
+                            val response = try {
+                                withTimeoutOrNull(PLATFORM_ROW_TIMEOUT_MS) {
+                                    contentClient.catalog(baseUrl(), ref.type, catalogId)
+                                }
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (_: Exception) {
+                                null
+                            }
+                            val entries = response?.metas.orEmpty()
+                                .map { meta -> meta.toEntry(descriptor) }
+                                .distinctBy { entry -> entry.type to entry.id }
+                            if (entries.isEmpty()) null else CatalogRow(
+                                id = descriptor.rowId,
+                                title = descriptor.name,
+                                aspect = "poster",
+                                items = entries,
+                                source = descriptor.source,
+                            )
+                        }
+                    }.awaitAll().filterNotNull()
+                }
+                mutablePlatformBrowse.value = if (rows.isEmpty()) {
+                    PlatformBrowseState(
+                        platform = available,
+                        error = "No hay títulos disponibles para ${available.platform.label} en los catálogos instalados.",
+                    )
+                } else {
+                    PlatformBrowseState(platform = available, rows = rows)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                mutablePlatformBrowse.value = PlatformBrowseState(
+                    platform = available,
+                    error = error.message ?: "No se pudo cargar este catálogo.",
+                )
+            }
+        }
+    }
+
+    fun closePlatformBrowse() {
+        platformLoadJob?.cancel()
+        platformLoadJob = null
+        mutablePlatformBrowse.value = PlatformBrowseState()
     }
 
     private fun showCatalog(catalog: HomeCatalog) {
@@ -253,6 +344,7 @@ class HomeViewModel(
     fun refreshInBackground() = load(showLoading = false)
 
     private fun load(showLoading: Boolean) {
+        closePlatformBrowse()
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             if (showLoading) mutableState.value = HomeUiState.Loading
@@ -327,6 +419,8 @@ class HomeViewModel(
     }
 
     private companion object {
+        const val PLATFORM_ROW_TIMEOUT_MS = 25_000L
+
         /** Espera antes de pedir la ficha del hero (ms). */
         const val HERO_DEBOUNCE_MS = 280L
 

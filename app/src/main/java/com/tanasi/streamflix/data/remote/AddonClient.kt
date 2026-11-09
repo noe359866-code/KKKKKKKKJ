@@ -29,7 +29,8 @@ class AddonException(message: String, cause: Throwable? = null) : IOException(me
  *    para esta app: es más pequeña y estable que el manifest completo);
  *  - `/catalog/{type}/{id}.json` → las metas de una fila, ya normalizadas;
  *  - `/meta/{type}/{id}.json` → ficha completa, con episodios si es serie;
- *  - `/stream/{type}/{id}.json` → fuentes ya ordenadas por prioridad.
+ *  - `/stream/{type}/{id}.json` → fuentes de backends compatibles (el backend
+ *    incluido ahora publica sólo catálogo/metadatos; la app prioriza addons Stremio instalados).
  */
 class AddonClient(
     private val http: OkHttpClient = defaultHttpClient(),

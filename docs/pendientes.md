@@ -1,9 +1,16 @@
 # Lo que falta
 
+> **Nota de alcance (8 de noviembre de 2026):** este inventario conserva notas
+> históricas. Desde entonces se eliminaron los scrapers del backend `server/`;
+> éste publica únicamente catálogo/metadatos (`catalog` y `meta`) y no ofrece
+> endpoints de reproducción/subtítulos. Las referencias a `server/scrapers/`,
+> proveedores Python, failover o streams de ese backend son históricas y no
+> describen el árbol actual. La reproducción en Android se obtiene de addons
+> Stremio configurados por el usuario.
+
 Auditoría del estado del proyecto tras el buscador con teclado propio (§19) y
-la retirada del TV en directo (§26). Todo lo de abajo está **verificado en el código**, no
-recordado: cada punto dice dónde mirar. Lo que depende de las webs (selectores,
-dominios caídos) no se puede comprobar desde aquí y queda marcado como tal.
+la retirada del TV en directo (§26). Los puntos de abajo pertenecen al snapshot
+anterior; verifica el código actual antes de tratarlos como pendientes.
 
 Estado: CI verde (`testDebugUnitTest`, `lintDebug`, `lintRelease`,
 `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`), Node
