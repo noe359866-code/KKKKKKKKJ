@@ -280,7 +280,7 @@ jobs:
             echo "Descarga \`streamflix-$VERSION.apk\` e instálala en el televisor o TV box."
             echo
             echo "- Versión visible: $VERSION; código interno: ${VERSION_CODE:-2}."
-            echo "- Addons Stremio para catálogo y streams; sin proveedores web incluidos. Los índices Nuvio/Cloudstream solo se muestran, no se ejecuta su código."
+            echo "- Addons Stremio para catálogo y streams; sin proveedores web incluidos. Los plugins Nuvio y Cloudstream instalados y activados ejecutan código de terceros; usa únicamente fuentes de confianza."
             echo "- Leanback obligatorio, sin launcher móvil y con navegación por mando (D-Pad)."
             echo "- Pruebas unitarias, lint, manifiesto TV, paquete embebido y firma comprobados por GitHub Actions."
             echo "- No necesita servidor Node externo; opcionalmente se puede configurar uno en Ajustes."

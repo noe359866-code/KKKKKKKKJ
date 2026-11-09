@@ -15,13 +15,13 @@ import contextlib
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[4]
-sys.path[:0] = [str(ROOT / "app/src/main/python"), str(ROOT / "server/scrapers")]
+sys.path[:0] = [str(ROOT / "app/src/main/python"), str(ROOT / "app/src/test/python/fixtures/legacy_scrapers")]
 
 import embedded_engine as embedded
 import _embedded_catalogs as catalogs
 from _embedded_cache import JsonCache
 
-REGISTRY = json.loads((ROOT / "server/config/providers.json").read_text())
+REGISTRY = json.loads((ROOT / "app/src/test/python/fixtures/legacy_scrapers/providers.json").read_text())
 PADDING = "<!--" + "x" * 500 + "-->"
 
 
