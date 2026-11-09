@@ -257,6 +257,8 @@ dependencies {
     implementation libs.jsoup
     // jsoup can select the RE2/J backend; include it for release/R8.
     implementation "com.google.re2j:re2j:1.8"
+    // Cloudstream extractors reference Rhino APIs at runtime.
+    implementation "org.mozilla:rhino:1.7.15"
     implementation libs.gson
     implementation libs.crypto.js
 

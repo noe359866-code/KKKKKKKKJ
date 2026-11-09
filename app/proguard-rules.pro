@@ -93,6 +93,9 @@
 # preserva el API del host y los stubs app-only con sus nombres y miembros.
 -keep class com.lagradost.cloudstream3.** { *; }
 -keep class com.lagradost.api.** { *; }
+-keep class org.mozilla.javascript.** { *; }
+# Android has no JSR-223. The optional Rhino ScriptEngine provider is not used.
+-dontwarn javax.script.**
 -keep class com.lagradost.cloudstream3.network.CloudflareKillerKt { *; }
 
 # ---------------------------------------------------------------------------
