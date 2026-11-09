@@ -14,7 +14,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
 /** Installed Nuvio provider source, already downloaded from a selected manifest. */
-data class NuvioProviderScript(
+data class NuvioPluginScript(
     val id: String,
     val name: String,
     val code: String,
@@ -50,7 +50,7 @@ class NuvioPluginEngine(
     private val semaphore = Semaphore(maxConcurrentProviders.coerceIn(1, MAX_CONCURRENCY))
 
     suspend fun streams(
-        providers: List<NuvioProviderScript>,
+        providers: List<NuvioPluginScript>,
         context: NuvioPlaybackContext,
     ): StreamsResponse = coroutineScope {
         val enabled = providers.filter { it.enabled && it.code.isNotBlank() }
@@ -141,7 +141,7 @@ class NuvioPluginEngine(
         }
 
     private data class ProviderResult(
-        val provider: NuvioProviderScript,
+        val provider: NuvioPluginScript,
         val streams: List<NuvioPluginStream>,
         val status: String,
         val elapsedMs: Long,

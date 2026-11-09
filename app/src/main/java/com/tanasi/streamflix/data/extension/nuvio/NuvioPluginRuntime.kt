@@ -646,7 +646,9 @@ class NuvioPluginRuntime : NuvioPluginScriptExecutor {
 
                     val charset = bodyContentType?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
                     val responseBody = decodeBodyToSafeString(decodedRead.bytes, charset)
-                    val responseHeaders = httpResponse.headers.toPluginResponseHeaders()
+                    val responseHeaders = httpResponse.headers.names().associate { name ->
+                        name.lowercase(java.util.Locale.ROOT) to httpResponse.headers.values(name).joinToString(", ")
+                    }
 
                     val result = mapOf(
                         "ok" to httpResponse.isSuccessful,
@@ -690,7 +692,10 @@ class NuvioPluginRuntime : NuvioPluginScriptExecutor {
         } catch (e: Exception) {
             String(bytes, Charsets.UTF_8)
         }
-        return truncateString(decoded, MAX_FETCH_BODY_CHARS)
+        return if (decoded.length <= MAX_FETCH_BODY_CHARS) decoded else {
+            val end = if (Character.isHighSurrogate(decoded[MAX_FETCH_BODY_CHARS - 1])) MAX_FETCH_BODY_CHARS - 1 else MAX_FETCH_BODY_CHARS
+            decoded.substring(0, end)
+        }
     }
 
     private fun readAtMostBytes(stream: InputStream, maxBytes: Int): BoundedReadResult {

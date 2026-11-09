@@ -169,7 +169,8 @@ class CloudstreamExtensionLoader(context: Context) {
 
     private fun readDexClassNames(file: File): List<String> = try {
         @Suppress("DEPRECATION")
-        DexFile(file).use { dex -> dex.entries().asSequence().toList() }
+        val dex = DexFile(file)
+        try { dex.entries().asSequence().toList() } finally { dex.close() }
     } catch (error: Throwable) {
         Log.e(TAG, "Unable to enumerate classes in ${file.name}", error)
         emptyList()
