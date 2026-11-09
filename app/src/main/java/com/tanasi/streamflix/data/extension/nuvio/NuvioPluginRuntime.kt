@@ -71,6 +71,18 @@ data class NuvioPluginSubtitle(
 private fun Number?.toStreamAudioDelayMs(): Int? = this?.toInt()
 private fun String?.toStreamAudioDelayLanguage(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 
+internal fun Headers.toPluginResponseHeaders(): Map<String, String> = names().associate { name ->
+    name.lowercase(java.util.Locale.ROOT) to values(name).joinToString(", ")
+}
+
+internal fun truncatePluginBody(decoded: String, maxChars: Int): String {
+    require(maxChars >= 0)
+    if (decoded.length <= maxChars) return decoded
+    val end = if (maxChars > 0 && Character.isHighSurrogate(decoded[maxChars - 1]) &&
+        Character.isLowSurrogate(decoded[maxChars])) maxChars - 1 else maxChars
+    return decoded.substring(0, end)
+}
+
 private const val TAG = "PluginRuntime"
 private const val PLUGIN_TIMEOUT_MS = 60_000L
 private const val MAX_FETCH_RESPONSE_BYTES = 1024 * 1024
@@ -646,9 +658,7 @@ class NuvioPluginRuntime : NuvioPluginScriptExecutor {
 
                     val charset = bodyContentType?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
                     val responseBody = decodeBodyToSafeString(decodedRead.bytes, charset)
-                    val responseHeaders = httpResponse.headers.names().associate { name ->
-                        name.lowercase(java.util.Locale.ROOT) to httpResponse.headers.values(name).joinToString(", ")
-                    }
+                    val responseHeaders = httpResponse.headers.toPluginResponseHeaders()
 
                     val result = mapOf(
                         "ok" to httpResponse.isSuccessful,
@@ -692,10 +702,7 @@ class NuvioPluginRuntime : NuvioPluginScriptExecutor {
         } catch (e: Exception) {
             String(bytes, Charsets.UTF_8)
         }
-        return if (decoded.length <= MAX_FETCH_BODY_CHARS) decoded else {
-            val end = if (Character.isHighSurrogate(decoded[MAX_FETCH_BODY_CHARS - 1])) MAX_FETCH_BODY_CHARS - 1 else MAX_FETCH_BODY_CHARS
-            decoded.substring(0, end)
-        }
+        return truncatePluginBody(decoded, MAX_FETCH_BODY_CHARS)
     }
 
     private fun readAtMostBytes(stream: InputStream, maxBytes: Int): BoundedReadResult {

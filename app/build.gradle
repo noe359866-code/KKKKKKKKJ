@@ -255,6 +255,8 @@ dependencies {
         exclude group: 'info.debatty', module: 'java-string-similarity'
     }
     implementation libs.jsoup
+    // jsoup can select the RE2/J backend; include it for release/R8.
+    implementation "com.google.re2j:re2j:1.8"
     implementation libs.gson
     implementation libs.crypto.js
 
