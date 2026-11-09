@@ -135,7 +135,7 @@ class EmbeddedEngineSmokeTest {
         val python = Python.getInstance()
         val builtins = python.getModule("builtins")
         val json = python.getModule("json")
-        val callback = builtins.callAttr("eval", "lambda provider, payload: {'streams': [{'url': payload['id']}], 'provider': provider['id']}")
+        val callback = builtins.callAttr("eval", "lambda provider, payload: {'streams': [{'url': payload['id']}], 'provider': provider['id']}", builtins.callAttr("dict"))
         val provider = json.callAttr("loads", """{"id":"gnula"}""")
         val payload = json.callAttr("loads", """{"id":"fixture"}""")
         val scheduler = NativeProviderScheduler()
