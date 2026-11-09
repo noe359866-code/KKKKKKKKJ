@@ -30,7 +30,7 @@ import org.jsoup.select.Elements
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.URL
-import java.util.Base64
+import android.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -233,11 +233,11 @@ class NuvioPluginRuntime : NuvioPluginScriptExecutor {
     }
 
     private fun base64Decode(input: String): ByteArray {
-        return Base64.getDecoder().decode(normalizeBase64(input))
+        return Base64.decode(normalizeBase64(input), Base64.DEFAULT)
     }
 
     private fun base64Encode(bytes: ByteArray): String {
-        return Base64.getEncoder().encodeToString(bytes)
+        return Base64.encodeToString(bytes, Base64.NO_WRAP)
     }
 
     private fun bytesToHex(bytes: ByteArray): String {
