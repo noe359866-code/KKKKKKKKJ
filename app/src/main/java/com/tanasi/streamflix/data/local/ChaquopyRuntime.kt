@@ -76,6 +76,9 @@ class ChaquopyRuntime(context: Context) : EmbeddedRuntime {
                     try {
                         val response = module.callAttr("dispatch", operation, payload).toString()
                         continuation.resume(response)
+                    } catch (error: LinkageError) {
+                        // Class initialization failures must not leave callers suspended forever.
+                        continuation.resumeWithException(IOException("El motor local no pudo iniciarse", error))
                     } catch (error: Exception) {
                         // El detalle Python queda fuera del mensaje de UI (puede contener URLs firmadas).
                         continuation.resumeWithException(IOException("El motor local no pudo completar la consulta", error))

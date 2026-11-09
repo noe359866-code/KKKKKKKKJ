@@ -1,6 +1,7 @@
 package com.tanasi.streamflix.data.local.scrapers
 
 import androidx.annotation.Keep
+import com.tanasi.streamflix.util.unicodeRegex
 import kotlinx.serialization.json.*
 import java.net.URI
 import java.text.Normalizer
@@ -45,7 +46,7 @@ class AnimeScraperTools {
             if (skip.any { it in url } || url in seen) continue
             val host = url.substringAfterLast("//").substringBefore('/')
             if (host.any { it.code > 127 }) return ""
-            val words = host.split(Regex("(?U)[-_\\s\\x1c-\\x1f]+"))
+            val words = host.split(unicodeRegex("[-_\\s\\x1c-\\x1f]+"))
                 .filter { it.isNotEmpty() }.map { word ->
                     when {
                         word.all { it in '0'..'9' } -> word
@@ -389,7 +390,7 @@ class AnimeScraperTools {
         .replace(Regex("\\p{M}+"), "").lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]+"), "-").trim('-')
 
     private companion object {
-        val IFRAME = Regex("""(?U)<iframe[^>]+?src[\s\x1c-\x1f]*=[\s\x1c-\x1f]*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        val IFRAME = unicodeRegex("""<iframe[^>]+?src[\s\x1c-\x1f]*=[\s\x1c-\x1f]*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
         val ACRONYMS = setOf("espn", "tudn", "tyc", "tnt", "fox", "dazn", "mls", "nba", "nfl", "ufc", "wwe", "usa", "uk", "hd", "tv", "nhl", "mlb", "dsports", "vtv", "dsp", "canal", "premiere", "op", "opt", "sd", "fhd")
         val MATCH_NOISE = setOf("latino", "lat", "castellano", "esp", "espanol", "español", "subtitulado",
             "sub", "subs", "subbed", "dubbed", "dual", "audio", "hd", "fhd", "uhd", "4k", "1080p",
