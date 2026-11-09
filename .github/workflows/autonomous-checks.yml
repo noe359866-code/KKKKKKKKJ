@@ -111,7 +111,17 @@ jobs:
           profile: tv_1080p
           disable-animations: true
           script: |
-            bash -o pipefail -c 'timeout 240s ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace 2>&1 | tee -a "$RUNNER_TEMP/android.log"'
+            bash -o pipefail -c '
+              (sleep 50; pid=$(adb shell pidof com.tanasi.streamflix.debug | tr -d "\r"); if [ -n "$pid" ]; then adb shell kill -3 "$pid"; fi) &
+              timeout 240s ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace 2>&1 | tee -a "$RUNNER_TEMP/android.log"
+              result=${PIPESTATUS[0]}
+              if [ "$result" -ne 0 ]; then
+                adb logcat -d -v brief | grep -E "python|Python|Chaquopy|FATAL|AndroidRuntime|art:|streamflix" | tail -300 >> "$RUNNER_TEMP/android.log" || true
+                adb root || true
+                adb shell "for f in /data/anr/*; do cat \"\$f\"; done" 2>/dev/null | tail -500 >> "$RUNNER_TEMP/android.log" || true
+              fi
+              exit "$result"
+            ' 
       - name: Debug APK
         if: success()
         uses: actions/upload-artifact@v4
