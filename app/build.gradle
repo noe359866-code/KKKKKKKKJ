@@ -58,7 +58,7 @@ if (storeFilePath != null && !hasReleaseKeystore) {
     )
 }
 
-def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '2').toInteger()
+def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '3').toInteger()
 def versionNameValue = resolve(['VERSION_NAME', 'versionName']) ?: '1.1.0'
 
 // El APK sólo conserva el manifiesto de runtime vacío; no copia los índices

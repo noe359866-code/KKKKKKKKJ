@@ -184,8 +184,8 @@ data class RemoteMeta(
             ?: descriptor?.provider?.takeIf { it.isNotBlank() }
             ?: if (id.startsWith("tt")) "Cinemeta" else null
 
-    private companion object {
-        fun parseYear(releaseInfo: String): Int? =
+    companion object {
+        private fun parseYear(releaseInfo: String): Int? =
             Regex("(\\d{4})").find(releaseInfo)?.groupValues?.getOrNull(1)?.toIntOrNull()
     }
 }
