@@ -1,6 +1,7 @@
 package com.tanasi.streamflix.data.local
 
 import androidx.annotation.Keep
+import com.tanasi.streamflix.util.unicodeRegex
 import kotlinx.serialization.json.*
 import java.util.Locale
 
@@ -220,7 +221,7 @@ class NativeEngineTools {
         val base = ALIASES[parts[0]] ?: parts[0]
         if (!base.matches(Regex("[a-z]{2,3}"))) return ""
         val region = parts.getOrElse(1) { "" }
-        return if (region.matches(Regex("(?U)[a-z]{2}|\\d{3}"))) "$base-$region" else base
+        return if (region.matches(unicodeRegex("[a-z]{2}|\\d{3}"))) "$base-$region" else base
     }
 
     fun languageName(value: String): String {
@@ -308,7 +309,7 @@ class NativeEngineTools {
         val MEDIA_TYPES = setOf("hls", "dash", "mp4")
         val MEDIA_QUERY = Regex("\\.(?:m3u8|mpd|mp4|m4v)(?:[&#]|$)", RegexOption.IGNORE_CASE)
         val NON_TITLES = setOf("anime", "animes", "directorio", "buscar", "busqueda", "search", "browse", "programacion", "horario", "calendario", "generos", "genero", "login", "registro", "contacto", "politica", "privacidad", "terminos", "dmca", "peliculas", "series", "ver", "estrenos", "page", "category")
-        val WHITESPACE = Regex("(?U)[_\\s\\x1c-\\x1f]+")
+        val WHITESPACE = unicodeRegex("[_\\s\\x1c-\\x1f]+")
         val URL_SCHEME = Regex("^https?://", RegexOption.IGNORE_CASE)
         val NOT_SUBTITLE = listOf(".html", ".htm", ".php", ".asp", ".aspx", ".jsp", ".json", ".txt", ".css", ".js", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".mp4", ".m3u8", ".mpd")
         val FORMATS = mapOf("vtt" to "vtt", "webvtt" to "vtt", "srt" to "srt", "sub" to "srt", "ass" to "ass", "ssa" to "ass", "ttml" to "ttml", "dfxp" to "ttml", "xml" to "ttml")

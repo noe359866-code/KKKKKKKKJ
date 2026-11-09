@@ -26,6 +26,7 @@ class CloudflareKiller : Interceptor {
                 split.getOrNull(1)?.let { split[0].trim() to it.trim() }
             }
             .filter { it.first.isNotBlank() && it.second.isNotBlank() }
+            .toMap()
     }
 }
 

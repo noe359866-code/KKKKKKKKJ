@@ -110,8 +110,7 @@ jobs:
           arch: x86_64
           profile: tv_1080p
           disable-animations: true
-          script: |
-            bash -o pipefail -c 'timeout 240s ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace 2>&1 | tee -a "$RUNNER_TEMP/android.log"'
+          script: bash scripts/run-android-smoke.sh
       - name: Debug APK
         if: success()
         uses: actions/upload-artifact@v4

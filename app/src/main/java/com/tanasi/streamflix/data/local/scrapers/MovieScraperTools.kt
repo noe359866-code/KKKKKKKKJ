@@ -1,6 +1,7 @@
 package com.tanasi.streamflix.data.local.scrapers
 
 import androidx.annotation.Keep
+import com.tanasi.streamflix.util.unicodeRegex
 import kotlinx.serialization.json.*
 import java.math.BigInteger
 import java.net.URI
@@ -191,7 +192,7 @@ class MovieScraperTools {
             "episodio-$padded", "episodio/$episode", "episode-$episode", "temporada-$season-capitulo-$episode",
         )
         val textVariants = listOf("t$season e$episode", "t${season}e$episode", "${season}x$episode", "${season}x$padded")
-        val tail = Regex("(?U)(?:[-_/])(0*${Regex.escape(episode)})(?!\\d)")
+        val tail = unicodeRegex("(?:[-_/])(0*${Regex.escape(episode)})(?!\\d)")
         val links = linkedSetOf<String>()
         for (match in EPISODE_LINK.findAll(html)) {
             // Python strip incluye también NEL y los separadores U+001C–U+001F.
@@ -211,10 +212,10 @@ class MovieScraperTools {
         .replace(Regex("\\p{M}+"), "").lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]+"), "-").trim('-')
 
     private companion object {
-        val EPISODE_LINK = Regex("""(?U)<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+        val EPISODE_LINK = unicodeRegex("""<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         val VISIBLE_TAG = Regex("<[^>]+>")
-        val PYTHON_WHITESPACE = Regex("(?U)[\\s\\x1c-\\x1f]+")
-        val YEAR_NOISE = Regex("(?U)\\([^)]*\\)|\\b(?:19|20)\\d{2}\\b")
+        val PYTHON_WHITESPACE = unicodeRegex("[\\s\\x1c-\\x1f]+")
+        val YEAR_NOISE = unicodeRegex("\\([^)]*\\)|\\b(?:19|20)\\d{2}\\b")
         val TYPE_TOKENS = setOf("movie", "movies", "film", "films", "pelicula", "peliculas", "película", "películas", "series", "serie", "show", "shows", "vod", "tv", "anime", "content")
         val PROVIDERS = setOf("gnula", "cuevana", "pelisplushd", "pelisplus", "repelis", "peliculasflix", "pelisjuanita", "comodin", "animeflv", "jkanime", "monoschinos", "tvenvivo", "deportelibre", "futbolibre", "livelive24", "damitv", "ntv", "streamcorner", "novahd")
         val SMALL_WORDS = setOf("de", "del", "la", "las", "el", "los", "y", "o", "a", "en", "al", "con", "por", "para", "un", "una", "the", "of", "and")

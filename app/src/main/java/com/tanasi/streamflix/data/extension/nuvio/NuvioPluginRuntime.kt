@@ -30,7 +30,7 @@ import org.jsoup.select.Elements
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.URL
-import java.util.Base64
+import android.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -70,6 +70,18 @@ data class NuvioPluginSubtitle(
 
 private fun Number?.toStreamAudioDelayMs(): Int? = this?.toInt()
 private fun String?.toStreamAudioDelayLanguage(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
+
+internal fun Headers.toPluginResponseHeaders(): Map<String, String> = names().associate { name ->
+    name.lowercase(java.util.Locale.ROOT) to values(name).joinToString(", ")
+}
+
+internal fun truncatePluginBody(decoded: String, maxChars: Int): String {
+    require(maxChars >= 0)
+    if (decoded.length <= maxChars) return decoded
+    val end = if (maxChars > 0 && Character.isHighSurrogate(decoded[maxChars - 1]) &&
+        Character.isLowSurrogate(decoded[maxChars])) maxChars - 1 else maxChars
+    return decoded.substring(0, end)
+}
 
 private const val TAG = "PluginRuntime"
 private const val PLUGIN_TIMEOUT_MS = 60_000L
@@ -221,11 +233,11 @@ class NuvioPluginRuntime : NuvioPluginScriptExecutor {
     }
 
     private fun base64Decode(input: String): ByteArray {
-        return Base64.getDecoder().decode(normalizeBase64(input))
+        return Base64.decode(normalizeBase64(input), Base64.DEFAULT)
     }
 
     private fun base64Encode(bytes: ByteArray): String {
-        return Base64.getEncoder().encodeToString(bytes)
+        return Base64.encodeToString(bytes, Base64.NO_WRAP)
     }
 
     private fun bytesToHex(bytes: ByteArray): String {
@@ -690,7 +702,7 @@ class NuvioPluginRuntime : NuvioPluginScriptExecutor {
         } catch (e: Exception) {
             String(bytes, Charsets.UTF_8)
         }
-        return truncateString(decoded, MAX_FETCH_BODY_CHARS)
+        return truncatePluginBody(decoded, MAX_FETCH_BODY_CHARS)
     }
 
     private fun readAtMostBytes(stream: InputStream, maxBytes: Int): BoundedReadResult {

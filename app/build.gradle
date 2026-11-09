@@ -58,7 +58,7 @@ if (storeFilePath != null && !hasReleaseKeystore) {
     )
 }
 
-def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '2').toInteger()
+def versionCodeValue = (resolve(['VERSION_CODE', 'versionCode']) ?: '3').toInteger()
 def versionNameValue = resolve(['VERSION_NAME', 'versionName']) ?: '1.1.0'
 
 // El APK sólo conserva el manifiesto de runtime vacío; no copia los índices
@@ -255,6 +255,10 @@ dependencies {
         exclude group: 'info.debatty', module: 'java-string-similarity'
     }
     implementation libs.jsoup
+    // jsoup can select the RE2/J backend; include it for release/R8.
+    implementation "com.google.re2j:re2j:1.8"
+    // Cloudstream extractors reference Rhino APIs at runtime.
+    implementation "org.mozilla:rhino:1.7.15"
     implementation libs.gson
     implementation libs.crypto.js
 

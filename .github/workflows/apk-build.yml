@@ -1,13 +1,7 @@
 name: APK build (arena)
 
-# Compila el APK de release firmado (clave sideload) y lo deja en dist/ de la
-# rama arena, porque desde el sandbox no se pueden descargar artefactos de
-# Actions (redirigen a un host de almacenamiento externo). El push de vuelta
-# lo hace GITHUB_TOKEN, así que no vuelve a disparar workflows.
-#
-# Sin secretos de firma usa la misma clave sideload efímera que
-# android-release.yml; la clave viaja junto al APK para poder firmar la
-# próxima versión con la misma firma.
+# Compila y verifica una APK de prueba firmada con una clave efímera.
+# Nunca se sube esa clave privada al repositorio.
 
 on:
   workflow_dispatch:
@@ -136,22 +130,11 @@ jobs:
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           "$APKSIGNER" verify --print-certs "$APK"
           python3 scripts/verify-embedded-apk.py "$APK"
-          mkdir -p dist
-          cp "$APK" dist/Streamflix-release.apk
-          cp "$AAB" dist/Streamflix-release.aab
-          cp "${RUNNER_TEMP}/sideload.keystore" dist/sideload.keystore
-          (cd dist && sha256sum Streamflix-release.apk Streamflix-release.aab > SHA256SUMS.txt)
-          ls -lh dist/
 
-      - name: Publicar dist/ en la rama
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f dist/
-          if git diff --cached --quiet; then
-            echo "Sin cambios en dist/."
-            exit 0
-          fi
-          git commit -m "build: APK de release firmado (sideload) en dist/ [skip ci]"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+      - name: Conservar APK de prueba
+        uses: actions/upload-artifact@v4
+        with:
+          name: streamflix-ci-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7

@@ -3,7 +3,6 @@ pluginManagement {
         gradlePluginPortal()
         mavenCentral()
         google()
-        mavenCentral()
     }
 }
 dependencyResolutionManagement {
@@ -11,7 +10,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven("https://jitpack.io")
+        maven { url = uri('https://jitpack.io') }
     }
 }
 rootProject.name = "Streamflix"
