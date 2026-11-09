@@ -23,6 +23,7 @@ on:
         required: false
         type: string
   push:
+    branches: ['arena/5579827c-kkkkkkkkj']
     tags:
       - 'v*'
 
@@ -38,6 +39,7 @@ concurrency:
 
 jobs:
   release:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') || (startsWith(github.ref, 'refs/heads/arena/') && github.event.head_commit.message == 'release-apk: v1.1.0')
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -266,12 +268,21 @@ jobs:
           retention-days: 30
 
       - name: Publicar APK en GitHub Releases
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || (startsWith(github.ref, 'refs/heads/arena/') && github.event.head_commit.message == 'release-apk: v1.1.0')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            RELEASE_TAG="$GITHUB_REF_NAME"
+          else
+            RELEASE_TAG="v1.1.0"
+            # The branch build only attaches to an existing draft, never overwrites a public release.
+            IS_DRAFT=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+            [ "$IS_DRAFT" = true ] || { echo "Release is not a draft" >&2; exit 1; }
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA"
+          fi
+          VERSION="${RELEASE_TAG#v}"
           NOTES="$RUNNER_TEMP/release-notes.md"
           {
             echo "## Streamflix $VERSION"
@@ -285,7 +296,11 @@ jobs:
             echo "- Pruebas unitarias, lint, manifiesto TV, paquete embebido y firma comprobados por GitHub Actions."
             echo "- No necesita servidor Node externo; opcionalmente se puede configurar uno en Ajustes."
             echo "- Si Android informa de un conflicto de firma, hace falta desinstalar la versión anterior antes de instalar esta."
-            echo "- Conserva el keystore de firma para futuras actualizaciones."
+            if [ "${{ steps.signing.outputs.kind }}" = sideload ]; then
+              echo "- Firma sideload generada para esta versión: guarda el artefacto privado sideload-keystore de esta ejecución para poder firmar futuras actualizaciones."
+            else
+              echo "- Firmada con el keystore configurado en los secretos del repositorio."
+            fi
             echo
             echo "SHA-256 de la APK y del AAB en \`digests.txt\`."
           } > "$NOTES"
@@ -298,15 +313,18 @@ jobs:
             # Recalcular digests con el nombre versionado.
             sha256sum "$APK" "$AAB" | tee digests.txt
           fi
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "$APK" "$AAB" digests.txt \
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$APK" "$AAB" digests.txt \
               --repo "$GITHUB_REPOSITORY" --clobber
+            if [[ "$GITHUB_REF" == refs/heads/arena/* ]]; then
+              gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$NOTES"
+            fi
           else
-            gh release create "$GITHUB_REF_NAME" "$APK" "$AAB" digests.txt \
+            gh release create "$RELEASE_TAG" "$APK" "$AAB" digests.txt \
               --repo "$GITHUB_REPOSITORY" --verify-tag \
               --title "Streamflix $VERSION" --notes-file "$NOTES"
           fi
-          URL=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json url --jq .url)
+          URL=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url)
           echo "### Descarga directa" >> "$GITHUB_STEP_SUMMARY"
           echo "[Streamflix $VERSION]($URL)" >> "$GITHUB_STEP_SUMMARY"
 
