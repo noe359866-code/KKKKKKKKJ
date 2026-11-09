@@ -282,6 +282,12 @@ jobs:
             [ "$IS_DRAFT" = true ] || { echo "Release is not a draft" >&2; exit 1; }
             gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA"
           fi
+          # Publishing a draft may trigger a tag build. Never replace an already
+          # published APK with a freshly generated sideload signing key.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]] && gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,assets --jq '(.isDraft | not) and any(.assets[]; .name | endswith(".apk"))' 2>/dev/null | grep -qx true; then
+            echo "Published release already has an APK; leaving its signature and assets unchanged."
+            exit 0
+          fi
           VERSION="${RELEASE_TAG#v}"
           NOTES="$RUNNER_TEMP/release-notes.md"
           {
